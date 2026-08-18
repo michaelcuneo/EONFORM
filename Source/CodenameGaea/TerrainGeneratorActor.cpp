@@ -13,6 +13,7 @@
 #include "TerrainHydrology.h"
 #include "TerrainLandmass.h"
 #include "TerrainNoise.h"
+#include "TerrainPhysiography.h"
 #include "TerrainShaping.h"
 #include "TerrainStructure.h"
 #include "TerrainWater.h"
@@ -270,6 +271,50 @@ void ATerrainGeneratorActor::BuildTerrain()
 			}
 
 			HeightField.At(X, Y) = BaseElevation + TerrestrialRelief * LandInfluence;
+		}
+	}
+
+	if (bHasLandmass)
+	{
+		FTerrainLandmass::RefreshSeaLevelClassification(HeightField, SafeHeightScale, LandmassSettings, LandmassMaps);
+	}
+
+	// Establish broad physiography before any erosional detail pass. The drainage
+	// graph provides connected valley hierarchy; the physiography pass turns that
+	// hierarchy into uplands, hillslopes, lowlands, valley floors and benches.
+	FTerrainDrainageSettings InitialDrainageSettings;
+	FTerrainDrainageMaps InitialDrainageMaps;
+	FTerrainPhysiographyMaps PhysiographyMaps;
+	if (FTerrainDrainage::Build(HeightField, SafeHeightScale, InitialDrainageSettings, InitialDrainageMaps))
+	{
+		FTerrainPhysiographySettings PhysiographySettings;
+		PhysiographySettings.RegionalScaleCm = FMath::Max(SafeWorldSize * 0.16f, CellSize * 12.0f);
+		PhysiographySettings.ValleyWidthCm = FMath::Max(SafeWorldSize * 0.028f, CellSize * 2.5f);
+		PhysiographySettings.ValleyDepthCm = FMath::Min(SafeHeightScale * 0.07f, SafeWorldSize * 0.012f);
+
+		if (FTerrainPhysiography::Apply(
+			HeightField,
+			SafeHeightScale,
+			InitialDrainageMaps,
+			bHasStructure ? &StructuralMaps : nullptr,
+			PhysiographySettings,
+			PhysiographyMaps))
+		{
+			for (int32 Index = 0; Index < NumCells; ++Index)
+			{
+				MountainRegionMask[Index] = FMath::Clamp(
+					FMath::Max(MountainRegionMask[Index] * 0.55f, PhysiographyMaps.Upland[Index] * 0.9f),
+					0.0f,
+					1.0f);
+				FoothillRegionMask[Index] = FMath::Clamp(
+					FMath::Max(FoothillRegionMask[Index] * 0.5f, PhysiographyMaps.Hillslope[Index]),
+					0.0f,
+					1.0f);
+				PlainsRegionMask[Index] = FMath::Clamp(
+					FMath::Max(PlainsRegionMask[Index] * 0.45f, FMath::Max(PhysiographyMaps.Lowland[Index], PhysiographyMaps.ValleyFloor[Index])),
+					0.0f,
+					1.0f);
+			}
 		}
 	}
 
