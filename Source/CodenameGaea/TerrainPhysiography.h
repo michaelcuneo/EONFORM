@@ -12,25 +12,27 @@ struct FTerrainPhysiographySettings
 	// and lowlands. This is a landform scale, not a detail/noise scale.
 	float RegionalScaleCm = 8000.0f;
 
-	float LowlandStrength = 0.6f;
-	float LowlandBroadScale = 0.58f;
-	float LowlandResidualScale = 0.18f;
-	float RollingStrength = 0.08f;
+	// Defaults are intentionally strong enough to visibly break up the old
+	// mountain-only terrain without requiring editor tuning.
+	float LowlandStrength = 0.86f;
+	float LowlandBroadScale = 0.42f;
+	float LowlandResidualScale = 0.08f;
+	float RollingStrength = 0.035f;
 
 	// Valley geometry is driven by contributing drainage area. Small drainage
 	// areas form gullies; large drainage areas progressively widen into valleys.
-	float ValleyStrength = 0.7f;
+	float ValleyStrength = 0.92f;
 	float ValleyWidthCm = 1800.0f;
 	float ValleyDepthCm = 500.0f;
-	float ValleyProfile = 1.35f;
+	float ValleyProfile = 1.12f;
 
 	// Subdued fluvial/structural benches on suitable valley shoulders.
-	float BenchStrength = 0.24f;
+	float BenchStrength = 0.42f;
 	float BenchHeightCm = 220.0f;
 
 	// Depression bottoms may accumulate material without filling the rendered DEM
 	// all the way to the routing spill surface.
-	float BasinFloorStrength = 0.3f;
+	float BasinFloorStrength = 0.38f;
 };
 
 struct FTerrainPhysiographyMaps
