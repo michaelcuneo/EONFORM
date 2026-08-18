@@ -5,6 +5,7 @@
 #include "TerrainGeneratorActor.generated.h"
 
 class UDynamicMeshComponent;
+struct FTerrainHeightField;
 
 UCLASS()
 class CODENAMEGAEA_API ATerrainGeneratorActor : public AActor
@@ -30,6 +31,9 @@ protected:
 private:
 	UPROPERTY(VisibleAnywhere, Category="Terrain")
 	TObjectPtr<UDynamicMeshComponent> TerrainMesh;
+
+	UPROPERTY(VisibleAnywhere, Category="Terrain")
+	TObjectPtr<UDynamicMeshComponent> RiverWaterMesh;
 
 	UPROPERTY(EditAnywhere, Category="Terrain|World", meta=(ClampMin="2", ClampMax="1025", UIMin="2", UIMax="513"))
 	int32 Resolution = 257;
@@ -208,8 +212,33 @@ private:
 	UPROPERTY(EditAnywhere, Category="Terrain|Hydrology|Rivers", meta=(EditCondition="bEnableRivers", ClampMin="0.1", ClampMax="6.0", UIMin="0.5", UIMax="3.0"))
 	float RiverChannelProfile = 1.35f;
 
+	UPROPERTY(EditAnywhere, Category="Terrain|Hydrology|Floodplain", meta=(EditCondition="bEnableRivers", ClampMin="100.0", ClampMax="10000.0", UIMin="500.0", UIMax="4000.0", Units="cm"))
+	float FloodplainWidth = 1800.0f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Hydrology|Floodplain", meta=(EditCondition="bEnableRivers", ClampMin="0.0", ClampMax="2000.0", UIMin="0.0", UIMax="600.0", Units="cm"))
+	float FloodplainMaxRise = 260.0f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Hydrology|Floodplain", meta=(EditCondition="bEnableRivers", ClampMin="0.1", ClampMax="6.0", UIMin="0.5", UIMax="3.0"))
+	float FloodplainFalloff = 1.6f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Hydrology|Floodplain", meta=(EditCondition="bEnableRivers", ClampMin="0.0", ClampMax="1.0", UIMin="0.0", UIMax="1.0"))
+	float WetnessStrength = 0.7f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Hydrology|Water", meta=(EditCondition="bEnableRivers"))
+	bool bShowRiverWater = true;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Hydrology|Water", meta=(EditCondition="bEnableRivers && bShowRiverWater", ClampMin="0.0", ClampMax="500.0", UIMin="0.0", UIMax="200.0", Units="cm"))
+	float RiverWaterOffset = 70.0f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Hydrology|Water", meta=(EditCondition="bEnableRivers && bShowRiverWater", ClampMin="0.0", ClampMax="1.0", UIMin="0.1", UIMax="0.9"))
+	float RiverWaterMaskThreshold = 0.42f;
+
 	TArray<float> FlowAccumulation;
 	TArray<float> RiverMask;
+	TArray<float> FloodplainMask;
+	TArray<float> WetnessMask;
+	TArray<FIntPoint> RiverNetworkEdges;
 
 	void BuildTerrain();
+	void BuildRiverWaterMesh(const FTerrainHeightField& HeightField, float CellSize, float HalfWorldSize);
 };
