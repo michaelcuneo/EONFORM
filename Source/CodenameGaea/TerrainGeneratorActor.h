@@ -197,6 +197,48 @@ private:
 	UPROPERTY(EditAnywhere, Category="Terrain|Structure|Faults", meta=(EditCondition="bEnableStructuralGeology", ClampMin="0.0", ClampMax="1.0", UIMin="0.0", UIMax="1.0"))
 	float FaultWeakness = 0.7f;
 
+	UPROPERTY(EditAnywhere, Category="Terrain|Climate")
+	bool bEnableClimate = true;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Climate", meta=(EditCondition="bEnableClimate", ClampMin="0.0", ClampMax="360.0", UIMin="0.0", UIMax="360.0", Units="deg"))
+	float PrevailingWindDirection = 235.0f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Climate", meta=(EditCondition="bEnableClimate", ClampMin="-20.0", ClampMax="45.0", UIMin="-5.0", UIMax="35.0", Units="Celsius"))
+	float BaseTemperatureC = 18.0f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Climate", meta=(EditCondition="bEnableClimate", ClampMin="0.0", ClampMax="12.0", UIMin="3.0", UIMax="9.0"))
+	float TemperatureLapseRate = 6.5f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Climate", meta=(EditCondition="bEnableClimate", ClampMin="0.0", ClampMax="1.0", UIMin="0.0", UIMax="1.0"))
+	float BaseHumidity = 0.62f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Climate", meta=(EditCondition="bEnableClimate", ClampMin="0.0", ClampMax="2.0", UIMin="0.0", UIMax="1.5"))
+	float OrographicStrength = 0.78f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Climate", meta=(EditCondition="bEnableClimate", ClampMin="0.0", ClampMax="2.0", UIMin="0.0", UIMax="1.5"))
+	float RainShadowStrength = 0.68f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Climate", meta=(EditCondition="bEnableClimate", ClampMin="0.0", ClampMax="0.5", UIMin="0.0", UIMax="0.2"))
+	float MoistureRecovery = 0.08f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Biomes")
+	bool bEnableBiomes = true;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Biomes", meta=(EditCondition="bEnableBiomes", ClampMin="0.0", ClampMax="1.0", UIMin="0.2", UIMax="0.8"))
+	float ForestMoistureThreshold = 0.48f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Biomes", meta=(EditCondition="bEnableBiomes", ClampMin="5.0", ClampMax="70.0", UIMin="15.0", UIMax="45.0", Units="deg"))
+	float ForestMaxSlope = 32.0f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Biomes", meta=(EditCondition="bEnableBiomes", ClampMin="0.0", ClampMax="1.0", UIMin="0.05", UIMax="0.6"))
+	float AridMoistureThreshold = 0.28f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Biomes", meta=(EditCondition="bEnableBiomes", ClampMin="0.0", ClampMax="1.0", UIMin="0.4", UIMax="0.9"))
+	float AlpineElevationThreshold = 0.68f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Biomes", meta=(EditCondition="bEnableBiomes", ClampMin="0.0", ClampMax="1.0", UIMin="0.2", UIMax="0.9"))
+	float WetlandWetnessThreshold = 0.58f;
+
 	UPROPERTY(EditAnywhere, Category="Terrain|Natural Processes")
 	bool bUseNaturalProcessMasks = true;
 
@@ -298,6 +340,18 @@ private:
 	TArray<float> FloodplainMask;
 	TArray<float> WetnessMask;
 	TArray<FIntPoint> RiverNetworkEdges;
+
+	TArray<float> TemperatureMap;
+	TArray<float> PrecipitationMap;
+	TArray<float> HumidityMap;
+	TArray<float> SnowPotentialMap;
+	TArray<float> ForestBiomeMask;
+	TArray<float> GrasslandBiomeMask;
+	TArray<float> AridBiomeMask;
+	TArray<float> AlpineBiomeMask;
+	TArray<float> WetlandBiomeMask;
+	TArray<float> ExposedRockBiomeMask;
+	TArray<float> SnowBiomeMask;
 
 	void BuildTerrain();
 	void BuildRiverWaterMesh(const FTerrainHeightField& HeightField, float CellSize, float HalfWorldSize);
