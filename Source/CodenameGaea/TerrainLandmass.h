@@ -13,8 +13,10 @@ struct FTerrainLandmassSettings
 	float CoastIrregularity = 0.62f;
 	float LandCoverage = 0.5f;
 	float EdgeOceanMargin = 0.14f;
-	float CoastalLandRise = 900.0f;
-	float InlandRiseWidth = 6500.0f;
+
+	// Small emergence support only. Terrestrial relief supplies the actual land shape.
+	float CoastalLandRise = 300.0f;
+	float InlandRiseWidth = 1800.0f;
 
 	float ShelfWidth = 4500.0f;
 	float ShelfDepth = 700.0f;
