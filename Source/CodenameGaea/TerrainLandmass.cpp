@@ -181,12 +181,11 @@ void FTerrainLandmass::Build(
 	const FTerrainHeightField& HeightField,
 	const FTerrainStructuralMaps* Structure,
 	int32 Seed,
-	float HeightScale,
 	const FTerrainLandmassSettings& Settings,
 	FTerrainLandmassMaps& OutMaps)
 {
 	OutMaps = FTerrainLandmassMaps{};
-	if (!HeightField.IsValid() || HeightScale <= UE_SMALL_NUMBER)
+	if (!HeightField.IsValid())
 	{
 		return;
 	}
@@ -276,12 +275,12 @@ void FTerrainLandmass::Build(
 	const float ShelfWidth = FMath::Clamp(Settings.ShelfWidth, CellSize * 2.0f, FMath::Max(MaxShelfWidth, CellSize * 2.0f));
 	const float SlopeWidth = FMath::Clamp(Settings.ContinentalSlopeWidth, CellSize * 3.0f, FMath::Max(MaxSlopeWidth, CellSize * 3.0f));
 
-	const float ShelfDepth = FMath::Min(Settings.ShelfDepth, HeightScale * 0.04f);
-	const float BasinDepth = FMath::Min(Settings.BasinDepth, HeightScale * 0.22f);
-	const float BasinRelief = FMath::Min(Settings.BasinRelief, HeightScale * 0.05f);
-	const float TrenchDepth = FMath::Min(Settings.TrenchDepth, HeightScale * 0.08f);
-	const float SeamountHeight = FMath::Min(Settings.SeamountHeight, HeightScale * 0.08f);
-	const float InlandRiseHeight = HeightScale * 0.07f;
+	const float ShelfDepth = FMath::Min(Settings.ShelfDepth, HeightField.WorldSize * 0.005f);
+	const float BasinDepth = FMath::Min(Settings.BasinDepth, HeightField.WorldSize * 0.035f);
+	const float BasinRelief = FMath::Min(Settings.BasinRelief, HeightField.WorldSize * 0.008f);
+	const float TrenchDepth = FMath::Min(Settings.TrenchDepth, HeightField.WorldSize * 0.012f);
+	const float SeamountHeight = FMath::Min(Settings.SeamountHeight, HeightField.WorldSize * 0.012f);
+	const float InlandRiseHeight = HeightField.WorldSize * 0.012f;
 	const float InlandRiseWidth = FMath::Max(HeightField.WorldSize * 0.08f, CellSize * 4.0f);
 	const float CoastVisualWidth = FMath::Max(CellSize * 2.0f, ShelfWidth * 0.18f);
 
