@@ -148,5 +148,17 @@ private:
 	UPROPERTY(EditAnywhere, Category="Terrain|Warp", meta=(EditCondition="bEnableDomainWarp", ClampMin="0.0", UIMin="0.0", UIMax="25000.0", Units="cm"))
 	float WarpStrength = 4500.0f;
 
+	UPROPERTY(EditAnywhere, Category="Terrain|Erosion|Thermal")
+	bool bEnableThermalErosion = true;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Erosion|Thermal", meta=(EditCondition="bEnableThermalErosion", ClampMin="0", ClampMax="100", UIMin="0", UIMax="40"))
+	int32 ThermalIterations = 12;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Erosion|Thermal", meta=(EditCondition="bEnableThermalErosion", ClampMin="5.0", ClampMax="75.0", UIMin="20.0", UIMax="50.0", Units="deg"))
+	float ThermalTalusAngle = 34.0f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Erosion|Thermal", meta=(EditCondition="bEnableThermalErosion", ClampMin="0.0", ClampMax="1.0", UIMin="0.0", UIMax="1.0"))
+	float ThermalStrength = 0.35f;
+
 	void BuildTerrain();
 };
