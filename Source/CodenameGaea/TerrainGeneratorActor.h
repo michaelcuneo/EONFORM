@@ -155,6 +155,48 @@ private:
 	UPROPERTY(EditAnywhere, Category="Terrain|Warp", meta=(EditCondition="bEnableDomainWarp", ClampMin="0.0", ClampMax="1.0", UIMin="0.0", UIMax="1.0"))
 	float WarpRegionality = 0.85f;
 
+	UPROPERTY(EditAnywhere, Category="Terrain|Structure")
+	bool bEnableStructuralGeology = true;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Structure", meta=(EditCondition="bEnableStructuralGeology", ClampMin="0.0", ClampMax="180.0", UIMin="0.0", UIMax="180.0", Units="deg"))
+	float StructureDirection = 32.0f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Structure", meta=(EditCondition="bEnableStructuralGeology", ClampMin="0.0", ClampMax="1.0", UIMin="0.0", UIMax="0.6"))
+	float StructureCurvature = 0.28f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Structure", meta=(EditCondition="bEnableStructuralGeology", ClampMin="0.05", ClampMax="1.0", UIMin="0.2", UIMax="1.0"))
+	float TectonicCoverage = 0.68f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Structure|Uplift", meta=(EditCondition="bEnableStructuralGeology", ClampMin="1000.0", ClampMax="100000.0", UIMin="5000.0", UIMax="40000.0", Units="cm"))
+	float UpliftSpacing = 18000.0f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Structure|Uplift", meta=(EditCondition="bEnableStructuralGeology", ClampMin="500.0", ClampMax="50000.0", UIMin="2000.0", UIMax="20000.0", Units="cm"))
+	float UpliftWidth = 8500.0f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Structure|Uplift", meta=(EditCondition="bEnableStructuralGeology", ClampMin="0.0", ClampMax="1.0", UIMin="0.0", UIMax="0.5"))
+	float UpliftStrength = 0.18f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Structure|Long Valleys", meta=(EditCondition="bEnableStructuralGeology", ClampMin="1000.0", ClampMax="100000.0", UIMin="5000.0", UIMax="40000.0", Units="cm"))
+	float StructuralValleySpacing = 18000.0f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Structure|Long Valleys", meta=(EditCondition="bEnableStructuralGeology", ClampMin="100.0", ClampMax="20000.0", UIMin="500.0", UIMax="6000.0", Units="cm"))
+	float StructuralValleyWidth = 1800.0f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Structure|Long Valleys", meta=(EditCondition="bEnableStructuralGeology", ClampMin="0.0", ClampMax="2000.0", UIMin="0.0", UIMax="800.0", Units="cm"))
+	float StructuralValleyDepth = 240.0f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Structure|Faults", meta=(EditCondition="bEnableStructuralGeology", ClampMin="1000.0", ClampMax="100000.0", UIMin="3000.0", UIMax="30000.0", Units="cm"))
+	float FaultSpacing = 11000.0f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Structure|Faults", meta=(EditCondition="bEnableStructuralGeology", ClampMin="50.0", ClampMax="10000.0", UIMin="100.0", UIMax="2500.0", Units="cm"))
+	float FaultWidth = 500.0f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Structure|Faults", meta=(EditCondition="bEnableStructuralGeology", ClampMin="-90.0", ClampMax="90.0", UIMin="-45.0", UIMax="45.0", Units="deg"))
+	float FaultAngleOffset = 22.0f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Structure|Faults", meta=(EditCondition="bEnableStructuralGeology", ClampMin="0.0", ClampMax="1.0", UIMin="0.0", UIMax="1.0"))
+	float FaultWeakness = 0.7f;
+
 	UPROPERTY(EditAnywhere, Category="Terrain|Natural Processes")
 	bool bUseNaturalProcessMasks = true;
 
