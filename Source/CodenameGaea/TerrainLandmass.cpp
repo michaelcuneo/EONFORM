@@ -94,31 +94,31 @@ void FTerrainLandmass::Build(
 				LandField += (0.55f - EdgeProximity) * 0.18f;
 			}
 
-			const float LandInfluence = SmoothStep01((LandField + 0.16f) / 0.32f);
-			OutMaps.LandInfluence[Index] = LandInfluence;
-
-			const float SignedDistanceProxy = (LandField) * Settings.InlandRiseWidth;
+			const float SignedDistanceProxy = LandField * Settings.InlandRiseWidth;
 			OutMaps.SignedCoastDistanceCm[Index] = SignedDistanceProxy;
 
 			if (LandField >= 0.0f)
 			{
 				const float Inland = SmoothStep01(FMath::Max(SignedDistanceProxy, 0.0f) / FMath::Max(Settings.InlandRiseWidth, 1.0f));
+				OutMaps.LandInfluence[Index] = Inland;
 				OutMaps.BaseElevationCm[Index] = Inland * Settings.CoastalLandRise;
 				OutMaps.LandMask[Index] = 1.0f;
+				OutMaps.CoastMask[Index] = 1.0f - SmoothStep01(FMath::Abs(SignedDistanceProxy) / FMath::Max(Settings.ShelfWidth * 0.4f, 1.0f));
 				continue;
 			}
 
+			OutMaps.LandInfluence[Index] = 0.0f;
 			OutMaps.OceanMask[Index] = 1.0f;
 			const float OffshoreDistance = -SignedDistanceProxy;
 			const float ShelfT = SmoothStep01(OffshoreDistance / FMath::Max(Settings.ShelfWidth, 1.0f));
 			const float SlopeT = SmoothStep01((OffshoreDistance - Settings.ShelfWidth) / FMath::Max(Settings.ContinentalSlopeWidth, 1.0f));
-			const float ShelfDepth = FMath::Lerp(0.0f, Settings.ShelfDepth, ShelfT);
+			const float ShelfDepthLocal = FMath::Lerp(0.0f, Settings.ShelfDepth, ShelfT);
 			const float DeepDepth = FMath::Lerp(Settings.ShelfDepth, Settings.BasinDepth, SlopeT);
-			float Depth = OffshoreDistance <= Settings.ShelfWidth ? ShelfDepth : DeepDepth;
+			float Depth = OffshoreDistance <= Settings.ShelfWidth ? ShelfDepthLocal : DeepDepth;
 
 			const float BasinMask = SmoothStep01((OffshoreDistance - Settings.ShelfWidth - Settings.ContinentalSlopeWidth * 0.5f) / FMath::Max(Settings.ContinentalSlopeWidth, 1.0f));
-			const float BasinRelief = BasinNoise * Settings.BasinRelief * BasinMask;
-			Depth = FMath::Max(0.0f, Depth - BasinRelief);
+			const float BasinReliefLocal = BasinNoise * Settings.BasinRelief * BasinMask;
+			Depth = FMath::Max(0.0f, Depth - BasinReliefLocal);
 
 			float Trench = 0.0f;
 			if (bHasStructure)
