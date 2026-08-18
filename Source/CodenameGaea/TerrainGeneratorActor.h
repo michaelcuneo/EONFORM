@@ -160,5 +160,34 @@ private:
 	UPROPERTY(EditAnywhere, Category="Terrain|Erosion|Thermal", meta=(EditCondition="bEnableThermalErosion", ClampMin="0.0", ClampMax="1.0", UIMin="0.0", UIMax="1.0"))
 	float ThermalStrength = 0.35f;
 
+	UPROPERTY(EditAnywhere, Category="Terrain|Erosion|Hydraulic")
+	bool bEnableHydraulicErosion = true;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Erosion|Hydraulic", meta=(EditCondition="bEnableHydraulicErosion", ClampMin="0", ClampMax="200", UIMin="0", UIMax="80"))
+	int32 HydraulicIterations = 24;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Erosion|Hydraulic", meta=(EditCondition="bEnableHydraulicErosion", ClampMin="0.0", ClampMax="0.1", UIMin="0.0", UIMax="0.04"))
+	float HydraulicRainfall = 0.01f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Erosion|Hydraulic", meta=(EditCondition="bEnableHydraulicErosion", ClampMin="0.0", ClampMax="1.0", UIMin="0.0", UIMax="1.0"))
+	float HydraulicFlowRate = 0.55f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Erosion|Hydraulic", meta=(EditCondition="bEnableHydraulicErosion", ClampMin="0.0", ClampMax="4.0", UIMin="0.0", UIMax="2.0"))
+	float HydraulicSedimentCapacity = 0.7f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Erosion|Hydraulic", meta=(EditCondition="bEnableHydraulicErosion", ClampMin="0.0", ClampMax="1.0", UIMin="0.0", UIMax="0.5"))
+	float HydraulicErosionRate = 0.18f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Erosion|Hydraulic", meta=(EditCondition="bEnableHydraulicErosion", ClampMin="0.0", ClampMax="1.0", UIMin="0.0", UIMax="0.5"))
+	float HydraulicDepositionRate = 0.12f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Erosion|Hydraulic", meta=(EditCondition="bEnableHydraulicErosion", ClampMin="0.0", ClampMax="1.0", UIMin="0.0", UIMax="0.4"))
+	float HydraulicEvaporation = 0.08f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Erosion|Hydraulic", meta=(EditCondition="bEnableHydraulicErosion", ClampMin="0.0", ClampMax="1.0", UIMin="0.0", UIMax="0.1"))
+	float HydraulicMinimumSlope = 0.01f;
+
+	TArray<float> FlowAccumulation;
+
 	void BuildTerrain();
 };
