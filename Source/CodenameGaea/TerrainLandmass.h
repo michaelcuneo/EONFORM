@@ -14,10 +14,6 @@ struct FTerrainLandmassSettings
 	float LandCoverage = 0.5f;
 	float EdgeOceanMargin = 0.14f;
 
-	// Small emergence support only. Terrestrial relief supplies the actual land shape.
-	float CoastalLandRise = 300.0f;
-	float InlandRiseWidth = 1800.0f;
-
 	float ShelfWidth = 4500.0f;
 	float ShelfDepth = 700.0f;
 	float ContinentalSlopeWidth = 6500.0f;
@@ -26,6 +22,10 @@ struct FTerrainLandmassSettings
 	float TrenchDepth = 1800.0f;
 	float SeamountScale = 7000.0f;
 	float SeamountHeight = 1400.0f;
+
+	// Island-scale maps should contain coastal bathymetry, not a full deep-ocean cross section.
+	// Continental mode keeps the requested absolute depths.
+	float IslandBathymetryDepthScale = 0.08f;
 };
 
 struct FTerrainLandmassMaps
