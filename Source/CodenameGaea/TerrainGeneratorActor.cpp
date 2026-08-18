@@ -4,6 +4,7 @@
 #include "DynamicMesh/DynamicMesh3.h"
 #include "DynamicMesh/MeshNormals.h"
 #include "TerrainHeightField.h"
+#include "TerrainNoise.h"
 
 using UE::Geometry::FDynamicMesh3;
 using UE::Geometry::FMeshNormals;
@@ -45,34 +46,6 @@ void ATerrainGeneratorActor::RandomizeSeed()
 	BuildTerrain();
 }
 
-float ATerrainGeneratorActor::SampleFractalNoise(float WorldX, float WorldY) const
-{
-	FRandomStream RandomStream(Seed);
-	const FVector2D SeedOffset(
-		RandomStream.FRandRange(-100000.0f, 100000.0f),
-		RandomStream.FRandRange(-100000.0f, 100000.0f));
-
-	float Amplitude = 1.0f;
-	float LocalFrequency = Frequency;
-	float Value = 0.0f;
-	float AmplitudeSum = 0.0f;
-
-	for (int32 Octave = 0; Octave < Octaves; ++Octave)
-	{
-		const FVector2D SamplePosition(
-			(WorldX + SeedOffset.X) * LocalFrequency,
-			(WorldY + SeedOffset.Y) * LocalFrequency);
-
-		Value += FMath::PerlinNoise2D(SamplePosition) * Amplitude;
-		AmplitudeSum += Amplitude;
-
-		Amplitude *= Persistence;
-		LocalFrequency *= Lacunarity;
-	}
-
-	return AmplitudeSum > UE_SMALL_NUMBER ? Value / AmplitudeSum : 0.0f;
-}
-
 void ATerrainGeneratorActor::BuildTerrain()
 {
 	if (!TerrainMesh)
@@ -89,13 +62,57 @@ void ATerrainGeneratorActor::BuildTerrain()
 	const float CellSize = SafeWorldSize / static_cast<float>(SafeResolution - 1);
 	const float HalfWorldSize = SafeWorldSize * 0.5f;
 
+	FTerrainFractalNoiseSettings BaseSettings;
+	BaseSettings.Frequency = Frequency;
+	BaseSettings.Octaves = Octaves;
+	BaseSettings.Persistence = Persistence;
+	BaseSettings.Lacunarity = Lacunarity;
+
+	FTerrainFractalNoiseSettings WarpSettings;
+	WarpSettings.Frequency = WarpFrequency;
+	WarpSettings.Octaves = 3;
+	WarpSettings.Persistence = 0.5f;
+	WarpSettings.Lacunarity = 2.0f;
+
+	FTerrainFractalNoiseSettings RidgeSettings;
+	RidgeSettings.Frequency = RidgeFrequency;
+	RidgeSettings.Octaves = RidgeOctaves;
+	RidgeSettings.Persistence = Persistence;
+	RidgeSettings.Lacunarity = Lacunarity;
+
+	const FVector2D BaseOffset = FTerrainNoise::MakeSeedOffset(Seed, 0);
+	const FVector2D WarpXOffset = FTerrainNoise::MakeSeedOffset(Seed, 101);
+	const FVector2D WarpYOffset = FTerrainNoise::MakeSeedOffset(Seed, 202);
+	const FVector2D RidgeOffset = FTerrainNoise::MakeSeedOffset(Seed, 303);
+
 	for (int32 Y = 0; Y < SafeResolution; ++Y)
 	{
 		for (int32 X = 0; X < SafeResolution; ++X)
 		{
-			const float LocalX = static_cast<float>(X) * CellSize - HalfWorldSize;
-			const float LocalY = static_cast<float>(Y) * CellSize - HalfWorldSize;
-			HeightField.At(X, Y) = SampleFractalNoise(LocalX, LocalY);
+			const FVector2D WorldPosition(
+				static_cast<float>(X) * CellSize - HalfWorldSize,
+				static_cast<float>(Y) * CellSize - HalfWorldSize);
+
+			FVector2D SamplePosition = WorldPosition;
+
+			if (bEnableDomainWarp && WarpStrength > 0.0f)
+			{
+				const float WarpX = FTerrainNoise::SampleFractal(WorldPosition, WarpXOffset, WarpSettings);
+				const float WarpY = FTerrainNoise::SampleFractal(WorldPosition, WarpYOffset, WarpSettings);
+				SamplePosition += FVector2D(WarpX, WarpY) * WarpStrength;
+			}
+
+			const float BaseHeight = FTerrainNoise::SampleFractal(SamplePosition, BaseOffset, BaseSettings);
+			float Height = BaseHeight;
+
+			if (bEnableRidges && RidgeStrength > 0.0f)
+			{
+				const float Ridge = FTerrainNoise::SampleRidged(SamplePosition, RidgeOffset, RidgeSettings, RidgeSharpness);
+				const float SignedRidge = Ridge * 2.0f - 1.0f;
+				Height = FMath::Lerp(BaseHeight, SignedRidge, RidgeStrength);
+			}
+
+			HeightField.At(X, Y) = FMath::Clamp(Height, -1.0f, 1.0f);
 		}
 	}
 
