@@ -65,7 +65,6 @@ public:
 		const FTerrainHeightField& HeightField,
 		const FTerrainStructuralMaps* Structure,
 		int32 Seed,
-		float HeightScale,
 		const FTerrainLandmassSettings& Settings,
 		FTerrainLandmassMaps& OutMaps);
 
