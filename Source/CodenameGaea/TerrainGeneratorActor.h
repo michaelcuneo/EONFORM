@@ -44,6 +44,45 @@ private:
 	UPROPERTY(EditAnywhere, Category="Terrain|World", meta=(ClampMin="0.0", UIMin="100.0", UIMax="20000.0", Units="cm"))
 	float HeightScale = 8000.0f;
 
+	UPROPERTY(EditAnywhere, Category="Terrain|Landmass")
+	bool bIsland = true;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Landmass")
+	bool bArchipelago = false;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Landmass", meta=(ClampMin="1000.0", ClampMax="200000.0", UIMin="5000.0", UIMax="80000.0", Units="cm"))
+	float CoastScale = 32000.0f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Landmass", meta=(ClampMin="0.0", ClampMax="1.0", UIMin="0.0", UIMax="1.0"))
+	float CoastIrregularity = 0.62f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Landmass", meta=(ClampMin="0.05", ClampMax="0.95", UIMin="0.15", UIMax="0.85"))
+	float LandCoverage = 0.5f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Bathymetry", meta=(ClampMin="100.0", ClampMax="50000.0", UIMin="500.0", UIMax="15000.0", Units="cm"))
+	float ShelfWidth = 4500.0f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Bathymetry", meta=(ClampMin="0.0", ClampMax="5000.0", UIMin="100.0", UIMax="2000.0", Units="cm"))
+	float ShelfDepth = 700.0f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Bathymetry", meta=(ClampMin="100.0", ClampMax="80000.0", UIMin="1000.0", UIMax="20000.0", Units="cm"))
+	float ContinentalSlopeWidth = 6500.0f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Bathymetry", meta=(ClampMin="100.0", ClampMax="20000.0", UIMin="1000.0", UIMax="10000.0", Units="cm"))
+	float BasinDepth = 5200.0f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Bathymetry", meta=(ClampMin="0.0", ClampMax="5000.0", UIMin="0.0", UIMax="2000.0", Units="cm"))
+	float BasinRelief = 900.0f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Bathymetry", meta=(ClampMin="0.0", ClampMax="10000.0", UIMin="0.0", UIMax="4000.0", Units="cm"))
+	float TrenchDepth = 1800.0f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Bathymetry", meta=(ClampMin="500.0", ClampMax="50000.0", UIMin="1000.0", UIMax="15000.0", Units="cm"))
+	float SeamountScale = 7000.0f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Bathymetry", meta=(ClampMin="0.0", ClampMax="10000.0", UIMin="0.0", UIMax="3000.0", Units="cm"))
+	float SeamountHeight = 1400.0f;
+
 	UPROPERTY(EditAnywhere, Category="Terrain|Base")
 	int32 Seed = 1337;
 
@@ -58,9 +97,6 @@ private:
 
 	UPROPERTY(EditAnywhere, Category="Terrain|Base", meta=(ClampMin="1.0", ClampMax="4.0", UIMin="1.0", UIMax="3.0"))
 	float Lacunarity = 2.0f;
-
-	UPROPERTY(EditAnywhere, Category="Terrain|Base")
-	bool bCenterHeightfield = true;
 
 	UPROPERTY(EditAnywhere, Category="Terrain|Macro")
 	bool bEnableMacroShape = true;
@@ -340,6 +376,16 @@ private:
 	TArray<float> FloodplainMask;
 	TArray<float> WetnessMask;
 	TArray<FIntPoint> RiverNetworkEdges;
+
+	TArray<float> LandMask;
+	TArray<float> OceanMask;
+	TArray<float> CoastMask;
+	TArray<float> BathymetryDepthMap;
+	TArray<float> ShelfMask;
+	TArray<float> ContinentalSlopeMask;
+	TArray<float> OceanBasinMask;
+	TArray<float> TrenchMask;
+	TArray<float> SeamountMask;
 
 	TArray<float> TemperatureMap;
 	TArray<float> PrecipitationMap;
