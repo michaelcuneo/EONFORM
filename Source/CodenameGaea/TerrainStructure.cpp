@@ -1,6 +1,7 @@
 #include "TerrainStructure.h"
 
 #include "TerrainNoise.h"
+#include "TerrainParallel.h"
 
 namespace
 {
@@ -58,43 +59,46 @@ void FTerrainStructure::Build(
 	const FVector2D FaultAlong(FMath::Cos(FaultRadians), FMath::Sin(FaultRadians));
 	const FVector2D FaultAcross(-FaultAlong.Y, FaultAlong.X);
 
-	for (int32 Y = 0; Y < Resolution; ++Y)
+	TerrainParallel::ForRows(TEXT("TerrainStructure"), Resolution, [&](int32 StartY, int32 EndY)
 	{
-		for (int32 X = 0; X < Resolution; ++X)
+		for (int32 Y = StartY; Y < EndY; ++Y)
 		{
-			const int32 Index = HeightField.Index(X, Y);
-			const FVector2D Position(
-				static_cast<float>(X) * CellSize - HalfWorldSize,
-				static_cast<float>(Y) * CellSize - HalfWorldSize);
+			for (int32 X = 0; X < Resolution; ++X)
+			{
+				const int32 Index = HeightField.Index(X, Y);
+				const FVector2D Position(
+					static_cast<float>(X) * CellSize - HalfWorldSize,
+					static_cast<float>(Y) * CellSize - HalfWorldSize);
 
-			const float ActivityNoise = FTerrainNoise::SampleFractal(Position, ActivityOffset, ActivitySettings) * 0.5f + 0.5f;
-			const float Activity = SmoothStep01((ActivityNoise - (1.0f - Settings.TectonicCoverage)) / FMath::Max(Settings.TectonicCoverage, 0.01f));
-			OutStructure.TectonicActivity[Index] = Activity;
+				const float ActivityNoise = FTerrainNoise::SampleFractal(Position, ActivityOffset, ActivitySettings) * 0.5f + 0.5f;
+				const float Activity = SmoothStep01((ActivityNoise - (1.0f - Settings.TectonicCoverage)) / FMath::Max(Settings.TectonicCoverage, 0.01f));
+				OutStructure.TectonicActivity[Index] = Activity;
 
-			const float BendNoise = FTerrainNoise::SampleFractal(Position, BendOffset, BendSettings);
-			const float BendAmount = BendNoise * Settings.DirectionVariation;
-			const float AcrossCoordinate = FVector2D::DotProduct(Position, Across) + FVector2D::DotProduct(Position, Along) * BendAmount;
+				const float BendNoise = FTerrainNoise::SampleFractal(Position, BendOffset, BendSettings);
+				const float BendAmount = BendNoise * Settings.DirectionVariation;
+				const float AcrossCoordinate = FVector2D::DotProduct(Position, Across) + FVector2D::DotProduct(Position, Along) * BendAmount;
 
-			const float UpliftBand = BuildBand(AcrossCoordinate, Settings.UpliftSpacing, Settings.UpliftWidth);
-			OutStructure.Uplift[Index] = UpliftBand * Activity;
+				const float UpliftBand = BuildBand(AcrossCoordinate, Settings.UpliftSpacing, Settings.UpliftWidth);
+				OutStructure.Uplift[Index] = UpliftBand * Activity;
 
-			const float ValleyBand = BuildBand(
-				AcrossCoordinate + Settings.LongValleySpacing * 0.5f,
-				Settings.LongValleySpacing,
-				Settings.LongValleyWidth);
-			OutStructure.LongValley[Index] = ValleyBand * Activity;
+				const float ValleyBand = BuildBand(
+					AcrossCoordinate + Settings.LongValleySpacing * 0.5f,
+					Settings.LongValleySpacing,
+					Settings.LongValleyWidth);
+				OutStructure.LongValley[Index] = ValleyBand * Activity;
 
-			const float FaultBend = FTerrainNoise::SampleFractal(Position, FaultBendOffset, BendSettings) * Settings.DirectionVariation;
-			const float FaultCoordinate = FVector2D::DotProduct(Position, FaultAcross) + FVector2D::DotProduct(Position, FaultAlong) * FaultBend;
-			const float FaultBand = BuildBand(FaultCoordinate, Settings.FaultSpacing, Settings.FaultWidth);
-			OutStructure.FaultWeakness[Index] = FaultBand * Activity * FMath::Clamp(Settings.FaultWeakness, 0.0f, 1.0f);
+				const float FaultBend = FTerrainNoise::SampleFractal(Position, FaultBendOffset, BendSettings) * Settings.DirectionVariation;
+				const float FaultCoordinate = FVector2D::DotProduct(Position, FaultAcross) + FVector2D::DotProduct(Position, FaultAlong) * FaultBend;
+				const float FaultBand = BuildBand(FaultCoordinate, Settings.FaultSpacing, Settings.FaultWidth);
+				OutStructure.FaultWeakness[Index] = FaultBand * Activity * FMath::Clamp(Settings.FaultWeakness, 0.0f, 1.0f);
 
-			const float BeddingCoordinate = FVector2D::DotProduct(Position, Across);
-			const float BeddingWave = 0.5f + 0.5f * FMath::Sin(BeddingCoordinate * UE_TWO_PI / FMath::Max(Settings.BeddingSpacing, 1.0f));
-			OutStructure.Bedding[Index] = FMath::Clamp(
-				0.5f + (BeddingWave - 0.5f) * Settings.BeddingContrast,
-				0.0f,
-				1.0f);
+				const float BeddingCoordinate = FVector2D::DotProduct(Position, Across);
+				const float BeddingWave = 0.5f + 0.5f * FMath::Sin(BeddingCoordinate * UE_TWO_PI / FMath::Max(Settings.BeddingSpacing, 1.0f));
+				OutStructure.Bedding[Index] = FMath::Clamp(
+					0.5f + (BeddingWave - 0.5f) * Settings.BeddingContrast,
+					0.0f,
+					1.0f);
+			}
 		}
-	}
+	});
 }
