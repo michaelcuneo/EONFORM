@@ -5,6 +5,7 @@
 #include "DynamicMesh/MeshNormals.h"
 #include "TerrainHeightField.h"
 #include "TerrainNoise.h"
+#include "TerrainShaping.h"
 
 using UE::Geometry::FDynamicMesh3;
 using UE::Geometry::FMeshNormals;
@@ -68,6 +69,12 @@ void ATerrainGeneratorActor::BuildTerrain()
 	BaseSettings.Persistence = Persistence;
 	BaseSettings.Lacunarity = Lacunarity;
 
+	FTerrainFractalNoiseSettings MacroSettings;
+	MacroSettings.Frequency = MacroFrequency;
+	MacroSettings.Octaves = MacroOctaves;
+	MacroSettings.Persistence = 0.5f;
+	MacroSettings.Lacunarity = 2.0f;
+
 	FTerrainFractalNoiseSettings WarpSettings;
 	WarpSettings.Frequency = WarpFrequency;
 	WarpSettings.Octaves = 3;
@@ -81,6 +88,7 @@ void ATerrainGeneratorActor::BuildTerrain()
 	RidgeSettings.Lacunarity = Lacunarity;
 
 	const FVector2D BaseOffset = FTerrainNoise::MakeSeedOffset(Seed, 0);
+	const FVector2D MacroOffset = FTerrainNoise::MakeSeedOffset(Seed, 17);
 	const FVector2D WarpXOffset = FTerrainNoise::MakeSeedOffset(Seed, 101);
 	const FVector2D WarpYOffset = FTerrainNoise::MakeSeedOffset(Seed, 202);
 	const FVector2D RidgeOffset = FTerrainNoise::MakeSeedOffset(Seed, 303);
@@ -103,13 +111,42 @@ void ATerrainGeneratorActor::BuildTerrain()
 			}
 
 			const float BaseHeight = FTerrainNoise::SampleFractal(SamplePosition, BaseOffset, BaseSettings);
-			float Height = BaseHeight;
+			float MacroHeight = 0.0f;
+			float MountainMask = 1.0f;
+
+			if (bEnableMacroShape)
+			{
+				MacroHeight = FTerrainNoise::SampleFractal(SamplePosition, MacroOffset, MacroSettings);
+				MacroHeight = FTerrainShaping::ApplySignedPower(MacroHeight, MacroContrast);
+
+				if (bEnableMountainMask)
+				{
+					MountainMask = FTerrainShaping::BuildMountainMask(
+						MacroHeight,
+						MountainThreshold,
+						MountainTransition);
+				}
+			}
+
+			float Height = BaseHeight * 0.45f;
+
+			if (bEnableMacroShape)
+			{
+				Height += MacroHeight * MacroStrength;
+			}
 
 			if (bEnableRidges && RidgeStrength > 0.0f)
 			{
 				const float Ridge = FTerrainNoise::SampleRidged(SamplePosition, RidgeOffset, RidgeSettings, RidgeSharpness);
 				const float SignedRidge = Ridge * 2.0f - 1.0f;
-				Height = FMath::Lerp(BaseHeight, SignedRidge, RidgeStrength);
+				Height += SignedRidge * RidgeStrength * MountainMask;
+			}
+
+			if (bEnableLowlandFlattening && LowlandStrength > 0.0f)
+			{
+				const float LowlandMask = 1.0f - MountainMask;
+				const float Flattened = FTerrainShaping::ApplySignedPower(Height, LowlandExponent);
+				Height = FMath::Lerp(Height, Flattened, LowlandMask * LowlandStrength);
 			}
 
 			HeightField.At(X, Y) = FMath::Clamp(Height, -1.0f, 1.0f);
@@ -144,7 +181,6 @@ void ATerrainGeneratorActor::BuildTerrain()
 			const int32 C = VertexIds[(Y + 1) * SafeResolution + X];
 			const int32 D = VertexIds[(Y + 1) * SafeResolution + X + 1];
 
-			// Wind triangles so the terrain's visible/front face points upward in Unreal.
 			Mesh.AppendTriangle(A, D, B, 0);
 			Mesh.AppendTriangle(A, C, D, 0);
 		}
