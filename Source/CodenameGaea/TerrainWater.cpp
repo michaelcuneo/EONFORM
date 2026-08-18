@@ -267,7 +267,7 @@ namespace
 				continue;
 			}
 
-			LoopKeys.Pop(false);
+			LoopKeys.Pop(EAllowShrinking::No);
 			TArray<FVector2D> Loop;
 			Loop.Reserve(LoopKeys.Num());
 			for (const int32 Key : LoopKeys)
@@ -309,7 +309,7 @@ namespace
 		if (Reduced.Num() >= 3
 			&& FVector2D::DistSquared(Reduced[0], Reduced.Last()) < MinimumSpacingSquared)
 		{
-			Reduced.Pop(false);
+			Reduced.Pop(EAllowShrinking::No);
 		}
 
 		if (Reduced.Num() >= 3)
