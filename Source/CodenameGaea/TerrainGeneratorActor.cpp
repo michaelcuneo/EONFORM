@@ -3,6 +3,8 @@
 #include "Components/DynamicMeshComponent.h"
 #include "DynamicMesh/DynamicMesh3.h"
 #include "DynamicMesh/MeshNormals.h"
+#include "TerrainBiomes.h"
+#include "TerrainClimate.h"
 #include "TerrainContext.h"
 #include "TerrainErosion.h"
 #include "TerrainGeology.h"
@@ -271,6 +273,15 @@ void ATerrainGeneratorActor::BuildTerrain()
 	FTerrainProcessMasks ProcessMasks;
 	FTerrainGeologyMaps GeologyMaps;
 	FTerrainGeologySettings GeologySettings;
+	FTerrainClimateMaps ClimateMaps;
+	FTerrainClimateSettings ClimateSettings;
+	ClimateSettings.PrevailingWindDirectionDegrees = PrevailingWindDirection;
+	ClimateSettings.BaseTemperatureC = BaseTemperatureC;
+	ClimateSettings.LapseRateCPerKm = TemperatureLapseRate;
+	ClimateSettings.BaseHumidity = BaseHumidity;
+	ClimateSettings.OrographicStrength = OrographicStrength;
+	ClimateSettings.RainShadowStrength = RainShadowStrength;
+	ClimateSettings.MoistureRecovery = MoistureRecovery;
 
 	FTerrainContext::Analyze(
 		HeightField,
@@ -324,6 +335,21 @@ void ATerrainGeneratorActor::BuildTerrain()
 		ThermalTalusAngle,
 		NaturalSettings,
 		ProcessMasks);
+
+	if (bEnableClimate)
+	{
+		FTerrainClimate::Build(HeightField, TerrainContext, HeightScale, ClimateSettings, ClimateMaps);
+		if (ClimateMaps.IsValidFor(HeightField) && ProcessMasks.IsValidFor(HeightField))
+		{
+			for (int32 Index = 0; Index < NumCells; ++Index)
+			{
+				const float ClimateRain = FMath::Lerp(0.3f, 1.35f, ClimateMaps.Precipitation[Index]);
+				const float ClimateEvaporation = FMath::Lerp(0.45f, 1.35f, ClimateMaps.EvaporationPotential[Index]);
+				ProcessMasks.Rainfall[Index] = FMath::Clamp(ProcessMasks.Rainfall[Index] * ClimateRain, 0.0f, 1.0f);
+				ProcessMasks.Evaporation[Index] = FMath::Clamp(ProcessMasks.Evaporation[Index] * ClimateEvaporation, 0.0f, 1.0f);
+			}
+		}
+	}
 
 	FlowAccumulation.Reset();
 	if (bEnableHydraulicErosion && HydraulicIterations > 0)
@@ -385,6 +411,77 @@ void ATerrainGeneratorActor::BuildTerrain()
 				FloodplainSettings,
 				FloodplainMask,
 				WetnessMask);
+		}
+	}
+
+	TemperatureMap.Reset();
+	PrecipitationMap.Reset();
+	HumidityMap.Reset();
+	SnowPotentialMap.Reset();
+	ForestBiomeMask.Reset();
+	GrasslandBiomeMask.Reset();
+	AridBiomeMask.Reset();
+	AlpineBiomeMask.Reset();
+	WetlandBiomeMask.Reset();
+	ExposedRockBiomeMask.Reset();
+	SnowBiomeMask.Reset();
+
+	FTerrainContext::Analyze(
+		HeightField,
+		HeightScale,
+		MountainRegionMask,
+		FoothillRegionMask,
+		PlainsRegionMask,
+		TerrainContext);
+	FTerrainGeology::Build(
+		HeightField,
+		TerrainContext,
+		bHasStructure ? &StructuralMaps : nullptr,
+		Seed,
+		GeologySettings,
+		GeologyMaps);
+
+	if (bEnableClimate)
+	{
+		FTerrainClimate::Build(HeightField, TerrainContext, HeightScale, ClimateSettings, ClimateMaps);
+		if (ClimateMaps.IsValidFor(HeightField))
+		{
+			TemperatureMap = ClimateMaps.TemperatureC;
+			PrecipitationMap = ClimateMaps.Precipitation;
+			HumidityMap = ClimateMaps.Humidity;
+			SnowPotentialMap = ClimateMaps.SnowPotential;
+		}
+	}
+
+	if (bEnableBiomes && ClimateMaps.IsValidFor(HeightField) && GeologyMaps.IsValidFor(HeightField))
+	{
+		FTerrainBiomeSettings BiomeSettings;
+		BiomeSettings.ForestMoistureThreshold = ForestMoistureThreshold;
+		BiomeSettings.ForestMaxSlopeDegrees = ForestMaxSlope;
+		BiomeSettings.AridMoistureThreshold = AridMoistureThreshold;
+		BiomeSettings.AlpineElevationThreshold = AlpineElevationThreshold;
+		BiomeSettings.WetlandWetnessThreshold = WetlandWetnessThreshold;
+
+		FTerrainBiomeMaps BiomeMaps;
+		FTerrainBiomes::Build(
+			HeightField,
+			TerrainContext,
+			ClimateMaps,
+			GeologyMaps,
+			WetnessMask,
+			RiverMask,
+			BiomeSettings,
+			BiomeMaps);
+
+		if (BiomeMaps.IsValidFor(HeightField))
+		{
+			ForestBiomeMask = MoveTemp(BiomeMaps.Forest);
+			GrasslandBiomeMask = MoveTemp(BiomeMaps.Grassland);
+			AridBiomeMask = MoveTemp(BiomeMaps.Arid);
+			AlpineBiomeMask = MoveTemp(BiomeMaps.Alpine);
+			WetlandBiomeMask = MoveTemp(BiomeMaps.Wetland);
+			ExposedRockBiomeMask = MoveTemp(BiomeMaps.ExposedRock);
+			SnowBiomeMask = MoveTemp(BiomeMaps.Snow);
 		}
 	}
 
