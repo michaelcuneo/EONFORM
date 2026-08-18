@@ -18,10 +18,15 @@ ATerrainGeneratorActor::ATerrainGeneratorActor()
 
 	TerrainMesh = CreateDefaultSubobject<UDynamicMeshComponent>(TEXT("TerrainMesh"));
 	SetRootComponent(TerrainMesh);
-
 	TerrainMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	TerrainMesh->SetGenerateOverlapEvents(false);
 	TerrainMesh->SetCastShadow(true);
+
+	RiverWaterMesh = CreateDefaultSubobject<UDynamicMeshComponent>(TEXT("RiverWaterMesh"));
+	RiverWaterMesh->SetupAttachment(TerrainMesh);
+	RiverWaterMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	RiverWaterMesh->SetGenerateOverlapEvents(false);
+	RiverWaterMesh->SetCastShadow(false);
 }
 
 void ATerrainGeneratorActor::OnConstruction(const FTransform& Transform)
@@ -51,7 +56,7 @@ void ATerrainGeneratorActor::RandomizeSeed()
 
 void ATerrainGeneratorActor::BuildTerrain()
 {
-	if (!TerrainMesh)
+	if (!TerrainMesh || !RiverWaterMesh)
 	{
 		return;
 	}
@@ -181,6 +186,10 @@ void ATerrainGeneratorActor::BuildTerrain()
 	}
 
 	RiverMask.Reset();
+	FloodplainMask.Reset();
+	WetnessMask.Reset();
+	RiverNetworkEdges.Reset();
+
 	if (bEnableRivers && RiverDepth > 0.0f && FlowAccumulation.Num() == HeightField.Data.Num())
 	{
 		FTerrainRiverSettings RiverSettings;
@@ -194,6 +203,20 @@ void ATerrainGeneratorActor::BuildTerrain()
 		if (FTerrainHydrology::BuildRiverMask(HeightField, FlowAccumulation, RiverSettings, RiverMask))
 		{
 			FTerrainHydrology::CarveRivers(HeightField, HeightScale, RiverSettings, RiverMask);
+			FTerrainHydrology::BuildRiverNetwork(HeightField, FlowAccumulation, RiverSettings, RiverNetworkEdges);
+
+			FTerrainFloodplainSettings FloodplainSettings;
+			FloodplainSettings.Width = FloodplainWidth;
+			FloodplainSettings.MaxRise = FloodplainMaxRise;
+			FloodplainSettings.Falloff = FloodplainFalloff;
+			FloodplainSettings.WetnessStrength = WetnessStrength;
+			FTerrainHydrology::BuildFloodplainMasks(
+				HeightField,
+				RiverMask,
+				HeightScale,
+				FloodplainSettings,
+				FloodplainMask,
+				WetnessMask);
 		}
 	}
 
@@ -232,4 +255,70 @@ void ATerrainGeneratorActor::BuildTerrain()
 
 	FMeshNormals::QuickComputeVertexNormals(Mesh);
 	TerrainMesh->SetMesh(MoveTemp(Mesh));
+
+	BuildRiverWaterMesh(HeightField, CellSize, HalfWorldSize);
+}
+
+void ATerrainGeneratorActor::BuildRiverWaterMesh(
+	const FTerrainHeightField& HeightField,
+	float CellSize,
+	float HalfWorldSize)
+{
+	FDynamicMesh3 WaterMesh(true, false, false, false);
+
+	if (!bEnableRivers || !bShowRiverWater || RiverMask.Num() != HeightField.Data.Num())
+	{
+		RiverWaterMesh->SetMesh(MoveTemp(WaterMesh));
+		return;
+	}
+
+	const int32 SafeResolution = HeightField.Resolution;
+	const float BaseZOffset = bCenterHeightfield ? 0.0f : HeightScale;
+	const float MaskThreshold = FMath::Clamp(RiverWaterMaskThreshold, 0.0f, 1.0f);
+
+	TArray<int32> WaterVertexIds;
+	WaterVertexIds.SetNumUninitialized(SafeResolution * SafeResolution);
+
+	for (int32 Y = 0; Y < SafeResolution; ++Y)
+	{
+		for (int32 X = 0; X < SafeResolution; ++X)
+		{
+			const float LocalX = static_cast<float>(X) * CellSize - HalfWorldSize;
+			const float LocalY = static_cast<float>(Y) * CellSize - HalfWorldSize;
+			const float LocalZ = HeightField.At(X, Y) * HeightScale + BaseZOffset + RiverWaterOffset;
+			WaterVertexIds[HeightField.Index(X, Y)] = WaterMesh.AppendVertex(FVector3d(LocalX, LocalY, LocalZ));
+		}
+	}
+
+	for (int32 Y = 0; Y < SafeResolution - 1; ++Y)
+	{
+		for (int32 X = 0; X < SafeResolution - 1; ++X)
+		{
+			const int32 IA = HeightField.Index(X, Y);
+			const int32 IB = HeightField.Index(X + 1, Y);
+			const int32 IC = HeightField.Index(X, Y + 1);
+			const int32 ID = HeightField.Index(X + 1, Y + 1);
+
+			const float CellMask = (RiverMask[IA] + RiverMask[IB] + RiverMask[IC] + RiverMask[ID]) * 0.25f;
+			if (CellMask < MaskThreshold)
+			{
+				continue;
+			}
+
+			const int32 A = WaterVertexIds[IA];
+			const int32 B = WaterVertexIds[IB];
+			const int32 C = WaterVertexIds[IC];
+			const int32 D = WaterVertexIds[ID];
+
+			WaterMesh.AppendTriangle(A, D, B, 0);
+			WaterMesh.AppendTriangle(A, C, D, 0);
+		}
+	}
+
+	if (WaterMesh.TriangleCount() > 0)
+	{
+		FMeshNormals::QuickComputeVertexNormals(WaterMesh);
+	}
+
+	RiverWaterMesh->SetMesh(MoveTemp(WaterMesh));
 }
