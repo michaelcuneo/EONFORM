@@ -1,5 +1,7 @@
 #include "TerrainErosion.h"
 
+#include "TerrainParallel.h"
+
 namespace
 {
 	float MaskValue(const TArray<float>* Mask, int32 Index, int32 ExpectedNum)
@@ -106,10 +108,13 @@ void FTerrainErosion::ApplyThermal(
 			}
 		}
 
-		for (int32 Index = 0; Index < NumCells; ++Index)
+		TerrainParallel::ForRange(TEXT("TerrainThermalApply"), NumCells, 65536, [&](int32 Start, int32 End)
 		{
-			HeightField.Data[Index] += Delta[Index];
-		}
+			for (int32 Index = Start; Index < End; ++Index)
+			{
+				HeightField.Data[Index] += Delta[Index];
+			}
+		});
 	}
 }
 
@@ -168,10 +173,13 @@ void FTerrainErosion::ApplyHydraulic(
 
 	for (int32 Iteration = 0; Iteration < Settings.Iterations; ++Iteration)
 	{
-		for (int32 Index = 0; Index < NumCells; ++Index)
+		TerrainParallel::ForRange(TEXT("TerrainHydraulicRain"), NumCells, 65536, [&](int32 Start, int32 End)
 		{
-			Water[Index] += Rainfall * MaskValue(RainfallMask, Index, NumCells);
-		}
+			for (int32 Index = Start; Index < End; ++Index)
+			{
+				Water[Index] += Rainfall * MaskValue(RainfallMask, Index, NumCells);
+			}
+		});
 
 		FMemory::Memzero(NextWater.GetData(), NumCells * sizeof(float));
 		FMemory::Memzero(NextSediment.GetData(), NumCells * sizeof(float));
@@ -288,11 +296,14 @@ void FTerrainErosion::ApplyHydraulic(
 			}
 		}
 
-		for (int32 Index = 0; Index < NumCells; ++Index)
+		TerrainParallel::ForRange(TEXT("TerrainHydraulicEvaporation"), NumCells, 65536, [&](int32 Start, int32 End)
 		{
-			const float LocalEvaporation = Evaporation * MaskValue(EvaporationMask, Index, NumCells);
-			Water[Index] *= 1.0f - FMath::Clamp(LocalEvaporation, 0.0f, 1.0f);
-		}
+			for (int32 Index = Start; Index < End; ++Index)
+			{
+				const float LocalEvaporation = Evaporation * MaskValue(EvaporationMask, Index, NumCells);
+				Water[Index] *= 1.0f - FMath::Clamp(LocalEvaporation, 0.0f, 1.0f);
+			}
+		});
 	}
 
 	if (OutFlowAccumulation)
