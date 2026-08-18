@@ -30,9 +30,11 @@ public:
 		const FTerrainRiverSettings& Settings,
 		TArray<float>& OutRiverMask);
 
+	// Builds visible river edges from the authoritative drainage receiver graph.
 	static void BuildRiverNetwork(
 		const FTerrainHeightField& HeightField,
 		const TArray<float>& FlowAccumulation,
+		const TArray<int32>& Receiver,
 		const FTerrainRiverSettings& Settings,
 		TArray<FIntPoint>& OutRiverEdges);
 
