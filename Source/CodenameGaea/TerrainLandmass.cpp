@@ -100,36 +100,34 @@ namespace
 			BaseMax = FMath::Max(BaseMax, Value);
 		}
 
-		// Island topology needs a closed simulation-domain boundary condition, but a
-		// rectangular exclusion band imprints the square grid into the coastline. A
-		// soft radial penalty only near the outer domain keeps the generated terrain
-		// as the coastline driver while guaranteeing room for a closed island.
+		// The island must remain closed inside the finite simulation domain, but the
+		// closure mechanism must not become the island shape. Only a thin outer guard
+		// band is biased toward ocean. Everywhere else, the coastline is determined
+		// exclusively by the terrain-derived suitability field and sea-level threshold.
 		if (Settings.bIsland || Settings.bArchipelago)
 		{
 			const float Span = FMath::Max(BaseMax - BaseMin, 0.001f);
-			const float Coverage = FMath::Clamp(Settings.LandCoverage, 0.05f, 0.85f);
-			const float TargetRadius = FMath::Clamp(
-				FMath::Sqrt((Coverage * 4.0f) / UE_PI),
-				0.38f,
-				0.90f);
-			const float FadeStart = FMath::Clamp(TargetRadius + 0.035f, 0.52f, 0.92f);
-			const float FadeEnd = 0.992f;
-			const float FadeSpan = FMath::Max(FadeEnd - FadeStart, 0.01f);
-			const float PenaltyStrength = Span * 1.9f;
-			const float Denominator = FMath::Max(static_cast<float>(Resolution - 1), 1.0f);
+			const int32 GuardCells = FMath::Clamp(
+				FMath::RoundToInt(static_cast<float>(Resolution - 1) * 0.025f),
+				2,
+				FMath::Max(2, Resolution / 16));
+			const float GuardStrength = Span * 1.25f;
 
 			for (int32 Y = 0; Y < Resolution; ++Y)
 			{
-				const float NY = static_cast<float>(Y) / Denominator * 2.0f - 1.0f;
 				for (int32 X = 0; X < Resolution; ++X)
 				{
-					const float NX = static_cast<float>(X) / Denominator * 2.0f - 1.0f;
-					const float Radius01 = FMath::Sqrt(NX * NX + NY * NY);
-					const float Edge = SmoothStep01((Radius01 - FadeStart) / FadeSpan);
-					if (Edge > UE_SMALL_NUMBER)
+					const int32 DistanceToEdge = FMath::Min(
+						FMath::Min(X, Resolution - 1 - X),
+						FMath::Min(Y, Resolution - 1 - Y));
+					if (DistanceToEdge >= GuardCells)
 					{
-						OutSuitability[Y * Resolution + X] -= Edge * PenaltyStrength;
+						continue;
 					}
+
+					const float EdgeT = 1.0f - static_cast<float>(DistanceToEdge) / static_cast<float>(GuardCells);
+					const float EdgeWeight = SmoothStep01(EdgeT);
+					OutSuitability[Y * Resolution + X] -= EdgeWeight * GuardStrength;
 				}
 			}
 		}
