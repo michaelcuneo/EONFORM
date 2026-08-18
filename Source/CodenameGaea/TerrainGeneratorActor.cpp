@@ -5,6 +5,7 @@
 #include "DynamicMesh/MeshNormals.h"
 #include "TerrainContext.h"
 #include "TerrainErosion.h"
+#include "TerrainGeology.h"
 #include "TerrainHeightField.h"
 #include "TerrainHydrology.h"
 #include "TerrainNoise.h"
@@ -219,6 +220,9 @@ void ATerrainGeneratorActor::BuildTerrain()
 
 	FTerrainContextMaps TerrainContext;
 	FTerrainProcessMasks ProcessMasks;
+	FTerrainGeologyMaps GeologyMaps;
+	FTerrainGeologySettings GeologySettings;
+
 	FTerrainContext::Analyze(
 		HeightField,
 		HeightScale,
@@ -226,6 +230,7 @@ void ATerrainGeneratorActor::BuildTerrain()
 		FoothillRegionMask,
 		PlainsRegionMask,
 		TerrainContext);
+	FTerrainGeology::Build(HeightField, TerrainContext, Seed, GeologySettings, GeologyMaps);
 	FTerrainContext::BuildProcessMasks(
 		TerrainContext,
 		HeightField,
@@ -240,7 +245,8 @@ void ATerrainGeneratorActor::BuildTerrain()
 		ThermalSettings.TalusAngleDegrees = ThermalTalusAngle;
 		ThermalSettings.Strength = ThermalStrength;
 		const TArray<float>* ThermalMask = ProcessMasks.IsValidFor(HeightField) ? &ProcessMasks.Thermal : nullptr;
-		FTerrainErosion::ApplyThermal(HeightField, HeightScale, ThermalSettings, ThermalMask);
+		const TArray<float>* Hardness = GeologyMaps.IsValidFor(HeightField) ? &GeologyMaps.RockHardness : nullptr;
+		FTerrainErosion::ApplyThermal(HeightField, HeightScale, ThermalSettings, ThermalMask, Hardness);
 	}
 
 	// Re-read the terrain after thermal movement before deciding where water processes act.
@@ -251,6 +257,7 @@ void ATerrainGeneratorActor::BuildTerrain()
 		FoothillRegionMask,
 		PlainsRegionMask,
 		TerrainContext);
+	FTerrainGeology::Build(HeightField, TerrainContext, Seed, GeologySettings, GeologyMaps);
 	FTerrainContext::BuildProcessMasks(
 		TerrainContext,
 		HeightField,
@@ -272,6 +279,7 @@ void ATerrainGeneratorActor::BuildTerrain()
 		HydraulicSettings.MinimumSlope = HydraulicMinimumSlope;
 
 		const bool bHasProcessMasks = ProcessMasks.IsValidFor(HeightField);
+		const bool bHasGeology = GeologyMaps.IsValidFor(HeightField);
 		FTerrainErosion::ApplyHydraulic(
 			HeightField,
 			HeightScale,
@@ -280,7 +288,9 @@ void ATerrainGeneratorActor::BuildTerrain()
 			bHasProcessMasks ? &ProcessMasks.Rainfall : nullptr,
 			bHasProcessMasks ? &ProcessMasks.HydraulicErosion : nullptr,
 			bHasProcessMasks ? &ProcessMasks.Deposition : nullptr,
-			bHasProcessMasks ? &ProcessMasks.Evaporation : nullptr);
+			bHasProcessMasks ? &ProcessMasks.Evaporation : nullptr,
+			bHasGeology ? &GeologyMaps.RockHardness : nullptr,
+			bHasGeology ? &GeologyMaps.SoilDepth : nullptr);
 	}
 
 	RiverMask.Reset();
