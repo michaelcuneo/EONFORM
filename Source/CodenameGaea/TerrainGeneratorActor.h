@@ -58,6 +58,29 @@ private:
 	UPROPERTY(EditAnywhere, Category="Terrain|Base")
 	bool bCenterHeightfield = true;
 
-	float SampleFractalNoise(float WorldX, float WorldY) const;
+	UPROPERTY(EditAnywhere, Category="Terrain|Warp")
+	bool bEnableDomainWarp = true;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Warp", meta=(EditCondition="bEnableDomainWarp", ClampMin="0.000001", ClampMax="1.0", UIMin="0.00005", UIMax="0.003"))
+	float WarpFrequency = 0.00035f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Warp", meta=(EditCondition="bEnableDomainWarp", ClampMin="0.0", UIMin="0.0", UIMax="25000.0", Units="cm"))
+	float WarpStrength = 9000.0f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Mountains")
+	bool bEnableRidges = true;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Mountains", meta=(EditCondition="bEnableRidges", ClampMin="0.000001", ClampMax="1.0", UIMin="0.00005", UIMax="0.005"))
+	float RidgeFrequency = 0.0007f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Mountains", meta=(EditCondition="bEnableRidges", ClampMin="1", ClampMax="12", UIMin="1", UIMax="10"))
+	int32 RidgeOctaves = 5;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Mountains", meta=(EditCondition="bEnableRidges", ClampMin="0.0", ClampMax="1.0", UIMin="0.0", UIMax="1.0"))
+	float RidgeStrength = 0.7f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Mountains", meta=(EditCondition="bEnableRidges", ClampMin="0.25", ClampMax="8.0", UIMin="0.5", UIMax="4.0"))
+	float RidgeSharpness = 1.6f;
+
 	void BuildTerrain();
 };
