@@ -14,6 +14,7 @@
 #include "TerrainNoise.h"
 #include "TerrainShaping.h"
 #include "TerrainStructure.h"
+#include "TerrainWater.h"
 
 using UE::Geometry::FDynamicMesh3;
 using UE::Geometry::FMeshNormals;
@@ -494,6 +495,8 @@ void ATerrainGeneratorActor::BuildTerrain()
 			}
 		}
 	}
+
+	FTerrainWater::UpdateOceanFromZeroContour(HeightField, GetActorTransform(), GetWorld());
 
 	FDynamicMesh3 Mesh(true, false, false, false);
 	TArray<int32> VertexIds;
