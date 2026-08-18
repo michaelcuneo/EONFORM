@@ -12,8 +12,9 @@ struct FTerrainLandmassSettings
 	float CoastScale = 32000.0f;
 	float CoastIrregularity = 0.62f;
 	float LandCoverage = 0.5f;
-	float EdgeOceanMargin = 0.14f;
 
+	// These describe/classify the negative half of the signed DEM. They do not
+	// rescale or overwrite the generated elevation field.
 	float ShelfWidth = 1500.0f;
 	float ShelfDepth = 220.0f;
 	float ContinentalSlopeWidth = 4000.0f;
@@ -64,8 +65,7 @@ struct FTerrainLandmassMaps
 class FTerrainLandmass
 {
 public:
-	// Initializes output maps only. This function is deliberately height-neutral so
-	// the existing terrain generator remains unchanged until the terrain actually exists.
+	// Height-neutral initialization. The natural terrain generator runs unchanged.
 	static void Build(
 		const FTerrainHeightField& HeightField,
 		const FTerrainStructuralMaps* Structure,
@@ -73,9 +73,9 @@ public:
 		const FTerrainLandmassSettings& Settings,
 		FTerrainLandmassMaps& OutMaps);
 
-	// The first call composes the signed DEM from the already-generated natural terrain:
-	// positive land, sea level at 0, and negative bathymetry extending outward from
-	// the terrain-derived coastline. Later calls only refresh classifications.
+	// The first call establishes sea level as a datum through the existing terrain.
+	// It never normalizes land or ocean to the available numeric range. Later calls
+	// are classification-only.
 	static void RefreshSeaLevelClassification(
 		FTerrainHeightField& HeightField,
 		float HeightScale,
