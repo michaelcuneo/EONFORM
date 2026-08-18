@@ -89,9 +89,49 @@ namespace
 
 		const float DetailBlend = FMath::Lerp(0.06f, 0.24f, FMath::Clamp(Settings.CoastIrregularity, 0.0f, 1.0f));
 		OutSuitability.SetNumUninitialized(HeightField.Data.Num());
+
+		float BaseMin = LargeDistance;
+		float BaseMax = -LargeDistance;
 		for (int32 Index = 0; Index < HeightField.Data.Num(); ++Index)
 		{
-			OutSuitability[Index] = FMath::Lerp(SmoothB[Index], HeightField.Data[Index], DetailBlend);
+			const float Value = FMath::Lerp(SmoothB[Index], HeightField.Data[Index], DetailBlend);
+			OutSuitability[Index] = Value;
+			BaseMin = FMath::Min(BaseMin, Value);
+			BaseMax = FMath::Max(BaseMax, Value);
+		}
+
+		// Island topology needs a closed simulation-domain boundary condition, but a
+		// rectangular exclusion band imprints the square grid into the coastline. A
+		// soft radial penalty only near the outer domain keeps the generated terrain
+		// as the coastline driver while guaranteeing room for a closed island.
+		if (Settings.bIsland || Settings.bArchipelago)
+		{
+			const float Span = FMath::Max(BaseMax - BaseMin, 0.001f);
+			const float Coverage = FMath::Clamp(Settings.LandCoverage, 0.05f, 0.85f);
+			const float TargetRadius = FMath::Clamp(
+				FMath::Sqrt((Coverage * 4.0f) / UE_PI),
+				0.38f,
+				0.90f);
+			const float FadeStart = FMath::Clamp(TargetRadius + 0.035f, 0.52f, 0.92f);
+			const float FadeEnd = 0.992f;
+			const float FadeSpan = FMath::Max(FadeEnd - FadeStart, 0.01f);
+			const float PenaltyStrength = Span * 1.9f;
+			const float Denominator = FMath::Max(static_cast<float>(Resolution - 1), 1.0f);
+
+			for (int32 Y = 0; Y < Resolution; ++Y)
+			{
+				const float NY = static_cast<float>(Y) / Denominator * 2.0f - 1.0f;
+				for (int32 X = 0; X < Resolution; ++X)
+				{
+					const float NX = static_cast<float>(X) / Denominator * 2.0f - 1.0f;
+					const float Radius01 = FMath::Sqrt(NX * NX + NY * NY);
+					const float Edge = SmoothStep01((Radius01 - FadeStart) / FadeSpan);
+					if (Edge > UE_SMALL_NUMBER)
+					{
+						OutSuitability[Y * Resolution + X] -= Edge * PenaltyStrength;
+					}
+				}
+			}
 		}
 	}
 
@@ -233,7 +273,7 @@ namespace
 		float BestThreshold = (MinValue + MaxValue) * 0.5f;
 		TArray<uint8> BestMask;
 
-		constexpr int32 ThresholdSamples = 72;
+		constexpr int32 ThresholdSamples = 160;
 		for (int32 Sample = 0; Sample < ThresholdSamples; ++Sample)
 		{
 			const float T = static_cast<float>(Sample) / static_cast<float>(ThresholdSamples - 1);
