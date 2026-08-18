@@ -96,17 +96,19 @@ bool FTerrainHydrology::BuildRiverMask(
 void FTerrainHydrology::BuildRiverNetwork(
 	const FTerrainHeightField& HeightField,
 	const TArray<float>& FlowAccumulation,
+	const TArray<int32>& Receiver,
 	const FTerrainRiverSettings& Settings,
 	TArray<FIntPoint>& OutRiverEdges)
 {
 	OutRiverEdges.Reset();
 
-	if (!HeightField.IsValid() || FlowAccumulation.Num() != HeightField.Data.Num())
+	if (!HeightField.IsValid()
+		|| FlowAccumulation.Num() != HeightField.Data.Num()
+		|| Receiver.Num() != HeightField.Data.Num())
 	{
 		return;
 	}
 
-	const int32 Resolution = HeightField.Resolution;
 	float MaxLogFlow = 0.0f;
 	TArray<float> LogFlow;
 	LogFlow.SetNumZeroed(FlowAccumulation.Num());
@@ -122,47 +124,19 @@ void FTerrainHydrology::BuildRiverNetwork(
 		return;
 	}
 
-	static const FIntPoint Neighbors[] = {
-		FIntPoint(-1, 0), FIntPoint(1, 0),
-		FIntPoint(0, -1), FIntPoint(0, 1),
-		FIntPoint(-1, -1), FIntPoint(1, -1),
-		FIntPoint(-1, 1), FIntPoint(1, 1)
-	};
-
 	const float Threshold = FMath::Clamp(Settings.FlowThreshold, 0.0f, 1.0f);
-
-	for (int32 Y = 1; Y < Resolution - 1; ++Y)
+	for (int32 Index = 0; Index < FlowAccumulation.Num(); ++Index)
 	{
-		for (int32 X = 1; X < Resolution - 1; ++X)
+		if (HeightField.Data[Index] < 0.0f)
 		{
-			const int32 Index = HeightField.Index(X, Y);
-			const float Flow = LogFlow[Index] / MaxLogFlow;
-			if (Flow < Threshold)
-			{
-				continue;
-			}
+			continue;
+		}
 
-			int32 BestNeighborIndex = INDEX_NONE;
-			float BestHeight = HeightField.Data[Index];
-
-			for (const FIntPoint& Offset : Neighbors)
-			{
-				const int32 NX = X + Offset.X;
-				const int32 NY = Y + Offset.Y;
-				const int32 NeighborIndex = HeightField.Index(NX, NY);
-				const float NeighborHeight = HeightField.Data[NeighborIndex];
-
-				if (NeighborHeight < BestHeight)
-				{
-					BestHeight = NeighborHeight;
-					BestNeighborIndex = NeighborIndex;
-				}
-			}
-
-			if (BestNeighborIndex != INDEX_NONE)
-			{
-				OutRiverEdges.Add(FIntPoint(Index, BestNeighborIndex));
-			}
+		const float Flow = LogFlow[Index] / MaxLogFlow;
+		const int32 Downstream = Receiver[Index];
+		if (Flow >= Threshold && Downstream != INDEX_NONE)
+		{
+			OutRiverEdges.Add(FIntPoint(Index, Downstream));
 		}
 	}
 }
