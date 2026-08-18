@@ -7,7 +7,6 @@ namespace
 {
 	constexpr float DiagonalDistance = 1.41421356237f;
 	constexpr float LargeDistance = 1.0e30f;
-	constexpr float MaxNaturalBathymetrySlopeDegrees = 3.0f;
 
 	float SmoothStep01(float Value)
 	{
@@ -271,8 +270,14 @@ void FTerrainLandmass::Build(
 	TArray<float> CoastDistance;
 	BuildCoastDistance(InitialLand, Resolution, CellSize, CoastDistance);
 
-	const float CoastalBlendWidth = FMath::Max(CellSize * 2.0f, Settings.InlandRiseWidth);
-	const float CoastVisualWidth = FMath::Max(CellSize * 2.0f, Settings.ShelfWidth * 0.1f);
+	const float CoastalEmergenceWidth = FMath::Max(CellSize * 2.0f, Settings.InlandRiseWidth);
+	const float CoastVisualWidth = FMath::Max(CellSize * 2.0f, Settings.ShelfWidth * 0.08f);
+	const float DomainBasinDepthCap = FMath::Max(Settings.ShelfDepth * 2.0f, HeightField.WorldSize * 0.03f);
+	const float TargetBasinDepth = FMath::Min(Settings.BasinDepth, DomainBasinDepthCap);
+	const float TargetShelfDepth = FMath::Min(Settings.ShelfDepth, TargetBasinDepth * 0.18f);
+	const float TargetBasinRelief = FMath::Min(Settings.BasinRelief, TargetBasinDepth * 0.18f);
+	const float TargetTrenchDepth = FMath::Min(Settings.TrenchDepth, TargetBasinDepth * 0.35f);
+	const float TargetSeamountHeight = FMath::Min(Settings.SeamountHeight, TargetBasinDepth * 0.55f);
 
 	for (int32 Y = 0; Y < Resolution; ++Y)
 	{
@@ -289,9 +294,9 @@ void FTerrainLandmass::Build(
 
 			if (bLand)
 			{
-				const float Inland = SmoothStep01(Distance / CoastalBlendWidth);
+				const float Inland = SmoothStep01(Distance / CoastalEmergenceWidth);
 				const float Emergence = FMath::Sqrt(FMath::Clamp(Inland, 0.0f, 1.0f));
-				OutMaps.LandInfluence[Index] = Inland;
+				OutMaps.LandInfluence[Index] = 1.0f;
 				OutMaps.BaseElevationCm[Index] = Emergence * Settings.CoastalLandRise;
 				OutMaps.LandMask[Index] = 1.0f;
 				continue;
@@ -300,42 +305,37 @@ void FTerrainLandmass::Build(
 			OutMaps.OceanMask[Index] = 1.0f;
 			const float OffshoreDistance = Distance;
 			const float ShelfVariationNoise = FTerrainNoise::SampleFractal(P, CoastDetailOffset, CoastDetailSettings) * 0.5f + 0.5f;
-			const float IslandShelfScale = (Settings.bIsland || Settings.bArchipelago) ? 0.45f : 1.0f;
-			const float LocalShelfWidth = FMath::Max(
-				CellSize * 2.0f,
-				Settings.ShelfWidth * IslandShelfScale * FMath::Lerp(0.6f, 1.25f, FMath::Clamp(ShelfVariationNoise, 0.0f, 1.0f)));
-			const float LocalSlopeWidth = FMath::Max(
-				CellSize * 3.0f,
-				Settings.ContinentalSlopeWidth * FMath::Lerp(0.8f, 1.2f, FMath::Clamp(ShelfVariationNoise, 0.0f, 1.0f)));
+			const float ShelfVariation = FMath::Lerp(0.65f, 1.25f, FMath::Clamp(ShelfVariationNoise, 0.0f, 1.0f));
+			const float IslandShelfScale = (Settings.bIsland || Settings.bArchipelago) ? 0.25f : 1.0f;
+			const float IslandSlopeScale = (Settings.bIsland || Settings.bArchipelago) ? 0.55f : 1.0f;
+			const float LocalShelfWidth = FMath::Max(CellSize * 2.0f, Settings.ShelfWidth * IslandShelfScale * ShelfVariation);
+			const float LocalSlopeWidth = FMath::Max(CellSize * 3.0f, Settings.ContinentalSlopeWidth * IslandSlopeScale * FMath::Lerp(0.85f, 1.15f, ShelfVariationNoise));
 
 			const float ShelfT = SmoothStep01(OffshoreDistance / LocalShelfWidth);
-			const float SlopeStart = LocalShelfWidth * 0.55f;
-			const float SlopeT = SmoothStep01((OffshoreDistance - SlopeStart) / FMath::Max(LocalSlopeWidth, CellSize));
+			const float SlopeT = SmoothStep01((OffshoreDistance - LocalShelfWidth) / FMath::Max(LocalSlopeWidth, CellSize));
 			const float BasinMask = SmoothStep01(
-				(OffshoreDistance - SlopeStart - LocalSlopeWidth * 0.8f)
-				/ FMath::Max(LocalSlopeWidth * 0.65f, CellSize));
+				(OffshoreDistance - LocalShelfWidth - LocalSlopeWidth * 0.85f)
+				/ FMath::Max(LocalSlopeWidth * 0.35f, CellSize));
 
-			const float ShallowProfile = FMath::Pow(FMath::Clamp(OffshoreDistance / LocalShelfWidth, 0.0f, 1.0f), 0.72f);
-			float Depth = Settings.ShelfDepth * ShallowProfile;
-			Depth = FMath::Lerp(Depth, Settings.BasinDepth, SlopeT);
+			const float ShallowProfile = FMath::Pow(FMath::Clamp(OffshoreDistance / LocalShelfWidth, 0.0f, 1.0f), 0.82f);
+			float Depth = TargetShelfDepth * ShallowProfile;
+			Depth = FMath::Lerp(Depth, TargetBasinDepth, SlopeT);
 
 			const float BasinNoise = FTerrainNoise::SampleFractal(P, BasinOffset, BasinNoiseSettings);
-			Depth += BasinNoise * Settings.BasinRelief * BasinMask;
-
-			const float MaxNaturalDepth = FMath::Tan(FMath::DegreesToRadians(MaxNaturalBathymetrySlopeDegrees)) * OffshoreDistance;
-			Depth = FMath::Clamp(Depth, 0.0f, MaxNaturalDepth);
+			Depth += BasinNoise * TargetBasinRelief * BasinMask;
+			Depth = FMath::Clamp(Depth, 0.0f, TargetBasinDepth + TargetBasinRelief);
 
 			float Trench = 0.0f;
 			if (bHasStructure)
 			{
 				const float DeepWaterSupport = FMath::Clamp(SlopeT * 0.35f + BasinMask, 0.0f, 1.0f);
 				Trench = (*Structure).FaultWeakness[Index] * DeepWaterSupport;
-				Depth += Trench * Settings.TrenchDepth;
+				Depth += Trench * TargetTrenchDepth;
 			}
 
 			const float SeamountNoise = FTerrainNoise::SampleRidged(P, SeamountOffset, SeamountNoiseSettings, 1.8f);
 			const float Seamount = FMath::Pow(FMath::Clamp(SeamountNoise, 0.0f, 1.0f), 3.0f) * BasinMask;
-			Depth = FMath::Max(0.0f, Depth - Seamount * Settings.SeamountHeight);
+			Depth = FMath::Max(0.0f, Depth - Seamount * TargetSeamountHeight);
 
 			OutMaps.BaseElevationCm[Index] = -Depth;
 			OutMaps.BathymetryDepthCm[Index] = Depth;
