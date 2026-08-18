@@ -33,6 +33,7 @@ public:
 	static void BuildRiverNetwork(
 		const FTerrainHeightField& HeightField,
 		const TArray<float>& FlowAccumulation,
+		const TArray<int32>& Receiver,
 		const FTerrainRiverSettings& Settings,
 		TArray<FIntPoint>& OutRiverEdges);
 
