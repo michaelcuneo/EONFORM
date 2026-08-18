@@ -4,7 +4,6 @@
 #include "DynamicMesh/DynamicMesh3.h"
 #include "DynamicMesh/MeshNormals.h"
 #include "HAL/PlatformTime.h"
-#include "Misc/ScopedSlowTask.h"
 #include "TerrainBiomes.h"
 #include "TerrainClimate.h"
 #include "TerrainContext.h"
@@ -29,6 +28,7 @@ DEFINE_LOG_CATEGORY_STATIC(LogTerrainGenerator, Log, All);
 namespace
 {
 	constexpr float TerrainReferenceWorldSizeCm = 50000.0f;
+	constexpr int32 MaxAutomaticEditorResolution = 1025;
 
 	class FTerrainBuildProgress
 	{
@@ -38,14 +38,7 @@ namespace
 			, CellSizeCm(InCellSizeCm)
 			, StartTime(FPlatformTime::Seconds())
 			, StageStartTime(StartTime)
-			, SlowTask(100.0f, FText::FromString(TEXT("Generating terrain...")))
 		{
-#if WITH_EDITOR
-			if (Resolution >= 1025)
-			{
-				SlowTask.MakeDialogDelayed(0.35f, false, false);
-			}
-#endif
 		}
 
 		void Stage(const TCHAR* StageName, float WorkUnits)
@@ -59,32 +52,42 @@ namespace
 				? FMath::Max(Elapsed / Fraction - Elapsed, 0.0)
 				: -1.0;
 
-			const FString EtaText = Remaining >= 0.0
-				? FString::Printf(TEXT("~%.1fs remaining"), Remaining)
-				: FString(TEXT("estimating remaining time"));
-			const FString Message = FString::Printf(
-				TEXT("%s | %.0f%% | %.1fs elapsed | %s | %d x %d | %.2f m/cell"),
-				StageName,
-				CompletedWork,
-				Elapsed,
-				*EtaText,
-				Resolution,
-				Resolution,
-				CellSizeCm / 100.0f);
-
-			SlowTask.EnterProgressFrame(WorkUnits, FText::FromString(Message));
-			SlowTask.ForceRefresh();
+			if (Remaining >= 0.0)
+			{
+				UE_LOG(
+					LogTerrainGenerator,
+					Display,
+					TEXT("Terrain progress: %s | %.0f%% | %.1fs elapsed | ~%.1fs remaining | %d x %d | %.2f m/cell"),
+					StageName,
+					CompletedWork,
+					Elapsed,
+					Remaining,
+					Resolution,
+					Resolution,
+					CellSizeCm / 100.0f);
+			}
+			else
+			{
+				UE_LOG(
+					LogTerrainGenerator,
+					Display,
+					TEXT("Terrain progress: %s | %.0f%% | %.1fs elapsed | estimating remaining time | %d x %d | %.2f m/cell"),
+					StageName,
+					CompletedWork,
+					Elapsed,
+					Resolution,
+					Resolution,
+					CellSizeCm / 100.0f);
+			}
 
 			ActiveStage = StageName;
 			ActiveWork = WorkUnits;
 			StageStartTime = Now;
-			UE_LOG(LogTerrainGenerator, Display, TEXT("Terrain stage: %s"), StageName);
 		}
 
 		double Complete()
 		{
 			FinishActiveStage();
-			SlowTask.ForceRefresh();
 			const double Elapsed = FPlatformTime::Seconds() - StartTime;
 			UE_LOG(LogTerrainGenerator, Display, TEXT("Terrain generation complete in %.2f seconds"), Elapsed);
 			return Elapsed;
@@ -119,7 +122,6 @@ namespace
 		float CompletedWork = 0.0f;
 		float ActiveWork = 0.0f;
 		FString ActiveStage;
-		FScopedSlowTask SlowTask;
 	};
 }
 
@@ -143,7 +145,20 @@ ATerrainGeneratorActor::ATerrainGeneratorActor()
 void ATerrainGeneratorActor::OnConstruction(const FTransform& Transform)
 {
 	Super::OnConstruction(Transform);
-	BuildTerrain();
+
+	if (Resolution <= MaxAutomaticEditorResolution)
+	{
+		BuildTerrain();
+	}
+	else
+	{
+		UE_LOG(
+			LogTerrainGenerator,
+			Display,
+			TEXT("Skipping automatic %d x %d terrain build during construction. Use Regenerate for high-resolution builds."),
+			Resolution,
+			Resolution);
+	}
 }
 
 #if WITH_EDITOR
@@ -151,11 +166,23 @@ void ATerrainGeneratorActor::PostEditChangeProperty(FPropertyChangedEvent& Prope
 {
 	Super::PostEditChangeProperty(PropertyChangedEvent);
 
-	// High-resolution terrain should regenerate when the user commits a value, not
-	// on every intermediate slider/spin-box update while the value is being edited.
-	if ((PropertyChangedEvent.ChangeType & EPropertyChangeType::Interactive) == 0)
+	if ((PropertyChangedEvent.ChangeType & EPropertyChangeType::Interactive) != 0)
+	{
+		return;
+	}
+
+	if (Resolution <= MaxAutomaticEditorResolution)
 	{
 		BuildTerrain();
+	}
+	else
+	{
+		UE_LOG(
+			LogTerrainGenerator,
+			Display,
+			TEXT("Terrain settings changed at %d x %d. Automatic rebuild skipped; click Regenerate when ready."),
+			Resolution,
+			Resolution);
 	}
 }
 #endif
@@ -189,9 +216,6 @@ void ATerrainGeneratorActor::BuildTerrain()
 	const float CellSize = SafeWorldSize / static_cast<float>(SafeResolution - 1);
 	const float HalfWorldSize = SafeWorldSize * 0.5f;
 
-	// Horizontal feature parameters were authored against the original 500 m test
-	// world. Preserve their proportions as WorldSize changes instead of keeping tiny
-	// centimetre-scale ridges/faults inside a many-kilometre regional terrain.
 	const float HorizontalFeatureScale = FMath::Max(SafeWorldSize / TerrainReferenceWorldSizeCm, 0.01f);
 	const float InverseHorizontalFeatureScale = 1.0f / HorizontalFeatureScale;
 	const float ChannelFeatureScale = FMath::Sqrt(HorizontalFeatureScale);
@@ -795,19 +819,51 @@ void ATerrainGeneratorActor::BuildRiverWaterMesh(
 	}
 
 	const int32 SafeResolution = HeightField.Resolution;
+	const int32 NumCells = HeightField.Data.Num();
 	const float MaskThreshold = FMath::Clamp(RiverWaterMaskThreshold, 0.0f, 1.0f);
+
+	TArray<uint8> ActiveVertices;
+	ActiveVertices.SetNumZeroed(NumCells);
+
+	for (int32 Y = 0; Y < SafeResolution - 1; ++Y)
+	{
+		for (int32 X = 0; X < SafeResolution - 1; ++X)
+		{
+			const int32 IA = HeightField.Index(X, Y);
+			const int32 IB = HeightField.Index(X + 1, Y);
+			const int32 IC = HeightField.Index(X, Y + 1);
+			const int32 ID = HeightField.Index(X + 1, Y + 1);
+			const float CellMask = (RiverMask[IA] + RiverMask[IB] + RiverMask[IC] + RiverMask[ID]) * 0.25f;
+			if (CellMask >= MaskThreshold)
+			{
+				ActiveVertices[IA] = 1;
+				ActiveVertices[IB] = 1;
+				ActiveVertices[IC] = 1;
+				ActiveVertices[ID] = 1;
+			}
+		}
+	}
+
 	TArray<int32> WaterVertexIds;
-	WaterVertexIds.SetNumUninitialized(SafeResolution * SafeResolution);
+	WaterVertexIds.Init(INDEX_NONE, NumCells);
+	int32 ActiveVertexCount = 0;
 
 	for (int32 Y = 0; Y < SafeResolution; ++Y)
 	{
 		for (int32 X = 0; X < SafeResolution; ++X)
 		{
+			const int32 Index = HeightField.Index(X, Y);
+			if (ActiveVertices[Index] == 0)
+			{
+				continue;
+			}
+
 			const float LocalX = static_cast<float>(X) * CellSize - HalfWorldSize;
 			const float LocalY = static_cast<float>(Y) * CellSize - HalfWorldSize;
-			const float RiverSurface = HeightField.At(X, Y) * FMath::Max(HeightScale, 1.0f) + RiverWaterOffset;
+			const float RiverSurface = HeightField.Data[Index] * FMath::Max(HeightScale, 1.0f) + RiverWaterOffset;
 			const float LocalZ = FMath::Max(RiverSurface, 0.0f);
-			WaterVertexIds[HeightField.Index(X, Y)] = WaterMesh.AppendVertex(FVector3d(LocalX, LocalY, LocalZ));
+			WaterVertexIds[Index] = WaterMesh.AppendVertex(FVector3d(LocalX, LocalY, LocalZ));
+			++ActiveVertexCount;
 		}
 	}
 
@@ -824,14 +880,27 @@ void ATerrainGeneratorActor::BuildRiverWaterMesh(
 			{
 				continue;
 			}
+
 			const int32 A = WaterVertexIds[IA];
 			const int32 B = WaterVertexIds[IB];
 			const int32 C = WaterVertexIds[IC];
 			const int32 D = WaterVertexIds[ID];
+			if (A == INDEX_NONE || B == INDEX_NONE || C == INDEX_NONE || D == INDEX_NONE)
+			{
+				continue;
+			}
+
 			WaterMesh.AppendTriangle(A, D, B, 0);
 			WaterMesh.AppendTriangle(A, C, D, 0);
 		}
 	}
+
+	UE_LOG(
+		LogTerrainGenerator,
+		Display,
+		TEXT("Sparse river water mesh: %d active vertices from %d terrain samples"),
+		ActiveVertexCount,
+		NumCells);
 
 	if (WaterMesh.TriangleCount() > 0)
 	{
