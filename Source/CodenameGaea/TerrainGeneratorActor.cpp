@@ -63,35 +63,22 @@ void ATerrainGeneratorActor::BuildTerrain()
 	const float CellSize = SafeWorldSize / static_cast<float>(SafeResolution - 1);
 	const float HalfWorldSize = SafeWorldSize * 0.5f;
 
-	FTerrainFractalNoiseSettings BaseSettings;
-	BaseSettings.Frequency = Frequency;
-	BaseSettings.Octaves = Octaves;
-	BaseSettings.Persistence = Persistence;
-	BaseSettings.Lacunarity = Lacunarity;
-
-	FTerrainFractalNoiseSettings MacroSettings;
-	MacroSettings.Frequency = MacroFrequency;
-	MacroSettings.Octaves = MacroOctaves;
-	MacroSettings.Persistence = 0.5f;
-	MacroSettings.Lacunarity = 2.0f;
-
-	FTerrainFractalNoiseSettings WarpSettings;
-	WarpSettings.Frequency = WarpFrequency;
-	WarpSettings.Octaves = 3;
-	WarpSettings.Persistence = 0.5f;
-	WarpSettings.Lacunarity = 2.0f;
-
-	FTerrainFractalNoiseSettings RidgeSettings;
-	RidgeSettings.Frequency = RidgeFrequency;
-	RidgeSettings.Octaves = RidgeOctaves;
-	RidgeSettings.Persistence = Persistence;
-	RidgeSettings.Lacunarity = Lacunarity;
+	FTerrainFractalNoiseSettings BaseSettings{ Frequency, Octaves, Persistence, Lacunarity };
+	FTerrainFractalNoiseSettings MacroSettings{ MacroFrequency, MacroOctaves, 0.5f, 2.0f };
+	FTerrainFractalNoiseSettings WarpSettings{ WarpFrequency, 3, 0.5f, 2.0f };
+	FTerrainFractalNoiseSettings RidgeSettings{ RidgeFrequency, RidgeOctaves, Persistence, Lacunarity };
+	FTerrainFractalNoiseSettings FoothillSettings{ FoothillFrequency, 3, 0.5f, 2.0f };
+	FTerrainFractalNoiseSettings ValleySettings{ ValleyFrequency, 2, 0.5f, 2.0f };
+	FTerrainFractalNoiseSettings PlainsSettings{ PlainsRollingFrequency, 3, 0.5f, 2.0f };
 
 	const FVector2D BaseOffset = FTerrainNoise::MakeSeedOffset(Seed, 0);
 	const FVector2D MacroOffset = FTerrainNoise::MakeSeedOffset(Seed, 17);
 	const FVector2D WarpXOffset = FTerrainNoise::MakeSeedOffset(Seed, 101);
 	const FVector2D WarpYOffset = FTerrainNoise::MakeSeedOffset(Seed, 202);
 	const FVector2D RidgeOffset = FTerrainNoise::MakeSeedOffset(Seed, 303);
+	const FVector2D FoothillOffset = FTerrainNoise::MakeSeedOffset(Seed, 404);
+	const FVector2D ValleyOffset = FTerrainNoise::MakeSeedOffset(Seed, 505);
+	const FVector2D PlainsOffset = FTerrainNoise::MakeSeedOffset(Seed, 606);
 
 	for (int32 Y = 0; Y < SafeResolution; ++Y)
 	{
@@ -121,14 +108,11 @@ void ATerrainGeneratorActor::BuildTerrain()
 
 				if (bEnableMountainMask)
 				{
-					MountainMask = FTerrainShaping::BuildMountainMask(
-						MacroHeight,
-						MountainThreshold,
-						MountainTransition);
+					MountainMask = FTerrainShaping::BuildMountainMask(MacroHeight, MountainThreshold, MountainTransition);
 				}
 			}
 
-			float Height = BaseHeight * 0.45f;
+			float Height = BaseHeight * 0.38f;
 
 			if (bEnableMacroShape)
 			{
@@ -142,11 +126,28 @@ void ATerrainGeneratorActor::BuildTerrain()
 				Height += SignedRidge * RidgeStrength * MountainMask;
 			}
 
-			if (bEnableLowlandFlattening && LowlandStrength > 0.0f)
+			if (bEnableFoothills && FoothillStrength > 0.0f)
 			{
-				const float LowlandMask = 1.0f - MountainMask;
-				const float Flattened = FTerrainShaping::ApplySignedPower(Height, LowlandExponent);
-				Height = FMath::Lerp(Height, Flattened, LowlandMask * LowlandStrength);
+				const float FoothillMask = FTerrainShaping::BuildFoothillMask(MountainMask, FoothillWidth);
+				const float FoothillNoise = FTerrainNoise::SampleFractal(SamplePosition, FoothillOffset, FoothillSettings);
+				Height += FoothillNoise * FoothillStrength * FoothillMask;
+			}
+
+			if (bEnableValleys && ValleyDepth > 0.0f)
+			{
+				const float ValleyNoise = FTerrainNoise::SampleFractal(SamplePosition, ValleyOffset, ValleySettings);
+				const float ValleyMask = FTerrainShaping::BuildValleyMask(ValleyNoise, ValleyWidth, ValleySharpness);
+				const float ValleyLandMask = 1.0f - MountainMask * 0.55f;
+				Height -= ValleyMask * ValleyDepth * ValleyLandMask;
+			}
+
+			if (bEnablePlains && PlainsStrength > 0.0f)
+			{
+				const float PlainsMask = 1.0f - MountainMask;
+				const float FlattenedHeight = FTerrainShaping::ApplySignedPower(Height, PlainsFlattenExponent);
+				const float RollingNoise = FTerrainNoise::SampleFractal(SamplePosition, PlainsOffset, PlainsSettings);
+				const float PlainsTarget = FlattenedHeight + RollingNoise * PlainsRollingStrength;
+				Height = FMath::Lerp(Height, PlainsTarget, PlainsMask * PlainsStrength);
 			}
 
 			HeightField.At(X, Y) = FMath::Clamp(Height, -1.0f, 1.0f);
