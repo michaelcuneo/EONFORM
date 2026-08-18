@@ -23,14 +23,14 @@ struct FTerrainLandmassSettings
 	float SeamountScale = 7000.0f;
 	float SeamountHeight = 1400.0f;
 
-	// Island-scale maps should contain coastal bathymetry, not a full deep-ocean cross section.
-	// Continental mode keeps the requested absolute depths.
+	// Island-scale domains contain coastal bathymetry, not a full deep-ocean section.
 	float IslandBathymetryDepthScale = 0.08f;
 };
 
 struct FTerrainLandmassMaps
 {
 	TArray<float> BaseElevationCm;
+	// Persistent original land membership: 1 = generated landmass, 0 = generated ocean.
 	TArray<float> LandInfluence;
 	TArray<float> LandMask;
 	TArray<float> OceanMask;
@@ -73,7 +73,7 @@ public:
 		FTerrainLandmassMaps& OutMaps);
 
 	static void RefreshSeaLevelClassification(
-		const FTerrainHeightField& HeightField,
+		FTerrainHeightField& HeightField,
 		float HeightScale,
 		const FTerrainLandmassSettings& Settings,
 		FTerrainLandmassMaps& InOutMaps);
