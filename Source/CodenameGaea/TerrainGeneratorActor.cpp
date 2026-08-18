@@ -10,6 +10,7 @@
 #include "TerrainHydrology.h"
 #include "TerrainNoise.h"
 #include "TerrainShaping.h"
+#include "TerrainStructure.h"
 
 using UE::Geometry::FDynamicMesh3;
 using UE::Geometry::FMeshNormals;
@@ -80,6 +81,26 @@ void ATerrainGeneratorActor::BuildTerrain()
 	FoothillRegionMask.SetNumZeroed(NumCells);
 	PlainsRegionMask.SetNumZeroed(NumCells);
 
+	FTerrainStructuralMaps StructuralMaps;
+	FTerrainStructuralSettings StructuralSettings;
+	if (bEnableStructuralGeology)
+	{
+		StructuralSettings.DirectionDegrees = StructureDirection;
+		StructuralSettings.DirectionVariation = StructureCurvature;
+		StructuralSettings.TectonicCoverage = TectonicCoverage;
+		StructuralSettings.UpliftSpacing = UpliftSpacing;
+		StructuralSettings.UpliftWidth = UpliftWidth;
+		StructuralSettings.UpliftStrength = UpliftStrength;
+		StructuralSettings.LongValleySpacing = StructuralValleySpacing;
+		StructuralSettings.LongValleyWidth = StructuralValleyWidth;
+		StructuralSettings.LongValleyDepth = StructuralValleyDepth;
+		StructuralSettings.FaultSpacing = FaultSpacing;
+		StructuralSettings.FaultWidth = FaultWidth;
+		StructuralSettings.FaultAngleOffsetDegrees = FaultAngleOffset;
+		StructuralSettings.FaultWeakness = FaultWeakness;
+		FTerrainStructure::Build(HeightField, Seed, StructuralSettings, StructuralMaps);
+	}
+
 	FTerrainFractalNoiseSettings BaseSettings{ Frequency, Octaves, Persistence, Lacunarity };
 	FTerrainFractalNoiseSettings MacroSettings{ MacroFrequency, MacroOctaves, 0.5f, 2.0f };
 	FTerrainFractalNoiseSettings WarpSettings{ WarpFrequency, 3, 0.5f, 2.0f };
@@ -97,6 +118,11 @@ void ATerrainGeneratorActor::BuildTerrain()
 	const FVector2D ValleyOffset = FTerrainNoise::MakeSeedOffset(Seed, 505);
 	const FVector2D PlainsOffset = FTerrainNoise::MakeSeedOffset(Seed, 606);
 
+	const bool bHasStructure = StructuralMaps.IsValidFor(HeightField);
+	const float StructuralValleyDepthNormalized = HeightScale > UE_SMALL_NUMBER
+		? StructuralValleyDepth / HeightScale
+		: 0.0f;
+
 	for (int32 Y = 0; Y < SafeResolution; ++Y)
 	{
 		for (int32 X = 0; X < SafeResolution; ++X)
@@ -105,6 +131,9 @@ void ATerrainGeneratorActor::BuildTerrain()
 			const FVector2D WorldPosition(
 				static_cast<float>(X) * CellSize - HalfWorldSize,
 				static_cast<float>(Y) * CellSize - HalfWorldSize);
+
+			const float StructuralUplift = bHasStructure ? StructuralMaps.Uplift[Index] : 0.0f;
+			const float StructuralValley = bHasStructure ? StructuralMaps.LongValley[Index] : 0.0f;
 
 			float PreliminaryMacro = 0.0f;
 			float PreliminaryMountain = bEnableMountainMask ? 0.0f : 1.0f;
@@ -122,11 +151,19 @@ void ATerrainGeneratorActor::BuildTerrain()
 						MountainThreshold,
 						MountainTransition);
 				}
+			}
 
-				if (bEnableFoothills)
-				{
-					PreliminaryFoothill = FTerrainShaping::BuildFoothillMask(PreliminaryMountain, FoothillWidth);
-				}
+			if (bHasStructure)
+			{
+				PreliminaryMountain = FMath::Clamp(
+					FMath::Max(PreliminaryMountain, StructuralUplift * 0.78f),
+					0.0f,
+					1.0f);
+			}
+
+			if (bEnableFoothills)
+			{
+				PreliminaryFoothill = FTerrainShaping::BuildFoothillMask(PreliminaryMountain, FoothillWidth);
 			}
 
 			FVector2D SamplePosition = WorldPosition;
@@ -163,6 +200,11 @@ void ATerrainGeneratorActor::BuildTerrain()
 				}
 			}
 
+			if (bHasStructure)
+			{
+				MountainMask = FMath::Clamp(FMath::Max(MountainMask, StructuralUplift * 0.78f), 0.0f, 1.0f);
+			}
+
 			const float FoothillMask = bEnableFoothills
 				? FTerrainShaping::BuildFoothillMask(MountainMask, FoothillWidth)
 				: 0.0f;
@@ -177,6 +219,12 @@ void ATerrainGeneratorActor::BuildTerrain()
 			if (bEnableMacroShape)
 			{
 				Height += MacroHeight * MacroStrength;
+			}
+
+			if (bHasStructure)
+			{
+				Height += StructuralUplift * UpliftStrength;
+				Height -= StructuralValley * StructuralValleyDepthNormalized;
 			}
 
 			if (bEnableRidges && RidgeStrength > 0.0f)
@@ -197,7 +245,8 @@ void ATerrainGeneratorActor::BuildTerrain()
 				const float ValleyNoise = FTerrainNoise::SampleFractal(SamplePosition, ValleyOffset, ValleySettings);
 				const float ValleyMask = FTerrainShaping::BuildValleyMask(ValleyNoise, ValleyWidth, ValleySharpness);
 				const float ValleyLandMask = FMath::Clamp(PlainsMask + FoothillMask * 0.45f, 0.0f, 1.0f);
-				Height -= ValleyMask * ValleyDepth * ValleyLandMask;
+				const float StructuralPreference = bHasStructure ? FMath::Lerp(0.65f, 1.35f, StructuralValley) : 1.0f;
+				Height -= ValleyMask * ValleyDepth * ValleyLandMask * StructuralPreference;
 			}
 
 			if (bEnablePlains && PlainsStrength > 0.0f)
@@ -230,7 +279,13 @@ void ATerrainGeneratorActor::BuildTerrain()
 		FoothillRegionMask,
 		PlainsRegionMask,
 		TerrainContext);
-	FTerrainGeology::Build(HeightField, TerrainContext, Seed, GeologySettings, GeologyMaps);
+	FTerrainGeology::Build(
+		HeightField,
+		TerrainContext,
+		bHasStructure ? &StructuralMaps : nullptr,
+		Seed,
+		GeologySettings,
+		GeologyMaps);
 	FTerrainContext::BuildProcessMasks(
 		TerrainContext,
 		HeightField,
@@ -249,7 +304,6 @@ void ATerrainGeneratorActor::BuildTerrain()
 		FTerrainErosion::ApplyThermal(HeightField, HeightScale, ThermalSettings, ThermalMask, Hardness);
 	}
 
-	// Re-read the terrain after thermal movement before deciding where water processes act.
 	FTerrainContext::Analyze(
 		HeightField,
 		HeightScale,
@@ -257,7 +311,13 @@ void ATerrainGeneratorActor::BuildTerrain()
 		FoothillRegionMask,
 		PlainsRegionMask,
 		TerrainContext);
-	FTerrainGeology::Build(HeightField, TerrainContext, Seed, GeologySettings, GeologyMaps);
+	FTerrainGeology::Build(
+		HeightField,
+		TerrainContext,
+		bHasStructure ? &StructuralMaps : nullptr,
+		Seed,
+		GeologySettings,
+		GeologyMaps);
 	FTerrainContext::BuildProcessMasks(
 		TerrainContext,
 		HeightField,
