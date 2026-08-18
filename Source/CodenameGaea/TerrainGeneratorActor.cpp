@@ -164,6 +164,21 @@ void ATerrainGeneratorActor::BuildTerrain()
 		FTerrainErosion::ApplyThermal(HeightField, HeightScale, ThermalSettings);
 	}
 
+	FlowAccumulation.Reset();
+	if (bEnableHydraulicErosion && HydraulicIterations > 0)
+	{
+		FTerrainHydraulicErosionSettings HydraulicSettings;
+		HydraulicSettings.Iterations = HydraulicIterations;
+		HydraulicSettings.Rainfall = HydraulicRainfall;
+		HydraulicSettings.FlowRate = HydraulicFlowRate;
+		HydraulicSettings.SedimentCapacity = HydraulicSedimentCapacity;
+		HydraulicSettings.ErosionRate = HydraulicErosionRate;
+		HydraulicSettings.DepositionRate = HydraulicDepositionRate;
+		HydraulicSettings.Evaporation = HydraulicEvaporation;
+		HydraulicSettings.MinimumSlope = HydraulicMinimumSlope;
+		FTerrainErosion::ApplyHydraulic(HeightField, HeightScale, HydraulicSettings, &FlowAccumulation);
+	}
+
 	FDynamicMesh3 Mesh(true, false, false, false);
 
 	TArray<int32> VertexIds;
