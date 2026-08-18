@@ -152,6 +152,24 @@ private:
 	UPROPERTY(EditAnywhere, Category="Terrain|Warp", meta=(EditCondition="bEnableDomainWarp", ClampMin="0.0", UIMin="0.0", UIMax="25000.0", Units="cm"))
 	float WarpStrength = 4500.0f;
 
+	UPROPERTY(EditAnywhere, Category="Terrain|Warp", meta=(EditCondition="bEnableDomainWarp", ClampMin="0.0", ClampMax="1.0", UIMin="0.0", UIMax="1.0"))
+	float WarpRegionality = 0.85f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Natural Processes")
+	bool bUseNaturalProcessMasks = true;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Natural Processes", meta=(EditCondition="bUseNaturalProcessMasks", ClampMin="0.0", ClampMax="1.0", UIMin="0.0", UIMax="1.0"))
+	float ThermalRegionality = 0.9f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Natural Processes", meta=(EditCondition="bUseNaturalProcessMasks", ClampMin="0.0", ClampMax="1.0", UIMin="0.0", UIMax="1.0"))
+	float HydraulicRegionality = 0.85f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Natural Processes", meta=(EditCondition="bUseNaturalProcessMasks", ClampMin="0.0", ClampMax="1.0", UIMin="0.0", UIMax="1.0"))
+	float RainfallHighlandBias = 0.65f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Natural Processes", meta=(EditCondition="bUseNaturalProcessMasks", ClampMin="0.0", ClampMax="1.0", UIMin="0.0", UIMax="1.0"))
+	float EvaporationLowlandBias = 0.55f;
+
 	UPROPERTY(EditAnywhere, Category="Terrain|Erosion|Thermal")
 	bool bEnableThermalErosion = true;
 
