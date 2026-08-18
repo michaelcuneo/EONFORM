@@ -15,7 +15,8 @@ public class CodenameGaea : ModuleRules
 			"Engine",
 			"InputCore",
 			"GeometryCore",
-			"GeometryFramework"
+			"GeometryFramework",
+			"Water"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });
