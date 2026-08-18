@@ -5,6 +5,7 @@
 #include "DynamicMesh/MeshNormals.h"
 #include "TerrainErosion.h"
 #include "TerrainHeightField.h"
+#include "TerrainHydrology.h"
 #include "TerrainNoise.h"
 #include "TerrainShaping.h"
 
@@ -177,6 +178,23 @@ void ATerrainGeneratorActor::BuildTerrain()
 		HydraulicSettings.Evaporation = HydraulicEvaporation;
 		HydraulicSettings.MinimumSlope = HydraulicMinimumSlope;
 		FTerrainErosion::ApplyHydraulic(HeightField, HeightScale, HydraulicSettings, &FlowAccumulation);
+	}
+
+	RiverMask.Reset();
+	if (bEnableRivers && RiverDepth > 0.0f && FlowAccumulation.Num() == HeightField.Data.Num())
+	{
+		FTerrainRiverSettings RiverSettings;
+		RiverSettings.FlowThreshold = RiverFlowThreshold;
+		RiverSettings.ThresholdTransition = RiverThresholdTransition;
+		RiverSettings.Width = RiverWidth;
+		RiverSettings.Depth = RiverDepth;
+		RiverSettings.BankFalloff = RiverBankFalloff;
+		RiverSettings.ChannelProfile = RiverChannelProfile;
+
+		if (FTerrainHydrology::BuildRiverMask(HeightField, FlowAccumulation, RiverSettings, RiverMask))
+		{
+			FTerrainHydrology::CarveRivers(HeightField, HeightScale, RiverSettings, RiverMask);
+		}
 	}
 
 	FDynamicMesh3 Mesh(true, false, false, false);
