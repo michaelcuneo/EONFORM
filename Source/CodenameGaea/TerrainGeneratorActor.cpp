@@ -3,6 +3,7 @@
 #include "Components/DynamicMeshComponent.h"
 #include "DynamicMesh/DynamicMesh3.h"
 #include "DynamicMesh/MeshNormals.h"
+#include "TerrainErosion.h"
 #include "TerrainHeightField.h"
 #include "TerrainNoise.h"
 #include "TerrainShaping.h"
@@ -152,6 +153,15 @@ void ATerrainGeneratorActor::BuildTerrain()
 
 			HeightField.At(X, Y) = FMath::Clamp(Height, -1.0f, 1.0f);
 		}
+	}
+
+	if (bEnableThermalErosion && ThermalIterations > 0 && ThermalStrength > 0.0f)
+	{
+		FTerrainThermalErosionSettings ThermalSettings;
+		ThermalSettings.Iterations = ThermalIterations;
+		ThermalSettings.TalusAngleDegrees = ThermalTalusAngle;
+		ThermalSettings.Strength = ThermalStrength;
+		FTerrainErosion::ApplyThermal(HeightField, HeightScale, ThermalSettings);
 	}
 
 	FDynamicMesh3 Mesh(true, false, false, false);
