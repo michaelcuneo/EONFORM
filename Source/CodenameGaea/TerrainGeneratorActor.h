@@ -97,14 +97,47 @@ private:
 	UPROPERTY(EditAnywhere, Category="Terrain|Mountains", meta=(EditCondition="bEnableRidges", ClampMin="0.25", ClampMax="8.0", UIMin="0.5", UIMax="4.0"))
 	float RidgeSharpness = 1.8f;
 
-	UPROPERTY(EditAnywhere, Category="Terrain|Lowlands")
-	bool bEnableLowlandFlattening = true;
+	UPROPERTY(EditAnywhere, Category="Terrain|Foothills")
+	bool bEnableFoothills = true;
 
-	UPROPERTY(EditAnywhere, Category="Terrain|Lowlands", meta=(EditCondition="bEnableLowlandFlattening", ClampMin="0.0", ClampMax="1.0", UIMin="0.0", UIMax="1.0"))
-	float LowlandStrength = 0.35f;
+	UPROPERTY(EditAnywhere, Category="Terrain|Foothills", meta=(EditCondition="bEnableFoothills", ClampMin="0.01", ClampMax="1.0", UIMin="0.05", UIMax="0.8"))
+	float FoothillWidth = 0.55f;
 
-	UPROPERTY(EditAnywhere, Category="Terrain|Lowlands", meta=(EditCondition="bEnableLowlandFlattening", ClampMin="0.25", ClampMax="4.0", UIMin="0.5", UIMax="3.0"))
-	float LowlandExponent = 1.5f;
+	UPROPERTY(EditAnywhere, Category="Terrain|Foothills", meta=(EditCondition="bEnableFoothills", ClampMin="0.0", ClampMax="1.0", UIMin="0.0", UIMax="0.8"))
+	float FoothillStrength = 0.28f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Foothills", meta=(EditCondition="bEnableFoothills", ClampMin="0.000001", ClampMax="1.0", UIMin="0.00002", UIMax="0.001"))
+	float FoothillFrequency = 0.00018f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Valleys")
+	bool bEnableValleys = true;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Valleys", meta=(EditCondition="bEnableValleys", ClampMin="0.000001", ClampMax="1.0", UIMin="0.00001", UIMax="0.0005"))
+	float ValleyFrequency = 0.000085f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Valleys", meta=(EditCondition="bEnableValleys", ClampMin="0.01", ClampMax="1.0", UIMin="0.05", UIMax="0.75"))
+	float ValleyWidth = 0.22f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Valleys", meta=(EditCondition="bEnableValleys", ClampMin="0.25", ClampMax="8.0", UIMin="0.5", UIMax="4.0"))
+	float ValleySharpness = 1.4f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Valleys", meta=(EditCondition="bEnableValleys", ClampMin="0.0", ClampMax="1.0", UIMin="0.0", UIMax="0.6"))
+	float ValleyDepth = 0.16f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Plains")
+	bool bEnablePlains = true;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Plains", meta=(EditCondition="bEnablePlains", ClampMin="0.0", ClampMax="1.0", UIMin="0.0", UIMax="1.0"))
+	float PlainsStrength = 0.55f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Plains", meta=(EditCondition="bEnablePlains", ClampMin="0.25", ClampMax="4.0", UIMin="0.5", UIMax="3.0"))
+	float PlainsFlattenExponent = 1.65f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Plains", meta=(EditCondition="bEnablePlains", ClampMin="0.0", ClampMax="0.5", UIMin="0.0", UIMax="0.25"))
+	float PlainsRollingStrength = 0.08f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Plains", meta=(EditCondition="bEnablePlains", ClampMin="0.000001", ClampMax="1.0", UIMin="0.00001", UIMax="0.001"))
+	float PlainsRollingFrequency = 0.00012f;
 
 	UPROPERTY(EditAnywhere, Category="Terrain|Warp")
 	bool bEnableDomainWarp = true;
