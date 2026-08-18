@@ -14,23 +14,20 @@ struct FTerrainLandmassSettings
 	float LandCoverage = 0.5f;
 	float EdgeOceanMargin = 0.14f;
 
-	float ShelfWidth = 4500.0f;
-	float ShelfDepth = 700.0f;
-	float ContinentalSlopeWidth = 6500.0f;
-	float BasinDepth = 5200.0f;
-	float BasinRelief = 900.0f;
-	float TrenchDepth = 1800.0f;
-	float SeamountScale = 7000.0f;
-	float SeamountHeight = 1400.0f;
-
-	// Island-scale domains contain coastal bathymetry, not a full deep-ocean section.
-	float IslandBathymetryDepthScale = 0.08f;
+	float ShelfWidth = 1500.0f;
+	float ShelfDepth = 220.0f;
+	float ContinentalSlopeWidth = 4000.0f;
+	float BasinDepth = 1800.0f;
+	float BasinRelief = 350.0f;
+	float TrenchDepth = 700.0f;
+	float SeamountScale = 5000.0f;
+	float SeamountHeight = 700.0f;
 };
 
 struct FTerrainLandmassMaps
 {
 	TArray<float> BaseElevationCm;
-	// Persistent original land membership: 1 = generated landmass, 0 = generated ocean.
+	// Persistent generated landmass membership. Final sea-level classification is stored separately.
 	TArray<float> LandInfluence;
 	TArray<float> LandMask;
 	TArray<float> OceanMask;
@@ -69,11 +66,20 @@ public:
 		const FTerrainHeightField& HeightField,
 		const FTerrainStructuralMaps* Structure,
 		int32 Seed,
+		float HeightScale,
 		const FTerrainLandmassSettings& Settings,
 		FTerrainLandmassMaps& OutMaps);
 
-	static void RefreshSeaLevelClassification(
+	// Run once after terrestrial relief is generated. This gently biases the generated
+	// landmass above sea level without clipping or flattening its relief.
+	static void ApplySeaLevelComposition(
 		FTerrainHeightField& HeightField,
+		float HeightScale,
+		const FTerrainLandmassMaps& LandmassMaps);
+
+	// Classification only. This must never reshape terrain.
+	static void RefreshSeaLevelClassification(
+		const FTerrainHeightField& HeightField,
 		float HeightScale,
 		const FTerrainLandmassSettings& Settings,
 		FTerrainLandmassMaps& InOutMaps);
