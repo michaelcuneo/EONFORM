@@ -28,11 +28,16 @@ public:
 	static void ApplyThermal(
 		FTerrainHeightField& HeightField,
 		float HeightScale,
-		const FTerrainThermalErosionSettings& Settings);
+		const FTerrainThermalErosionSettings& Settings,
+		const TArray<float>* ProcessMask = nullptr);
 
 	static void ApplyHydraulic(
 		FTerrainHeightField& HeightField,
 		float HeightScale,
 		const FTerrainHydraulicErosionSettings& Settings,
-		TArray<float>* OutFlowAccumulation = nullptr);
+		TArray<float>* OutFlowAccumulation = nullptr,
+		const TArray<float>* RainfallMask = nullptr,
+		const TArray<float>* ErosionMask = nullptr,
+		const TArray<float>* DepositionMask = nullptr,
+		const TArray<float>* EvaporationMask = nullptr);
 };
