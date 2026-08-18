@@ -1,9 +1,22 @@
 #include "TerrainErosion.h"
 
+namespace
+{
+	float MaskValue(const TArray<float>* Mask, int32 Index, int32 ExpectedNum)
+	{
+		if (!Mask || Mask->Num() != ExpectedNum)
+		{
+			return 1.0f;
+		}
+		return FMath::Clamp((*Mask)[Index], 0.0f, 1.0f);
+	}
+}
+
 void FTerrainErosion::ApplyThermal(
 	FTerrainHeightField& HeightField,
 	float HeightScale,
-	const FTerrainThermalErosionSettings& Settings)
+	const FTerrainThermalErosionSettings& Settings,
+	const TArray<float>* ProcessMask)
 {
 	if (!HeightField.IsValid() || Settings.Iterations <= 0 || Settings.Strength <= 0.0f || HeightScale <= UE_SMALL_NUMBER)
 	{
@@ -11,12 +24,13 @@ void FTerrainErosion::ApplyThermal(
 	}
 
 	const int32 Resolution = HeightField.Resolution;
+	const int32 NumCells = HeightField.Data.Num();
 	const float CellSize = HeightField.WorldSize / static_cast<float>(Resolution - 1);
 	const float TalusHeight = FMath::Tan(FMath::DegreesToRadians(Settings.TalusAngleDegrees)) * CellSize / HeightScale;
 	const float SafeStrength = FMath::Clamp(Settings.Strength, 0.0f, 1.0f);
 
 	TArray<float> Delta;
-	Delta.SetNumZeroed(HeightField.Data.Num());
+	Delta.SetNumZeroed(NumCells);
 
 	static const FIntPoint Neighbors[] = {
 		FIntPoint(-1, 0), FIntPoint(1, 0),
@@ -34,17 +48,20 @@ void FTerrainErosion::ApplyThermal(
 			for (int32 X = 1; X < Resolution - 1; ++X)
 			{
 				const int32 CenterIndex = HeightField.Index(X, Y);
-				const float CenterHeight = HeightField.Data[CenterIndex];
+				const float LocalMask = MaskValue(ProcessMask, CenterIndex, NumCells);
+				if (LocalMask <= UE_SMALL_NUMBER)
+				{
+					continue;
+				}
 
+				const float CenterHeight = HeightField.Data[CenterIndex];
 				float TotalExcess = 0.0f;
 				float ExcessByNeighbor[UE_ARRAY_COUNT(Neighbors)] = {};
 
 				for (int32 NeighborIndex = 0; NeighborIndex < UE_ARRAY_COUNT(Neighbors); ++NeighborIndex)
 				{
 					const FIntPoint Offset = Neighbors[NeighborIndex];
-					const int32 NX = X + Offset.X;
-					const int32 NY = Y + Offset.Y;
-					const float NeighborHeight = HeightField.At(NX, NY);
+					const float NeighborHeight = HeightField.At(X + Offset.X, Y + Offset.Y);
 					const float DistanceScale = (Offset.X != 0 && Offset.Y != 0) ? UE_SQRT_2 : 1.0f;
 					const float LocalTalus = TalusHeight * DistanceScale;
 					const float Excess = CenterHeight - NeighborHeight - LocalTalus;
@@ -61,7 +78,7 @@ void FTerrainErosion::ApplyThermal(
 					continue;
 				}
 
-				const float MaterialToMove = TotalExcess * 0.5f * SafeStrength;
+				const float MaterialToMove = TotalExcess * 0.5f * SafeStrength * LocalMask;
 				Delta[CenterIndex] -= MaterialToMove;
 
 				for (int32 NeighborIndex = 0; NeighborIndex < UE_ARRAY_COUNT(Neighbors); ++NeighborIndex)
@@ -79,7 +96,7 @@ void FTerrainErosion::ApplyThermal(
 			}
 		}
 
-		for (int32 Index = 0; Index < HeightField.Data.Num(); ++Index)
+		for (int32 Index = 0; Index < NumCells; ++Index)
 		{
 			HeightField.Data[Index] += Delta[Index];
 		}
@@ -90,7 +107,11 @@ void FTerrainErosion::ApplyHydraulic(
 	FTerrainHeightField& HeightField,
 	float HeightScale,
 	const FTerrainHydraulicErosionSettings& Settings,
-	TArray<float>* OutFlowAccumulation)
+	TArray<float>* OutFlowAccumulation,
+	const TArray<float>* RainfallMask,
+	const TArray<float>* ErosionMask,
+	const TArray<float>* DepositionMask,
+	const TArray<float>* EvaporationMask)
 {
 	if (!HeightField.IsValid() || Settings.Iterations <= 0 || HeightScale <= UE_SMALL_NUMBER)
 	{
@@ -135,9 +156,9 @@ void FTerrainErosion::ApplyHydraulic(
 
 	for (int32 Iteration = 0; Iteration < Settings.Iterations; ++Iteration)
 	{
-		for (float& Amount : Water)
+		for (int32 Index = 0; Index < NumCells; ++Index)
 		{
-			Amount += Rainfall;
+			Water[Index] += Rainfall * MaskValue(RainfallMask, Index, NumCells);
 		}
 
 		FMemory::Memzero(NextWater.GetData(), NumCells * sizeof(float));
@@ -236,13 +257,15 @@ void FTerrainErosion::ApplyHydraulic(
 
 				if (Sediment[Index] > Capacity)
 				{
-					const float Deposit = (Sediment[Index] - Capacity) * DepositionRate;
+					const float LocalDeposition = DepositionRate * MaskValue(DepositionMask, Index, NumCells);
+					const float Deposit = (Sediment[Index] - Capacity) * LocalDeposition;
 					HeightField.Data[Index] += Deposit;
 					Sediment[Index] -= Deposit;
 				}
 				else if (Sediment[Index] < Capacity)
 				{
-					const float Erode = FMath::Min((Capacity - Sediment[Index]) * ErosionRate, 0.02f);
+					const float LocalErosion = ErosionRate * MaskValue(ErosionMask, Index, NumCells);
+					const float Erode = FMath::Min((Capacity - Sediment[Index]) * LocalErosion, 0.02f);
 					HeightField.Data[Index] -= Erode;
 					Sediment[Index] += Erode;
 				}
@@ -251,7 +274,8 @@ void FTerrainErosion::ApplyHydraulic(
 
 		for (int32 Index = 0; Index < NumCells; ++Index)
 		{
-			Water[Index] *= 1.0f - Evaporation;
+			const float LocalEvaporation = Evaporation * MaskValue(EvaporationMask, Index, NumCells);
+			Water[Index] *= 1.0f - FMath::Clamp(LocalEvaporation, 0.0f, 1.0f);
 		}
 	}
 
