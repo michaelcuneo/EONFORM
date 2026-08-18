@@ -10,6 +10,7 @@
 #include "TerrainGeology.h"
 #include "TerrainHeightField.h"
 #include "TerrainHydrology.h"
+#include "TerrainLandmass.h"
 #include "TerrainNoise.h"
 #include "TerrainShaping.h"
 #include "TerrainStructure.h"
@@ -68,6 +69,7 @@ void ATerrainGeneratorActor::BuildTerrain()
 
 	const int32 SafeResolution = FMath::Clamp(Resolution, 2, 1025);
 	const float SafeWorldSize = FMath::Max(WorldSize, 1.0f);
+	const float SafeHeightScale = FMath::Max(HeightScale, 1.0f);
 
 	FTerrainHeightField HeightField;
 	HeightField.Initialize(SafeResolution, SafeWorldSize);
@@ -103,6 +105,32 @@ void ATerrainGeneratorActor::BuildTerrain()
 		FTerrainStructure::Build(HeightField, Seed, StructuralSettings, StructuralMaps);
 	}
 
+	const bool bHasStructure = StructuralMaps.IsValidFor(HeightField);
+
+	FTerrainLandmassSettings LandmassSettings;
+	LandmassSettings.bIsland = bIsland;
+	LandmassSettings.bArchipelago = bArchipelago;
+	LandmassSettings.CoastScale = CoastScale;
+	LandmassSettings.CoastIrregularity = CoastIrregularity;
+	LandmassSettings.LandCoverage = LandCoverage;
+	LandmassSettings.ShelfWidth = ShelfWidth;
+	LandmassSettings.ShelfDepth = ShelfDepth;
+	LandmassSettings.ContinentalSlopeWidth = ContinentalSlopeWidth;
+	LandmassSettings.BasinDepth = BasinDepth;
+	LandmassSettings.BasinRelief = BasinRelief;
+	LandmassSettings.TrenchDepth = TrenchDepth;
+	LandmassSettings.SeamountScale = SeamountScale;
+	LandmassSettings.SeamountHeight = SeamountHeight;
+
+	FTerrainLandmassMaps LandmassMaps;
+	FTerrainLandmass::Build(
+		HeightField,
+		bHasStructure ? &StructuralMaps : nullptr,
+		Seed,
+		LandmassSettings,
+		LandmassMaps);
+	const bool bHasLandmass = LandmassMaps.IsValidFor(HeightField);
+
 	FTerrainFractalNoiseSettings BaseSettings{ Frequency, Octaves, Persistence, Lacunarity };
 	FTerrainFractalNoiseSettings MacroSettings{ MacroFrequency, MacroOctaves, 0.5f, 2.0f };
 	FTerrainFractalNoiseSettings WarpSettings{ WarpFrequency, 3, 0.5f, 2.0f };
@@ -120,10 +148,7 @@ void ATerrainGeneratorActor::BuildTerrain()
 	const FVector2D ValleyOffset = FTerrainNoise::MakeSeedOffset(Seed, 505);
 	const FVector2D PlainsOffset = FTerrainNoise::MakeSeedOffset(Seed, 606);
 
-	const bool bHasStructure = StructuralMaps.IsValidFor(HeightField);
-	const float StructuralValleyDepthNormalized = HeightScale > UE_SMALL_NUMBER
-		? StructuralValleyDepth / HeightScale
-		: 0.0f;
+	const float StructuralValleyDepthNormalized = StructuralValleyDepth / SafeHeightScale;
 
 	for (int32 Y = 0; Y < SafeResolution; ++Y)
 	{
@@ -134,6 +159,8 @@ void ATerrainGeneratorActor::BuildTerrain()
 				static_cast<float>(X) * CellSize - HalfWorldSize,
 				static_cast<float>(Y) * CellSize - HalfWorldSize);
 
+			const float LandInfluence = bHasLandmass ? LandmassMaps.LandInfluence[Index] : 1.0f;
+			const float BaseElevation = bHasLandmass ? LandmassMaps.BaseElevationCm[Index] / SafeHeightScale : 0.0f;
 			const float StructuralUplift = bHasStructure ? StructuralMaps.Uplift[Index] : 0.0f;
 			const float StructuralValley = bHasStructure ? StructuralMaps.LongValley[Index] : 0.0f;
 
@@ -145,27 +172,21 @@ void ATerrainGeneratorActor::BuildTerrain()
 			{
 				PreliminaryMacro = FTerrainNoise::SampleFractal(WorldPosition, MacroOffset, MacroSettings);
 				PreliminaryMacro = FTerrainShaping::ApplySignedPower(PreliminaryMacro, MacroContrast);
-
 				if (bEnableMountainMask)
 				{
-					PreliminaryMountain = FTerrainShaping::BuildMountainMask(
-						PreliminaryMacro,
-						MountainThreshold,
-						MountainTransition);
+					PreliminaryMountain = FTerrainShaping::BuildMountainMask(PreliminaryMacro, MountainThreshold, MountainTransition);
 				}
 			}
 
 			if (bHasStructure)
 			{
-				PreliminaryMountain = FMath::Clamp(
-					FMath::Max(PreliminaryMountain, StructuralUplift * 0.78f),
-					0.0f,
-					1.0f);
+				PreliminaryMountain = FMath::Clamp(FMath::Max(PreliminaryMountain, StructuralUplift * 0.78f), 0.0f, 1.0f);
 			}
+			PreliminaryMountain *= LandInfluence;
 
 			if (bEnableFoothills)
 			{
-				PreliminaryFoothill = FTerrainShaping::BuildFoothillMask(PreliminaryMountain, FoothillWidth);
+				PreliminaryFoothill = FTerrainShaping::BuildFoothillMask(PreliminaryMountain, FoothillWidth) * LandInfluence;
 			}
 
 			FVector2D SamplePosition = WorldPosition;
@@ -173,21 +194,16 @@ void ATerrainGeneratorActor::BuildTerrain()
 			{
 				const float WarpX = FTerrainNoise::SampleFractal(WorldPosition, WarpXOffset, WarpSettings);
 				const float WarpY = FTerrainNoise::SampleFractal(WorldPosition, WarpYOffset, WarpSettings);
-
 				float WarpMask = 1.0f;
 				if (bUseNaturalProcessMasks && bEnableMacroShape)
 				{
-					const float NaturalWarpRegion = FMath::Clamp(
-						PreliminaryMountain + PreliminaryFoothill * 0.7f + 0.08f,
-						0.0f,
-						1.0f);
+					const float NaturalWarpRegion = FMath::Clamp(PreliminaryMountain + PreliminaryFoothill * 0.7f + 0.08f, 0.0f, 1.0f);
 					WarpMask = FMath::Lerp(1.0f, NaturalWarpRegion, FMath::Clamp(WarpRegionality, 0.0f, 1.0f));
 				}
-
-				SamplePosition += FVector2D(WarpX, WarpY) * (WarpStrength * WarpMask);
+				SamplePosition += FVector2D(WarpX, WarpY) * (WarpStrength * WarpMask * LandInfluence);
 			}
 
-			const float BaseHeight = FTerrainNoise::SampleFractal(SamplePosition, BaseOffset, BaseSettings);
+			const float BaseHeightNoise = FTerrainNoise::SampleFractal(SamplePosition, BaseOffset, BaseSettings);
 			float MacroHeight = PreliminaryMacro;
 			float MountainMask = PreliminaryMountain;
 
@@ -195,72 +211,69 @@ void ATerrainGeneratorActor::BuildTerrain()
 			{
 				MacroHeight = FTerrainNoise::SampleFractal(SamplePosition, MacroOffset, MacroSettings);
 				MacroHeight = FTerrainShaping::ApplySignedPower(MacroHeight, MacroContrast);
-
 				if (bEnableMountainMask)
 				{
 					MountainMask = FTerrainShaping::BuildMountainMask(MacroHeight, MountainThreshold, MountainTransition);
 				}
 			}
-
 			if (bHasStructure)
 			{
 				MountainMask = FMath::Clamp(FMath::Max(MountainMask, StructuralUplift * 0.78f), 0.0f, 1.0f);
 			}
+			MountainMask *= LandInfluence;
 
 			const float FoothillMask = bEnableFoothills
-				? FTerrainShaping::BuildFoothillMask(MountainMask, FoothillWidth)
+				? FTerrainShaping::BuildFoothillMask(MountainMask, FoothillWidth) * LandInfluence
 				: 0.0f;
-			const float PlainsMask = FMath::Clamp((1.0f - MountainMask) * (1.0f - FoothillMask * 0.65f), 0.0f, 1.0f);
+			const float PlainsMask = FMath::Clamp((1.0f - MountainMask) * (1.0f - FoothillMask * 0.65f) * LandInfluence, 0.0f, 1.0f);
 
 			MountainRegionMask[Index] = MountainMask;
 			FoothillRegionMask[Index] = FoothillMask;
 			PlainsRegionMask[Index] = PlainsMask;
 
-			float Height = BaseHeight * 0.38f;
-
+			float TerrestrialRelief = BaseHeightNoise * 0.38f;
 			if (bEnableMacroShape)
 			{
-				Height += MacroHeight * MacroStrength;
+				TerrestrialRelief += MacroHeight * MacroStrength;
 			}
-
 			if (bHasStructure)
 			{
-				Height += StructuralUplift * UpliftStrength;
-				Height -= StructuralValley * StructuralValleyDepthNormalized;
+				TerrestrialRelief += StructuralUplift * UpliftStrength;
+				TerrestrialRelief -= StructuralValley * StructuralValleyDepthNormalized;
 			}
-
 			if (bEnableRidges && RidgeStrength > 0.0f)
 			{
 				const float Ridge = FTerrainNoise::SampleRidged(SamplePosition, RidgeOffset, RidgeSettings, RidgeSharpness);
-				const float SignedRidge = Ridge * 2.0f - 1.0f;
-				Height += SignedRidge * RidgeStrength * MountainMask;
+				TerrestrialRelief += (Ridge * 2.0f - 1.0f) * RidgeStrength * MountainMask;
 			}
-
 			if (bEnableFoothills && FoothillStrength > 0.0f)
 			{
 				const float FoothillNoise = FTerrainNoise::SampleFractal(SamplePosition, FoothillOffset, FoothillSettings);
-				Height += FoothillNoise * FoothillStrength * FoothillMask;
+				TerrestrialRelief += FoothillNoise * FoothillStrength * FoothillMask;
 			}
-
 			if (bEnableValleys && ValleyDepth > 0.0f)
 			{
 				const float ValleyNoise = FTerrainNoise::SampleFractal(SamplePosition, ValleyOffset, ValleySettings);
 				const float ValleyMask = FTerrainShaping::BuildValleyMask(ValleyNoise, ValleyWidth, ValleySharpness);
 				const float ValleyLandMask = FMath::Clamp(PlainsMask + FoothillMask * 0.45f, 0.0f, 1.0f);
 				const float StructuralPreference = bHasStructure ? FMath::Lerp(0.65f, 1.35f, StructuralValley) : 1.0f;
-				Height -= ValleyMask * ValleyDepth * ValleyLandMask * StructuralPreference;
+				TerrestrialRelief -= ValleyMask * ValleyDepth * ValleyLandMask * StructuralPreference;
 			}
-
 			if (bEnablePlains && PlainsStrength > 0.0f)
 			{
-				const float FlattenedHeight = FTerrainShaping::ApplySignedPower(Height, PlainsFlattenExponent);
+				const float FlattenedHeight = FTerrainShaping::ApplySignedPower(TerrestrialRelief, PlainsFlattenExponent);
 				const float RollingNoise = FTerrainNoise::SampleFractal(SamplePosition, PlainsOffset, PlainsSettings);
 				const float PlainsTarget = FlattenedHeight + RollingNoise * PlainsRollingStrength;
-				Height = FMath::Lerp(Height, PlainsTarget, PlainsMask * PlainsStrength);
+				TerrestrialRelief = FMath::Lerp(TerrestrialRelief, PlainsTarget, PlainsMask * PlainsStrength);
 			}
 
-			HeightField.At(X, Y) = FMath::Clamp(Height, -1.0f, 1.0f);
+			HeightField.At(X, Y) = BaseElevation + TerrestrialRelief * LandInfluence;
 		}
+	}
+
+	if (bHasLandmass)
+	{
+		FTerrainLandmass::RefreshSeaLevelClassification(HeightField, SafeHeightScale, LandmassSettings, LandmassMaps);
 	}
 
 	FTerrainProcessMaskSettings NaturalSettings;
@@ -283,26 +296,9 @@ void ATerrainGeneratorActor::BuildTerrain()
 	ClimateSettings.RainShadowStrength = RainShadowStrength;
 	ClimateSettings.MoistureRecovery = MoistureRecovery;
 
-	FTerrainContext::Analyze(
-		HeightField,
-		HeightScale,
-		MountainRegionMask,
-		FoothillRegionMask,
-		PlainsRegionMask,
-		TerrainContext);
-	FTerrainGeology::Build(
-		HeightField,
-		TerrainContext,
-		bHasStructure ? &StructuralMaps : nullptr,
-		Seed,
-		GeologySettings,
-		GeologyMaps);
-	FTerrainContext::BuildProcessMasks(
-		TerrainContext,
-		HeightField,
-		ThermalTalusAngle,
-		NaturalSettings,
-		ProcessMasks);
+	FTerrainContext::Analyze(HeightField, SafeHeightScale, MountainRegionMask, FoothillRegionMask, PlainsRegionMask, TerrainContext);
+	FTerrainGeology::Build(HeightField, TerrainContext, bHasStructure ? &StructuralMaps : nullptr, Seed, GeologySettings, GeologyMaps);
+	FTerrainContext::BuildProcessMasks(TerrainContext, HeightField, ThermalTalusAngle, NaturalSettings, ProcessMasks);
 
 	if (bEnableThermalErosion && ThermalIterations > 0 && ThermalStrength > 0.0f)
 	{
@@ -312,33 +308,21 @@ void ATerrainGeneratorActor::BuildTerrain()
 		ThermalSettings.Strength = ThermalStrength;
 		const TArray<float>* ThermalMask = ProcessMasks.IsValidFor(HeightField) ? &ProcessMasks.Thermal : nullptr;
 		const TArray<float>* Hardness = GeologyMaps.IsValidFor(HeightField) ? &GeologyMaps.RockHardness : nullptr;
-		FTerrainErosion::ApplyThermal(HeightField, HeightScale, ThermalSettings, ThermalMask, Hardness);
+		FTerrainErosion::ApplyThermal(HeightField, SafeHeightScale, ThermalSettings, ThermalMask, Hardness);
 	}
 
-	FTerrainContext::Analyze(
-		HeightField,
-		HeightScale,
-		MountainRegionMask,
-		FoothillRegionMask,
-		PlainsRegionMask,
-		TerrainContext);
-	FTerrainGeology::Build(
-		HeightField,
-		TerrainContext,
-		bHasStructure ? &StructuralMaps : nullptr,
-		Seed,
-		GeologySettings,
-		GeologyMaps);
-	FTerrainContext::BuildProcessMasks(
-		TerrainContext,
-		HeightField,
-		ThermalTalusAngle,
-		NaturalSettings,
-		ProcessMasks);
+	if (bHasLandmass)
+	{
+		FTerrainLandmass::RefreshSeaLevelClassification(HeightField, SafeHeightScale, LandmassSettings, LandmassMaps);
+	}
+
+	FTerrainContext::Analyze(HeightField, SafeHeightScale, MountainRegionMask, FoothillRegionMask, PlainsRegionMask, TerrainContext);
+	FTerrainGeology::Build(HeightField, TerrainContext, bHasStructure ? &StructuralMaps : nullptr, Seed, GeologySettings, GeologyMaps);
+	FTerrainContext::BuildProcessMasks(TerrainContext, HeightField, ThermalTalusAngle, NaturalSettings, ProcessMasks);
 
 	if (bEnableClimate)
 	{
-		FTerrainClimate::Build(HeightField, TerrainContext, HeightScale, ClimateSettings, ClimateMaps);
+		FTerrainClimate::Build(HeightField, TerrainContext, SafeHeightScale, ClimateSettings, ClimateMaps);
 		if (ClimateMaps.IsValidFor(HeightField) && ProcessMasks.IsValidFor(HeightField))
 		{
 			for (int32 Index = 0; Index < NumCells; ++Index)
@@ -368,7 +352,7 @@ void ATerrainGeneratorActor::BuildTerrain()
 		const bool bHasGeology = GeologyMaps.IsValidFor(HeightField);
 		FTerrainErosion::ApplyHydraulic(
 			HeightField,
-			HeightScale,
+			SafeHeightScale,
 			HydraulicSettings,
 			&FlowAccumulation,
 			bHasProcessMasks ? &ProcessMasks.Rainfall : nullptr,
@@ -377,6 +361,18 @@ void ATerrainGeneratorActor::BuildTerrain()
 			bHasProcessMasks ? &ProcessMasks.Evaporation : nullptr,
 			bHasGeology ? &GeologyMaps.RockHardness : nullptr,
 			bHasGeology ? &GeologyMaps.SoilDepth : nullptr);
+	}
+
+	if (bHasLandmass)
+	{
+		FTerrainLandmass::RefreshSeaLevelClassification(HeightField, SafeHeightScale, LandmassSettings, LandmassMaps);
+		if (FlowAccumulation.Num() == NumCells)
+		{
+			for (int32 Index = 0; Index < NumCells; ++Index)
+			{
+				FlowAccumulation[Index] *= LandmassMaps.LandMask[Index];
+			}
+		}
 	}
 
 	RiverMask.Reset();
@@ -396,7 +392,14 @@ void ATerrainGeneratorActor::BuildTerrain()
 
 		if (FTerrainHydrology::BuildRiverMask(HeightField, FlowAccumulation, RiverSettings, RiverMask))
 		{
-			FTerrainHydrology::CarveRivers(HeightField, HeightScale, RiverSettings, RiverMask);
+			if (bHasLandmass && RiverMask.Num() == NumCells)
+			{
+				for (int32 Index = 0; Index < NumCells; ++Index)
+				{
+					RiverMask[Index] *= LandmassMaps.LandMask[Index];
+				}
+			}
+			FTerrainHydrology::CarveRivers(HeightField, SafeHeightScale, RiverSettings, RiverMask);
 			FTerrainHydrology::BuildRiverNetwork(HeightField, FlowAccumulation, RiverSettings, RiverNetworkEdges);
 
 			FTerrainFloodplainSettings FloodplainSettings;
@@ -404,14 +407,27 @@ void ATerrainGeneratorActor::BuildTerrain()
 			FloodplainSettings.MaxRise = FloodplainMaxRise;
 			FloodplainSettings.Falloff = FloodplainFalloff;
 			FloodplainSettings.WetnessStrength = WetnessStrength;
-			FTerrainHydrology::BuildFloodplainMasks(
-				HeightField,
-				RiverMask,
-				HeightScale,
-				FloodplainSettings,
-				FloodplainMask,
-				WetnessMask);
+			FTerrainHydrology::BuildFloodplainMasks(HeightField, RiverMask, SafeHeightScale, FloodplainSettings, FloodplainMask, WetnessMask);
 		}
+	}
+
+	if (bHasLandmass)
+	{
+		FTerrainLandmass::RefreshSeaLevelClassification(HeightField, SafeHeightScale, LandmassSettings, LandmassMaps);
+		LandMask = LandmassMaps.LandMask;
+		OceanMask = LandmassMaps.OceanMask;
+		CoastMask = LandmassMaps.CoastMask;
+		BathymetryDepthMap = LandmassMaps.BathymetryDepthCm;
+		ShelfMask = LandmassMaps.ShelfMask;
+		ContinentalSlopeMask = LandmassMaps.ContinentalSlopeMask;
+		OceanBasinMask = LandmassMaps.OceanBasinMask;
+		TrenchMask = LandmassMaps.TrenchMask;
+		SeamountMask = LandmassMaps.SeamountMask;
+	}
+	else
+	{
+		LandMask.Reset(); OceanMask.Reset(); CoastMask.Reset(); BathymetryDepthMap.Reset();
+		ShelfMask.Reset(); ContinentalSlopeMask.Reset(); OceanBasinMask.Reset(); TrenchMask.Reset(); SeamountMask.Reset();
 	}
 
 	TemperatureMap.Reset();
@@ -426,24 +442,12 @@ void ATerrainGeneratorActor::BuildTerrain()
 	ExposedRockBiomeMask.Reset();
 	SnowBiomeMask.Reset();
 
-	FTerrainContext::Analyze(
-		HeightField,
-		HeightScale,
-		MountainRegionMask,
-		FoothillRegionMask,
-		PlainsRegionMask,
-		TerrainContext);
-	FTerrainGeology::Build(
-		HeightField,
-		TerrainContext,
-		bHasStructure ? &StructuralMaps : nullptr,
-		Seed,
-		GeologySettings,
-		GeologyMaps);
+	FTerrainContext::Analyze(HeightField, SafeHeightScale, MountainRegionMask, FoothillRegionMask, PlainsRegionMask, TerrainContext);
+	FTerrainGeology::Build(HeightField, TerrainContext, bHasStructure ? &StructuralMaps : nullptr, Seed, GeologySettings, GeologyMaps);
 
 	if (bEnableClimate)
 	{
-		FTerrainClimate::Build(HeightField, TerrainContext, HeightScale, ClimateSettings, ClimateMaps);
+		FTerrainClimate::Build(HeightField, TerrainContext, SafeHeightScale, ClimateSettings, ClimateMaps);
 		if (ClimateMaps.IsValidFor(HeightField))
 		{
 			TemperatureMap = ClimateMaps.TemperatureC;
@@ -463,16 +467,7 @@ void ATerrainGeneratorActor::BuildTerrain()
 		BiomeSettings.WetlandWetnessThreshold = WetlandWetnessThreshold;
 
 		FTerrainBiomeMaps BiomeMaps;
-		FTerrainBiomes::Build(
-			HeightField,
-			TerrainContext,
-			ClimateMaps,
-			GeologyMaps,
-			WetnessMask,
-			RiverMask,
-			BiomeSettings,
-			BiomeMaps);
-
+		FTerrainBiomes::Build(HeightField, TerrainContext, ClimateMaps, GeologyMaps, WetnessMask, RiverMask, BiomeSettings, BiomeMaps);
 		if (BiomeMaps.IsValidFor(HeightField))
 		{
 			ForestBiomeMask = MoveTemp(BiomeMaps.Forest);
@@ -482,11 +477,25 @@ void ATerrainGeneratorActor::BuildTerrain()
 			WetlandBiomeMask = MoveTemp(BiomeMaps.Wetland);
 			ExposedRockBiomeMask = MoveTemp(BiomeMaps.ExposedRock);
 			SnowBiomeMask = MoveTemp(BiomeMaps.Snow);
+
+			if (bHasLandmass)
+			{
+				for (int32 Index = 0; Index < NumCells; ++Index)
+				{
+					const float Land = LandmassMaps.LandMask[Index];
+					ForestBiomeMask[Index] *= Land;
+					GrasslandBiomeMask[Index] *= Land;
+					AridBiomeMask[Index] *= Land;
+					AlpineBiomeMask[Index] *= Land;
+					WetlandBiomeMask[Index] *= Land;
+					ExposedRockBiomeMask[Index] *= Land;
+					SnowBiomeMask[Index] *= Land;
+				}
+			}
 		}
 	}
 
 	FDynamicMesh3 Mesh(true, false, false, false);
-
 	TArray<int32> VertexIds;
 	VertexIds.SetNumUninitialized(SafeResolution * SafeResolution);
 
@@ -496,9 +505,7 @@ void ATerrainGeneratorActor::BuildTerrain()
 		{
 			const float LocalX = static_cast<float>(X) * CellSize - HalfWorldSize;
 			const float LocalY = static_cast<float>(Y) * CellSize - HalfWorldSize;
-			const float Height = HeightField.At(X, Y) * HeightScale;
-			const float LocalZ = bCenterHeightfield ? Height : Height + HeightScale;
-
+			const float LocalZ = HeightField.At(X, Y) * SafeHeightScale;
 			const int32 VertexId = Mesh.AppendVertex(FVector3d(LocalX, LocalY, LocalZ));
 			VertexIds[Y * SafeResolution + X] = VertexId;
 		}
@@ -512,7 +519,6 @@ void ATerrainGeneratorActor::BuildTerrain()
 			const int32 B = VertexIds[Y * SafeResolution + X + 1];
 			const int32 C = VertexIds[(Y + 1) * SafeResolution + X];
 			const int32 D = VertexIds[(Y + 1) * SafeResolution + X + 1];
-
 			Mesh.AppendTriangle(A, D, B, 0);
 			Mesh.AppendTriangle(A, C, D, 0);
 		}
@@ -520,7 +526,6 @@ void ATerrainGeneratorActor::BuildTerrain()
 
 	FMeshNormals::QuickComputeVertexNormals(Mesh);
 	TerrainMesh->SetMesh(MoveTemp(Mesh));
-
 	BuildRiverWaterMesh(HeightField, CellSize, HalfWorldSize);
 }
 
@@ -538,9 +543,7 @@ void ATerrainGeneratorActor::BuildRiverWaterMesh(
 	}
 
 	const int32 SafeResolution = HeightField.Resolution;
-	const float BaseZOffset = bCenterHeightfield ? 0.0f : HeightScale;
 	const float MaskThreshold = FMath::Clamp(RiverWaterMaskThreshold, 0.0f, 1.0f);
-
 	TArray<int32> WaterVertexIds;
 	WaterVertexIds.SetNumUninitialized(SafeResolution * SafeResolution);
 
@@ -550,7 +553,8 @@ void ATerrainGeneratorActor::BuildRiverWaterMesh(
 		{
 			const float LocalX = static_cast<float>(X) * CellSize - HalfWorldSize;
 			const float LocalY = static_cast<float>(Y) * CellSize - HalfWorldSize;
-			const float LocalZ = HeightField.At(X, Y) * HeightScale + BaseZOffset + RiverWaterOffset;
+			const float RiverSurface = HeightField.At(X, Y) * FMath::Max(HeightScale, 1.0f) + RiverWaterOffset;
+			const float LocalZ = FMath::Max(RiverSurface, 0.0f);
 			WaterVertexIds[HeightField.Index(X, Y)] = WaterMesh.AppendVertex(FVector3d(LocalX, LocalY, LocalZ));
 		}
 	}
@@ -563,18 +567,15 @@ void ATerrainGeneratorActor::BuildRiverWaterMesh(
 			const int32 IB = HeightField.Index(X + 1, Y);
 			const int32 IC = HeightField.Index(X, Y + 1);
 			const int32 ID = HeightField.Index(X + 1, Y + 1);
-
 			const float CellMask = (RiverMask[IA] + RiverMask[IB] + RiverMask[IC] + RiverMask[ID]) * 0.25f;
 			if (CellMask < MaskThreshold)
 			{
 				continue;
 			}
-
 			const int32 A = WaterVertexIds[IA];
 			const int32 B = WaterVertexIds[IB];
 			const int32 C = WaterVertexIds[IC];
 			const int32 D = WaterVertexIds[ID];
-
 			WaterMesh.AppendTriangle(A, D, B, 0);
 			WaterMesh.AppendTriangle(A, C, D, 0);
 		}
@@ -584,6 +585,5 @@ void ATerrainGeneratorActor::BuildRiverWaterMesh(
 	{
 		FMeshNormals::QuickComputeVertexNormals(WaterMesh);
 	}
-
 	RiverWaterMesh->SetMesh(MoveTemp(WaterMesh));
 }
