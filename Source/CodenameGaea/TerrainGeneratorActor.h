@@ -187,7 +187,29 @@ private:
 	UPROPERTY(EditAnywhere, Category="Terrain|Erosion|Hydraulic", meta=(EditCondition="bEnableHydraulicErosion", ClampMin="0.0", ClampMax="1.0", UIMin="0.0", UIMax="0.1"))
 	float HydraulicMinimumSlope = 0.01f;
 
+	UPROPERTY(EditAnywhere, Category="Terrain|Hydrology|Rivers")
+	bool bEnableRivers = true;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Hydrology|Rivers", meta=(EditCondition="bEnableRivers", ClampMin="0.0", ClampMax="1.0", UIMin="0.25", UIMax="0.9"))
+	float RiverFlowThreshold = 0.58f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Hydrology|Rivers", meta=(EditCondition="bEnableRivers", ClampMin="0.001", ClampMax="0.5", UIMin="0.02", UIMax="0.3"))
+	float RiverThresholdTransition = 0.14f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Hydrology|Rivers", meta=(EditCondition="bEnableRivers", ClampMin="50.0", ClampMax="10000.0", UIMin="100.0", UIMax="3000.0", Units="cm"))
+	float RiverWidth = 850.0f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Hydrology|Rivers", meta=(EditCondition="bEnableRivers", ClampMin="0.0", ClampMax="3000.0", UIMin="0.0", UIMax="800.0", Units="cm"))
+	float RiverDepth = 180.0f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Hydrology|Rivers", meta=(EditCondition="bEnableRivers", ClampMin="0.1", ClampMax="8.0", UIMin="0.5", UIMax="4.0"))
+	float RiverBankFalloff = 1.8f;
+
+	UPROPERTY(EditAnywhere, Category="Terrain|Hydrology|Rivers", meta=(EditCondition="bEnableRivers", ClampMin="0.1", ClampMax="6.0", UIMin="0.5", UIMax="3.0"))
+	float RiverChannelProfile = 1.35f;
+
 	TArray<float> FlowAccumulation;
+	TArray<float> RiverMask;
 
 	void BuildTerrain();
 };
