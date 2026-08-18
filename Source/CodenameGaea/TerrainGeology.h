@@ -4,6 +4,7 @@
 #include "TerrainHeightField.h"
 
 struct FTerrainContextMaps;
+struct FTerrainStructuralMaps;
 
 struct FTerrainGeologySettings
 {
@@ -13,6 +14,8 @@ struct FTerrainGeologySettings
 	float MountainHardnessBias = 0.18f;
 	float PlainsSoftnessBias = 0.15f;
 	float SoilFormationStrength = 0.65f;
+	float FaultWeakeningStrength = 0.55f;
+	float BeddingHardnessContrast = 0.2f;
 };
 
 struct FTerrainGeologyMaps
@@ -37,6 +40,7 @@ public:
 	static void Build(
 		const FTerrainHeightField& HeightField,
 		const FTerrainContextMaps& Context,
+		const FTerrainStructuralMaps* Structure,
 		int32 Seed,
 		const FTerrainGeologySettings& Settings,
 		FTerrainGeologyMaps& OutGeology);
