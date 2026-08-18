@@ -6,6 +6,7 @@
 #include "TerrainBiomes.h"
 #include "TerrainClimate.h"
 #include "TerrainContext.h"
+#include "TerrainDrainage.h"
 #include "TerrainErosion.h"
 #include "TerrainGeology.h"
 #include "TerrainHeightField.h"
@@ -367,12 +368,32 @@ void ATerrainGeneratorActor::BuildTerrain()
 	if (bHasLandmass)
 	{
 		FTerrainLandmass::RefreshSeaLevelClassification(HeightField, SafeHeightScale, LandmassSettings, LandmassMaps);
-		if (FlowAccumulation.Num() == NumCells)
+	}
+
+	FTerrainDrainageSettings DrainageSettings;
+	FTerrainDrainageMaps DrainageMaps;
+	const bool bHasDrainage = FTerrainDrainage::Build(
+		HeightField,
+		SafeHeightScale,
+		DrainageSettings,
+		DrainageMaps);
+
+	if (bHasDrainage)
+	{
+		FlowAccumulation = DrainageMaps.FlowAccumulation;
+		for (int32 Index = 0; Index < NumCells; ++Index)
 		{
-			for (int32 Index = 0; Index < NumCells; ++Index)
+			if (DrainageMaps.ExteriorOceanMask[Index] > 0.5f)
 			{
-				FlowAccumulation[Index] *= LandmassMaps.LandMask[Index];
+				FlowAccumulation[Index] = 0.0f;
 			}
+		}
+	}
+	else if (bHasLandmass && FlowAccumulation.Num() == NumCells)
+	{
+		for (int32 Index = 0; Index < NumCells; ++Index)
+		{
+			FlowAccumulation[Index] *= LandmassMaps.LandMask[Index];
 		}
 	}
 
@@ -401,7 +422,15 @@ void ATerrainGeneratorActor::BuildTerrain()
 				}
 			}
 			FTerrainHydrology::CarveRivers(HeightField, SafeHeightScale, RiverSettings, RiverMask);
-			FTerrainHydrology::BuildRiverNetwork(HeightField, FlowAccumulation, RiverSettings, RiverNetworkEdges);
+			if (bHasDrainage)
+			{
+				FTerrainHydrology::BuildRiverNetwork(
+					HeightField,
+					FlowAccumulation,
+					DrainageMaps.Receiver,
+					RiverSettings,
+					RiverNetworkEdges);
+			}
 
 			FTerrainFloodplainSettings FloodplainSettings;
 			FloodplainSettings.Width = FloodplainWidth;
