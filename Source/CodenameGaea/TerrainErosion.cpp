@@ -10,13 +10,22 @@ namespace
 		}
 		return FMath::Clamp((*Mask)[Index], 0.0f, 1.0f);
 	}
+
+	float HardnessResistance(const TArray<float>* RockHardness, int32 Index, int32 ExpectedNum)
+	{
+		const float Hardness = RockHardness && RockHardness->Num() == ExpectedNum
+			? FMath::Clamp((*RockHardness)[Index], 0.0f, 1.0f)
+			: 0.5f;
+		return FMath::Lerp(1.0f, 0.18f, Hardness);
+	}
 }
 
 void FTerrainErosion::ApplyThermal(
 	FTerrainHeightField& HeightField,
 	float HeightScale,
 	const FTerrainThermalErosionSettings& Settings,
-	const TArray<float>* ProcessMask)
+	const TArray<float>* ProcessMask,
+	const TArray<float>* RockHardness)
 {
 	if (!HeightField.IsValid() || Settings.Iterations <= 0 || Settings.Strength <= 0.0f || HeightScale <= UE_SMALL_NUMBER)
 	{
@@ -78,7 +87,8 @@ void FTerrainErosion::ApplyThermal(
 					continue;
 				}
 
-				const float MaterialToMove = TotalExcess * 0.5f * SafeStrength * LocalMask;
+				const float Resistance = HardnessResistance(RockHardness, CenterIndex, NumCells);
+				const float MaterialToMove = TotalExcess * 0.5f * SafeStrength * LocalMask * Resistance;
 				Delta[CenterIndex] -= MaterialToMove;
 
 				for (int32 NeighborIndex = 0; NeighborIndex < UE_ARRAY_COUNT(Neighbors); ++NeighborIndex)
@@ -111,7 +121,9 @@ void FTerrainErosion::ApplyHydraulic(
 	const TArray<float>* RainfallMask,
 	const TArray<float>* ErosionMask,
 	const TArray<float>* DepositionMask,
-	const TArray<float>* EvaporationMask)
+	const TArray<float>* EvaporationMask,
+	const TArray<float>* RockHardness,
+	const TArray<float>* SoilDepth)
 {
 	if (!HeightField.IsValid() || Settings.Iterations <= 0 || HeightScale <= UE_SMALL_NUMBER)
 	{
@@ -257,14 +269,18 @@ void FTerrainErosion::ApplyHydraulic(
 
 				if (Sediment[Index] > Capacity)
 				{
-					const float LocalDeposition = DepositionRate * MaskValue(DepositionMask, Index, NumCells);
+					const float SoilRetention = SoilDepth && SoilDepth->Num() == NumCells
+						? FMath::Lerp(1.0f, 1.45f, FMath::Clamp((*SoilDepth)[Index], 0.0f, 1.0f))
+						: 1.0f;
+					const float LocalDeposition = FMath::Clamp(DepositionRate * MaskValue(DepositionMask, Index, NumCells) * SoilRetention, 0.0f, 1.0f);
 					const float Deposit = (Sediment[Index] - Capacity) * LocalDeposition;
 					HeightField.Data[Index] += Deposit;
 					Sediment[Index] -= Deposit;
 				}
 				else if (Sediment[Index] < Capacity)
 				{
-					const float LocalErosion = ErosionRate * MaskValue(ErosionMask, Index, NumCells);
+					const float Resistance = HardnessResistance(RockHardness, Index, NumCells);
+					const float LocalErosion = ErosionRate * MaskValue(ErosionMask, Index, NumCells) * Resistance;
 					const float Erode = FMath::Min((Capacity - Sediment[Index]) * LocalErosion, 0.02f);
 					HeightField.Data[Index] -= Erode;
 					Sediment[Index] += Erode;
