@@ -27,7 +27,6 @@ struct FTerrainLandmassSettings
 struct FTerrainLandmassMaps
 {
 	TArray<float> BaseElevationCm;
-	// Persistent generated landmass membership. Final sea-level classification is stored separately.
 	TArray<float> LandInfluence;
 	TArray<float> LandMask;
 	TArray<float> OceanMask;
@@ -70,14 +69,7 @@ public:
 		const FTerrainLandmassSettings& Settings,
 		FTerrainLandmassMaps& OutMaps);
 
-	// Run once after terrestrial relief is generated. This gently biases the generated
-	// landmass above sea level without clipping or flattening its relief.
-	static void ApplySeaLevelComposition(
-		FTerrainHeightField& HeightField,
-		float HeightScale,
-		const FTerrainLandmassMaps& LandmassMaps);
-
-	// Classification only. This must never reshape terrain.
+	// Classification only. Sea level is always Z = 0 and this function never changes terrain.
 	static void RefreshSeaLevelClassification(
 		const FTerrainHeightField& HeightField,
 		float HeightScale,
