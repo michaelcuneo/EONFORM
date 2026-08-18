@@ -1,6 +1,7 @@
 #include "TerrainClimate.h"
 
 #include "TerrainContext.h"
+#include "TerrainParallel.h"
 
 namespace
 {
@@ -43,72 +44,81 @@ void FTerrainClimate::Build(
 	const float RainShadowStrength = FMath::Max(Settings.RainShadowStrength, 0.0f);
 	const float MoistureRecovery = FMath::Clamp(Settings.MoistureRecovery, 0.0f, 1.0f);
 
-	for (int32 Index = 0; Index < NumCells; ++Index)
+	TerrainParallel::ForRange(TEXT("TerrainClimateTemperature"), NumCells, 65536, [&](int32 Start, int32 End)
 	{
-		const float ElevationCm = FMath::Max(HeightField.Data[Index] * HeightScale, 0.0f);
-		const float ElevationKm = ElevationCm / 100000.0f;
-		const float Temperature = Settings.BaseTemperatureC - ElevationKm * Settings.LapseRateCPerKm;
-		OutClimate.TemperatureC[Index] = Temperature;
-
-		const float Warmth = SmoothStep01((Temperature + 5.0f) / 35.0f);
-		const float Dryness = 1.0f - BaseHumidity;
-		OutClimate.EvaporationPotential[Index] = FMath::Clamp(Warmth * (0.35f + Dryness * 0.65f), 0.0f, 1.0f);
-		OutClimate.SnowPotential[Index] = HeightField.Data[Index] >= 0.0f
-			? SmoothStep01((Settings.SnowTemperatureC - Temperature + 2.0f) / 6.0f)
-			: 0.0f;
-	}
-
-	for (int32 Secondary = 0; Secondary < Resolution; ++Secondary)
-	{
-		float AirMoisture = BaseHumidity;
-		float PreviousAtmosphericHeight = 0.0f;
-		bool bHasPrevious = false;
-
-		for (int32 PrimaryOffset = 0; PrimaryOffset < Resolution; ++PrimaryOffset)
+		for (int32 Index = Start; Index < End; ++Index)
 		{
-			const int32 Primary = PrimaryStep > 0 ? PrimaryOffset : (Resolution - 1 - PrimaryOffset);
-			const int32 X = bSweepX ? Primary : Secondary;
-			const int32 Y = bSweepX ? Secondary : Primary;
-			const int32 Index = HeightField.Index(X, Y);
-			const float ActualHeight = HeightField.Data[Index] * HeightScale;
-			const float AtmosphericHeight = FMath::Max(ActualHeight, 0.0f);
+			const float ElevationCm = FMath::Max(HeightField.Data[Index] * HeightScale, 0.0f);
+			const float ElevationKm = ElevationCm / 100000.0f;
+			const float Temperature = Settings.BaseTemperatureC - ElevationKm * Settings.LapseRateCPerKm;
+			OutClimate.TemperatureC[Index] = Temperature;
 
-			float Rise = 0.0f;
-			float Descent = 0.0f;
-			if (bHasPrevious)
+			const float Warmth = SmoothStep01((Temperature + 5.0f) / 35.0f);
+			const float Dryness = 1.0f - BaseHumidity;
+			OutClimate.EvaporationPotential[Index] = FMath::Clamp(Warmth * (0.35f + Dryness * 0.65f), 0.0f, 1.0f);
+			OutClimate.SnowPotential[Index] = HeightField.Data[Index] >= 0.0f
+				? SmoothStep01((Settings.SnowTemperatureC - Temperature + 2.0f) / 6.0f)
+				: 0.0f;
+		}
+	});
+
+	TerrainParallel::ForRange(TEXT("TerrainClimateWindSweeps"), Resolution, 16, [&](int32 StartSecondary, int32 EndSecondary)
+	{
+		for (int32 Secondary = StartSecondary; Secondary < EndSecondary; ++Secondary)
+		{
+			float AirMoisture = BaseHumidity;
+			float PreviousAtmosphericHeight = 0.0f;
+			bool bHasPrevious = false;
+
+			for (int32 PrimaryOffset = 0; PrimaryOffset < Resolution; ++PrimaryOffset)
 			{
-				const float Delta = (AtmosphericHeight - PreviousAtmosphericHeight) / FMath::Max(CellSize, UE_SMALL_NUMBER);
-				Rise = FMath::Max(Delta, 0.0f);
-				Descent = FMath::Max(-Delta, 0.0f);
+				const int32 Primary = PrimaryStep > 0 ? PrimaryOffset : (Resolution - 1 - PrimaryOffset);
+				const int32 X = bSweepX ? Primary : Secondary;
+				const int32 Y = bSweepX ? Secondary : Primary;
+				const int32 Index = HeightField.Index(X, Y);
+				const float ActualHeight = HeightField.Data[Index] * HeightScale;
+				const float AtmosphericHeight = FMath::Max(ActualHeight, 0.0f);
+
+				float Rise = 0.0f;
+				float Descent = 0.0f;
+				if (bHasPrevious)
+				{
+					const float Delta = (AtmosphericHeight - PreviousAtmosphericHeight) / FMath::Max(CellSize, UE_SMALL_NUMBER);
+					Rise = FMath::Max(Delta, 0.0f);
+					Descent = FMath::Max(-Delta, 0.0f);
+				}
+
+				const bool bOcean = ActualHeight < 0.0f;
+				const float WindwardLift = FMath::Clamp(Rise * OrographicStrength, 0.0f, 1.0f);
+				const float ShadowDrying = FMath::Clamp(Descent * RainShadowStrength, 0.0f, 1.0f);
+				const float MountainLift = Context.Mountain[Index] * 0.18f + Context.Foothill[Index] * 0.08f;
+				const float RainFraction = bOcean ? 0.0f : FMath::Clamp(0.04f + WindwardLift + MountainLift, 0.0f, 0.85f);
+				const float Rain = AirMoisture * RainFraction;
+
+				OutClimate.Precipitation[Index] = bOcean ? 0.0f : FMath::Clamp(Rain + BaseHumidity * 0.08f, 0.0f, 1.0f);
+				AirMoisture = FMath::Max(0.0f, AirMoisture - Rain);
+				AirMoisture *= 1.0f - ShadowDrying * 0.35f;
+				const float Recovery = bOcean ? FMath::Max(MoistureRecovery, 0.16f) : MoistureRecovery;
+				AirMoisture = FMath::Lerp(AirMoisture, BaseHumidity, Recovery);
+				OutClimate.Humidity[Index] = FMath::Clamp(AirMoisture, 0.0f, 1.0f);
+
+				PreviousAtmosphericHeight = AtmosphericHeight;
+				bHasPrevious = true;
 			}
-
-			const bool bOcean = ActualHeight < 0.0f;
-			const float WindwardLift = FMath::Clamp(Rise * OrographicStrength, 0.0f, 1.0f);
-			const float ShadowDrying = FMath::Clamp(Descent * RainShadowStrength, 0.0f, 1.0f);
-			const float MountainLift = Context.Mountain[Index] * 0.18f + Context.Foothill[Index] * 0.08f;
-			const float RainFraction = bOcean ? 0.0f : FMath::Clamp(0.04f + WindwardLift + MountainLift, 0.0f, 0.85f);
-			const float Rain = AirMoisture * RainFraction;
-
-			OutClimate.Precipitation[Index] = bOcean ? 0.0f : FMath::Clamp(Rain + BaseHumidity * 0.08f, 0.0f, 1.0f);
-			AirMoisture = FMath::Max(0.0f, AirMoisture - Rain);
-			AirMoisture *= 1.0f - ShadowDrying * 0.35f;
-			const float Recovery = bOcean ? FMath::Max(MoistureRecovery, 0.16f) : MoistureRecovery;
-			AirMoisture = FMath::Lerp(AirMoisture, BaseHumidity, Recovery);
-			OutClimate.Humidity[Index] = FMath::Clamp(AirMoisture, 0.0f, 1.0f);
-
-			PreviousAtmosphericHeight = AtmosphericHeight;
-			bHasPrevious = true;
 		}
-	}
+	});
 
-	for (int32 Index = 0; Index < NumCells; ++Index)
+	TerrainParallel::ForRange(TEXT("TerrainClimateFinal"), NumCells, 65536, [&](int32 Start, int32 End)
 	{
-		if (HeightField.Data[Index] < 0.0f)
+		for (int32 Index = Start; Index < End; ++Index)
 		{
-			OutClimate.EvaporationPotential[Index] = 0.0f;
-			continue;
+			if (HeightField.Data[Index] < 0.0f)
+			{
+				OutClimate.EvaporationPotential[Index] = 0.0f;
+				continue;
+			}
+			const float ClimateWetness = FMath::Clamp(OutClimate.Precipitation[Index] * 0.75f + OutClimate.Humidity[Index] * 0.25f, 0.0f, 1.0f);
+			OutClimate.EvaporationPotential[Index] *= 1.0f - ClimateWetness * 0.45f;
 		}
-		const float ClimateWetness = FMath::Clamp(OutClimate.Precipitation[Index] * 0.75f + OutClimate.Humidity[Index] * 0.25f, 0.0f, 1.0f);
-		OutClimate.EvaporationPotential[Index] *= 1.0f - ClimateWetness * 0.45f;
-	}
+	});
 }
