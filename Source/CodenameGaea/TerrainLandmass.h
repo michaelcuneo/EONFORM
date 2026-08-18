@@ -14,10 +14,6 @@ struct FTerrainLandmassSettings
 	float LandCoverage = 0.5f;
 	float EdgeOceanMargin = 0.14f;
 
-	// Signed DEM vertical reference. Sea level is always 0; land is positive and
-	// bathymetry negative within the same continuous heightfield.
-	float VerticalRangeCm = 8000.0f;
-
 	float ShelfWidth = 1500.0f;
 	float ShelfDepth = 220.0f;
 	float ContinentalSlopeWidth = 4000.0f;
@@ -43,6 +39,9 @@ struct FTerrainLandmassMaps
 	TArray<float> TrenchMask;
 	TArray<float> SeamountMask;
 
+	bool bCompositionApplied = false;
+	float SourceSeaLevelThreshold = 0.0f;
+
 	bool IsValidFor(const FTerrainHeightField& HeightField) const
 	{
 		const int32 NumCells = HeightField.Data.Num();
@@ -65,6 +64,8 @@ struct FTerrainLandmassMaps
 class FTerrainLandmass
 {
 public:
+	// Initializes output maps only. This function is deliberately height-neutral so
+	// the existing terrain generator remains unchanged until the terrain actually exists.
 	static void Build(
 		const FTerrainHeightField& HeightField,
 		const FTerrainStructuralMaps* Structure,
@@ -72,9 +73,11 @@ public:
 		const FTerrainLandmassSettings& Settings,
 		FTerrainLandmassMaps& OutMaps);
 
-	// Classification only. Sea level is always Z = 0 and this function never changes terrain.
+	// The first call composes the signed DEM from the already-generated natural terrain:
+	// positive land, sea level at 0, and negative bathymetry extending outward from
+	// the terrain-derived coastline. Later calls only refresh classifications.
 	static void RefreshSeaLevelClassification(
-		const FTerrainHeightField& HeightField,
+		FTerrainHeightField& HeightField,
 		float HeightScale,
 		const FTerrainLandmassSettings& Settings,
 		FTerrainLandmassMaps& InOutMaps);
