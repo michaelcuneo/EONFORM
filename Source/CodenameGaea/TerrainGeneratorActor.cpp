@@ -70,7 +70,7 @@ void ATerrainGeneratorActor::BuildTerrain()
 		return;
 	}
 
-	const int32 SafeResolution = FMath::Clamp(Resolution, 2, 1025);
+	const int32 SafeResolution = FMath::Clamp(Resolution, 2, 4097);
 	const float SafeWorldSize = FMath::Max(WorldSize, 1.0f);
 	const float SafeHeightScale = FMath::Max(HeightScale, 1.0f);
 
