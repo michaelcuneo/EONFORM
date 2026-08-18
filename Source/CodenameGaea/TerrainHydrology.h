@@ -13,6 +13,14 @@ struct FTerrainRiverSettings
 	float ChannelProfile = 1.35f;
 };
 
+struct FTerrainFloodplainSettings
+{
+	float Width = 1800.0f;
+	float MaxRise = 260.0f;
+	float Falloff = 1.6f;
+	float WetnessStrength = 0.7f;
+};
+
 class FTerrainHydrology
 {
 public:
@@ -21,6 +29,20 @@ public:
 		const TArray<float>& FlowAccumulation,
 		const FTerrainRiverSettings& Settings,
 		TArray<float>& OutRiverMask);
+
+	static void BuildRiverNetwork(
+		const FTerrainHeightField& HeightField,
+		const TArray<float>& FlowAccumulation,
+		const FTerrainRiverSettings& Settings,
+		TArray<FIntPoint>& OutRiverEdges);
+
+	static bool BuildFloodplainMasks(
+		const FTerrainHeightField& HeightField,
+		const TArray<float>& RiverMask,
+		float HeightScale,
+		const FTerrainFloodplainSettings& Settings,
+		TArray<float>& OutFloodplainMask,
+		TArray<float>& OutWetnessMask);
 
 	static void CarveRivers(
 		FTerrainHeightField& HeightField,
