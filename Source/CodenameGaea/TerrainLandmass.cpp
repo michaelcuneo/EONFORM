@@ -95,6 +95,146 @@ namespace
 		}
 	}
 
+	void BuildSubcellCoastDistance(
+		const TArray<uint8>& Land,
+		const TArray<float>& Suitability,
+		float Threshold,
+		int32 Resolution,
+		float CellSize,
+		TArray<float>& OutDistance)
+	{
+		const int32 NumCells = Land.Num();
+		OutDistance.Init(LargeDistance, NumCells);
+		if (Resolution < 2
+			|| NumCells != Resolution * Resolution
+			|| Suitability.Num() != NumCells)
+		{
+			return;
+		}
+
+		bool bHasCoast = false;
+		for (int32 Y = 0; Y < Resolution; ++Y)
+		{
+			for (int32 X = 0; X < Resolution; ++X)
+			{
+				const int32 Index = Y * Resolution + X;
+				const uint8 CellClass = Land[Index];
+				const float CenterField = Suitability[Index] - Threshold;
+				float BoundaryDistance = LargeDistance;
+
+				for (int32 OY = -1; OY <= 1; ++OY)
+				{
+					for (int32 OX = -1; OX <= 1; ++OX)
+					{
+						if (OX == 0 && OY == 0)
+						{
+							continue;
+						}
+
+						const int32 NX = X + OX;
+						const int32 NY = Y + OY;
+						if (NX < 0 || NX >= Resolution || NY < 0 || NY >= Resolution)
+						{
+							continue;
+						}
+
+						const int32 Neighbor = NY * Resolution + NX;
+						if (Land[Neighbor] == CellClass)
+						{
+							continue;
+						}
+
+						const float EdgeLength = CellSize * ((OX != 0 && OY != 0) ? DiagonalDistance : 1.0f);
+						const float NeighborField = Suitability[Neighbor] - Threshold;
+						const float CenterMagnitude = FMath::Abs(CenterField);
+						const float NeighborMagnitude = FMath::Abs(NeighborField);
+						const float MagnitudeSum = CenterMagnitude + NeighborMagnitude;
+
+						float FractionToBoundary = 0.5f;
+						if (CenterField * NeighborField <= 0.0f && MagnitudeSum > UE_SMALL_NUMBER)
+						{
+							FractionToBoundary = CenterMagnitude / MagnitudeSum;
+						}
+
+						FractionToBoundary = FMath::Clamp(FractionToBoundary, 0.03f, 0.97f);
+						BoundaryDistance = FMath::Min(BoundaryDistance, EdgeLength * FractionToBoundary);
+						bHasCoast = true;
+					}
+				}
+
+				if (BoundaryDistance < LargeDistance)
+				{
+					OutDistance[Index] = BoundaryDistance;
+				}
+			}
+		}
+
+		if (!bHasCoast)
+		{
+			const float FallbackDistance = CellSize * static_cast<float>(Resolution);
+			for (float& Distance : OutDistance)
+			{
+				Distance = FallbackDistance;
+			}
+			return;
+		}
+
+		const float Cardinal = CellSize;
+		const float Diagonal = CellSize * DiagonalDistance;
+		auto Relax = [&OutDistance](int32 Index, int32 Neighbor, float Cost)
+		{
+			OutDistance[Index] = FMath::Min(OutDistance[Index], OutDistance[Neighbor] + Cost);
+		};
+
+		for (int32 Y = 0; Y < Resolution; ++Y)
+		{
+			for (int32 X = 0; X < Resolution; ++X)
+			{
+				const int32 I = Y * Resolution + X;
+				if (X > 0)
+				{
+					Relax(I, I - 1, Cardinal);
+				}
+				if (Y > 0)
+				{
+					Relax(I, I - Resolution, Cardinal);
+					if (X > 0)
+					{
+						Relax(I, I - Resolution - 1, Diagonal);
+					}
+					if (X + 1 < Resolution)
+					{
+						Relax(I, I - Resolution + 1, Diagonal);
+					}
+				}
+			}
+		}
+
+		for (int32 Y = Resolution - 1; Y >= 0; --Y)
+		{
+			for (int32 X = Resolution - 1; X >= 0; --X)
+			{
+				const int32 I = Y * Resolution + X;
+				if (X + 1 < Resolution)
+				{
+					Relax(I, I + 1, Cardinal);
+				}
+				if (Y + 1 < Resolution)
+				{
+					Relax(I, I + Resolution, Cardinal);
+					if (X + 1 < Resolution)
+					{
+						Relax(I, I + Resolution + 1, Diagonal);
+					}
+					if (X > 0)
+					{
+						Relax(I, I + Resolution - 1, Diagonal);
+					}
+				}
+			}
+		}
+	}
+
 	void BoxBlur(const TArray<float>& Input, int32 Resolution, int32 Radius, TArray<float>& Output)
 	{
 		const int32 NumCells = Input.Num();
@@ -294,204 +434,6 @@ namespace
 		OutLand = MoveTemp(BestMask);
 	}
 
-	void BuildSubcellCoastDistance(
-		const TArray<uint8>& Land,
-		const TArray<float>& Suitability,
-		float Threshold,
-		int32 Resolution,
-		float CellSize,
-		TArray<float>& OutDistance)
-	{
-		const int32 NumCells = Land.Num();
-		OutDistance.Init(LargeDistance, NumCells);
-		if (Resolution < 2 || NumCells != Resolution * Resolution || Suitability.Num() != NumCells)
-		{
-			return;
-		}
-
-		bool bHasCoast = false;
-		for (int32 Y = 0; Y < Resolution; ++Y)
-		{
-			for (int32 X = 0; X < Resolution; ++X)
-			{
-				const int32 Index = Y * Resolution + X;
-				const uint8 CellClass = Land[Index];
-				const float CenterField = Suitability[Index] - Threshold;
-				float BoundaryDistance = LargeDistance;
-
-				for (int32 OY = -1; OY <= 1; ++OY)
-				{
-					for (int32 OX = -1; OX <= 1; ++OX)
-					{
-						if (OX == 0 && OY == 0)
-						{
-							continue;
-						}
-
-						const int32 NX = X + OX;
-						const int32 NY = Y + OY;
-						if (NX < 0 || NX >= Resolution || NY < 0 || NY >= Resolution)
-						{
-							continue;
-						}
-
-						const int32 Neighbor = NY * Resolution + NX;
-						if (Land[Neighbor] == CellClass)
-						{
-							continue;
-						}
-
-						const float EdgeLength = CellSize * ((OX != 0 && OY != 0) ? DiagonalDistance : 1.0f);
-						const float NeighborField = Suitability[Neighbor] - Threshold;
-						const float CenterMagnitude = FMath::Abs(CenterField);
-						const float NeighborMagnitude = FMath::Abs(NeighborField);
-						const float MagnitudeSum = CenterMagnitude + NeighborMagnitude;
-						float FractionToBoundary = 0.5f;
-
-						if (CenterField * NeighborField <= 0.0f && MagnitudeSum > UE_SMALL_NUMBER)
-						{
-							FractionToBoundary = CenterMagnitude / MagnitudeSum;
-						}
-
-						FractionToBoundary = FMath::Clamp(FractionToBoundary, 0.03f, 0.97f);
-						BoundaryDistance = FMath::Min(BoundaryDistance, EdgeLength * FractionToBoundary);
-						bHasCoast = true;
-					}
-				}
-
-				if (BoundaryDistance < LargeDistance)
-				{
-					OutDistance[Index] = BoundaryDistance;
-				}
-			}
-		}
-
-		if (!bHasCoast)
-		{
-			const float FallbackDistance = CellSize * static_cast<float>(Resolution);
-			for (float& Distance : OutDistance)
-			{
-				Distance = FallbackDistance;
-			}
-			return;
-		}
-
-		const float Cardinal = CellSize;
-		const float Diagonal = CellSize * DiagonalDistance;
-		auto Relax = [&OutDistance](int32 Index, int32 Neighbor, float Cost)
-		{
-			OutDistance[Index] = FMath::Min(OutDistance[Index], OutDistance[Neighbor] + Cost);
-		};
-
-		for (int32 Y = 0; Y < Resolution; ++Y)
-		{
-			for (int32 X = 0; X < Resolution; ++X)
-			{
-				const int32 I = Y * Resolution + X;
-				if (X > 0)
-				{
-					Relax(I, I - 1, Cardinal);
-				}
-				if (Y > 0)
-				{
-					Relax(I, I - Resolution, Cardinal);
-					if (X > 0)
-					{
-						Relax(I, I - Resolution - 1, Diagonal);
-					}
-					if (X + 1 < Resolution)
-					{
-						Relax(I, I - Resolution + 1, Diagonal);
-					}
-				}
-			}
-		}
-
-		for (int32 Y = Resolution - 1; Y >= 0; --Y)
-		{
-			for (int32 X = Resolution - 1; X >= 0; --X)
-			{
-				const int32 I = Y * Resolution + X;
-				if (X + 1 < Resolution)
-				{
-					Relax(I, I + 1, Cardinal);
-				}
-				if (Y + 1 < Resolution)
-				{
-					Relax(I, I + Resolution, Cardinal);
-					if (X + 1 < Resolution)
-					{
-						Relax(I, I + Resolution + 1, Diagonal);
-					}
-					if (X > 0)
-					{
-						Relax(I, I + Resolution - 1, Diagonal);
-					}
-				}
-			}
-		}
-	}
-
-	void BuildBeachPotential(
-		const TArray<float>& OriginalTerrain,
-		const TArray<float>& CoastDistance,
-		int32 Resolution,
-		float CellSize,
-		float HeightScale,
-		TArray<float>& OutBeachPotential)
-	{
-		const int32 NumCells = OriginalTerrain.Num();
-		OutBeachPotential.SetNumZeroed(NumCells);
-		if (Resolution < 2 || NumCells != Resolution * Resolution || CoastDistance.Num() != NumCells)
-		{
-			return;
-		}
-
-		TArray<float> SmoothedTerrain;
-		BoxBlur(OriginalTerrain, Resolution, 3, SmoothedTerrain);
-
-		TArray<float> RawPotential;
-		RawPotential.SetNumZeroed(NumCells);
-		const float CoastalAnalysisWidth = CellSize * 12.0f;
-
-		for (int32 Y = 0; Y < Resolution; ++Y)
-		{
-			for (int32 X = 0; X < Resolution; ++X)
-			{
-				const int32 Index = Y * Resolution + X;
-				if (CoastDistance[Index] > CoastalAnalysisWidth)
-				{
-					continue;
-				}
-
-				const int32 XL = FMath::Max(0, X - 1);
-				const int32 XR = FMath::Min(Resolution - 1, X + 1);
-				const int32 YD = FMath::Max(0, Y - 1);
-				const int32 YU = FMath::Min(Resolution - 1, Y + 1);
-
-				const float DX = (SmoothedTerrain[Y * Resolution + XR] - SmoothedTerrain[Y * Resolution + XL])
-					* HeightScale / FMath::Max(static_cast<float>(XR - XL) * CellSize, UE_SMALL_NUMBER);
-				const float DY = (SmoothedTerrain[YU * Resolution + X] - SmoothedTerrain[YD * Resolution + X])
-					* HeightScale / FMath::Max(static_cast<float>(YU - YD) * CellSize, UE_SMALL_NUMBER);
-				const float SlopeDegrees = FMath::RadiansToDegrees(FMath::Atan(FMath::Sqrt(DX * DX + DY * DY)));
-
-				// Beaches favour broad, relatively gentle coastal terrain. Moderate slopes can
-				// still produce a narrow beach; truly steep terrain remains a rocky/cliff coast.
-				const float GentleCoast = 1.0f - SmoothStep01((SlopeDegrees - 8.0f) / 28.0f);
-				const float NearCoast = 1.0f - SmoothStep01(CoastDistance[Index] / CoastalAnalysisWidth);
-				RawPotential[Index] = GentleCoast * NearCoast;
-			}
-		}
-
-		TArray<float> CoherentPotential;
-		BoxBlur(RawPotential, Resolution, 3, CoherentPotential);
-		for (int32 Index = 0; Index < NumCells; ++Index)
-		{
-			const float NearCoast = 1.0f - SmoothStep01(CoastDistance[Index] / CoastalAnalysisWidth);
-			OutBeachPotential[Index] = FMath::Clamp(CoherentPotential[Index] * 1.2f * NearCoast, 0.0f, 1.0f);
-		}
-	}
-
 	void FindRangeForMask(
 		const TArray<float>& Values,
 		const TArray<uint8>& Mask,
@@ -612,15 +554,6 @@ void FTerrainLandmass::RefreshSeaLevelClassification(
 			CellSize,
 			CoastDistance);
 
-		TArray<float> BeachPotential;
-		BuildBeachPotential(
-			OriginalTerrain,
-			CoastDistance,
-			Resolution,
-			CellSize,
-			HeightScale,
-			BeachPotential);
-
 		float LandMin = 0.0f;
 		float LandMax = 1.0f;
 		float OceanMin = 0.0f;
@@ -639,6 +572,8 @@ void FTerrainLandmass::RefreshSeaLevelClassification(
 			}
 		}
 
+		const float ShoreTransitionWidth = CellSize * 2.5f;
+		const float ShoreJoinAmplitude = 0.055f;
 		const float MinimumSignedSample = 0.0001f;
 		const float ReliefStrength = FMath::Clamp(
 			Settings.BasinRelief / FMath::Max(Settings.BasinDepth, 1.0f),
@@ -671,44 +606,23 @@ void FTerrainLandmass::RefreshSeaLevelClassification(
 		}
 
 		const float CoastVisualWidth = CellSize * 3.0f;
-		const float CliffTransitionWidth = CellSize * 2.0f;
-		const float CliffJoinAmplitude = 0.055f;
-		const float BeachWidth = FMath::Clamp(
-			Settings.ShelfWidth * 0.22f,
-			CellSize * 4.0f,
-			CellSize * 8.0f);
-		const float BeachCrestAmplitude = FMath::Clamp(80.0f / HeightScale, 0.003f, 0.02f);
-		const float BeachNearshoreDepth = FMath::Clamp(120.0f / HeightScale, 0.004f, 0.025f);
-
 		for (int32 Index = 0; Index < NumCells; ++Index)
 		{
 			const bool bLand = GeneratedLand[Index] != 0;
 			const float Distance = CoastDistance[Index];
 			const float SignedDistance = bLand ? Distance : -Distance;
-			const float Beach = FMath::Clamp(BeachPotential[Index], 0.0f, 1.0f);
+			const float ShoreLinear = FMath::Clamp(Distance / ShoreTransitionWidth, 0.0f, 1.0f);
+			const float ShoreBlend = SmoothStep01(ShoreLinear);
+			const float CoastRamp = ShoreLinear * ShoreJoinAmplitude;
 
 			InOutMaps.SignedCoastDistanceCm[Index] = SignedDistance;
 			InOutMaps.CoastMask[Index] = 1.0f - SmoothStep01(FMath::Abs(SignedDistance) / CoastVisualWidth);
-
-			const float CliffT = FMath::Clamp(Distance / CliffTransitionWidth, 0.0f, 1.0f);
-			const float CliffBlend = SmoothStep01(CliffT);
-			const float CliffRamp = CliffT * CliffJoinAmplitude;
-
-			const float BeachT = FMath::Clamp(Distance / BeachWidth, 0.0f, 1.0f);
-			const float BeachBackshoreT = SmoothStep01(
-				(Distance - BeachWidth * 0.65f) / FMath::Max(BeachWidth * 0.9f, CellSize));
-			const float BeachOffshoreT = SmoothStep01(
-				(Distance - BeachWidth * 0.65f) / FMath::Max(BeachWidth * 1.1f, CellSize));
 
 			if (bLand)
 			{
 				const float Raw01 = FMath::Clamp((OriginalTerrain[Index] - LandMin) / LandSpan, 0.0f, 1.0f);
 				const float NaturalLand = FMath::Lerp(0.015f, 1.0f, Raw01);
-
-				const float CliffHeight = FMath::Lerp(CliffRamp, NaturalLand, CliffBlend);
-				const float BeachRamp = BeachCrestAmplitude * FMath::Pow(BeachT, 1.15f);
-				const float BeachHeight = FMath::Lerp(BeachRamp, NaturalLand, BeachBackshoreT);
-				const float Height01 = FMath::Lerp(CliffHeight, BeachHeight, Beach);
+				const float Height01 = FMath::Lerp(CoastRamp, NaturalLand, ShoreBlend);
 				HeightField.Data[Index] = FMath::Clamp(Height01, MinimumSignedSample, 1.0f);
 			}
 			else
@@ -717,11 +631,7 @@ void FTerrainLandmass::RefreshSeaLevelClassification(
 					OceanDepthCandidate[Index] / FMath::Max(MaxOceanDepthCandidate, UE_SMALL_NUMBER),
 					MinimumSignedSample,
 					1.0f);
-
-				const float CliffDepth = FMath::Lerp(CliffRamp, NaturalDepth01, CliffBlend);
-				const float BeachDepthRamp = BeachNearshoreDepth * FMath::Pow(BeachT, 1.25f);
-				const float BeachDepth = FMath::Lerp(BeachDepthRamp, NaturalDepth01, BeachOffshoreT);
-				const float Depth01 = FMath::Lerp(CliffDepth, BeachDepth, Beach);
+				const float Depth01 = FMath::Lerp(CoastRamp, NaturalDepth01, ShoreBlend);
 				HeightField.Data[Index] = -FMath::Clamp(Depth01, MinimumSignedSample, 1.0f);
 			}
 		}
