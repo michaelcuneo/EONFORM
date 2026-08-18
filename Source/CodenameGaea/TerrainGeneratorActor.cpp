@@ -144,8 +144,9 @@ void ATerrainGeneratorActor::BuildTerrain()
 			const int32 C = VertexIds[(Y + 1) * SafeResolution + X];
 			const int32 D = VertexIds[(Y + 1) * SafeResolution + X + 1];
 
-			Mesh.AppendTriangle(A, B, D, 0);
-			Mesh.AppendTriangle(A, D, C, 0);
+			// Wind triangles so the terrain's visible/front face points upward in Unreal.
+			Mesh.AppendTriangle(A, D, B, 0);
+			Mesh.AppendTriangle(A, C, D, 0);
 		}
 	}
 
