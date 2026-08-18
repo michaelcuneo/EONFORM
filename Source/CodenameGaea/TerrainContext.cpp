@@ -36,14 +36,11 @@ void FTerrainContext::Analyze(
 	OutContext.Foothill.SetNumZeroed(NumCells);
 	OutContext.Plains.SetNumZeroed(NumCells);
 
-	float MinHeight = TNumericLimits<float>::Max();
-	float MaxHeight = TNumericLimits<float>::Lowest();
+	float MaxLandHeight = UE_SMALL_NUMBER;
 	for (const float Height : HeightField.Data)
 	{
-		MinHeight = FMath::Min(MinHeight, Height);
-		MaxHeight = FMath::Max(MaxHeight, Height);
+		MaxLandHeight = FMath::Max(MaxLandHeight, Height);
 	}
-	const float HeightRange = FMath::Max(MaxHeight - MinHeight, UE_SMALL_NUMBER);
 
 	for (int32 Y = 0; Y < Resolution; ++Y)
 	{
@@ -51,7 +48,9 @@ void FTerrainContext::Analyze(
 		{
 			const int32 Index = HeightField.Index(X, Y);
 			const float Center = HeightField.Data[Index];
-			OutContext.Elevation[Index] = FMath::Clamp((Center - MinHeight) / HeightRange, 0.0f, 1.0f);
+			OutContext.Elevation[Index] = Center > 0.0f
+				? FMath::Clamp(Center / MaxLandHeight, 0.0f, 1.0f)
+				: 0.0f;
 
 			const int32 XL = FMath::Max(0, X - 1);
 			const int32 XR = FMath::Min(Resolution - 1, X + 1);
@@ -94,9 +93,14 @@ void FTerrainContext::Analyze(
 				OutContext.Convexity[Index] = FMath::Max(-Curvature, 0.0f);
 			}
 
-			const float Mountain = MountainMask.Num() == NumCells ? MountainMask[Index] : SmoothStep01((OutContext.Elevation[Index] - 0.58f) / 0.25f);
-			const float Foothill = FoothillMask.Num() == NumCells ? FoothillMask[Index] : 0.0f;
-			const float Plains = PlainsMask.Num() == NumCells ? PlainsMask[Index] : 1.0f - Mountain;
+			const bool bAboveSeaLevel = Center >= 0.0f;
+			const float Mountain = bAboveSeaLevel
+				? (MountainMask.Num() == NumCells ? MountainMask[Index] : SmoothStep01((OutContext.Elevation[Index] - 0.58f) / 0.25f))
+				: 0.0f;
+			const float Foothill = bAboveSeaLevel && FoothillMask.Num() == NumCells ? FoothillMask[Index] : 0.0f;
+			const float Plains = bAboveSeaLevel
+				? (PlainsMask.Num() == NumCells ? PlainsMask[Index] : 1.0f - Mountain)
+				: 0.0f;
 
 			OutContext.Mountain[Index] = FMath::Clamp(Mountain, 0.0f, 1.0f);
 			OutContext.Foothill[Index] = FMath::Clamp(Foothill, 0.0f, 1.0f);
@@ -130,6 +134,11 @@ void FTerrainContext::BuildProcessMasks(
 
 	for (int32 Index = 0; Index < NumCells; ++Index)
 	{
+		if (HeightField.Data[Index] < 0.0f)
+		{
+			continue;
+		}
+
 		const float Slope = Context.SlopeDegrees[Index];
 		const float Elevation = Context.Elevation[Index];
 		const float Mountain = Context.Mountain[Index];
