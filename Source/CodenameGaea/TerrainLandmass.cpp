@@ -57,12 +57,14 @@ namespace
 						{
 							continue;
 						}
+
 						const int32 NX = X + OX;
 						const int32 NY = Y + OY;
 						if (NX < 0 || NX >= Resolution || NY < 0 || NY >= Resolution)
 						{
 							continue;
 						}
+
 						const int32 NeighborIndex = NY * Resolution + NX;
 						if (Land[NeighborIndex] != 0 && Visited[NeighborIndex] == 0)
 						{
@@ -101,11 +103,13 @@ namespace
 			{
 				continue;
 			}
+
 			if (Land[NY * Resolution + NX] != CellClass)
 			{
 				return true;
 			}
 		}
+
 		return false;
 	}
 
@@ -150,12 +154,21 @@ namespace
 			for (int32 X = 0; X < Resolution; ++X)
 			{
 				const int32 Index = Y * Resolution + X;
-				if (X > 0) Relax(Index, Index - 1, Cardinal);
+				if (X > 0)
+				{
+					Relax(Index, Index - 1, Cardinal);
+				}
 				if (Y > 0)
 				{
 					Relax(Index, Index - Resolution, Cardinal);
-					if (X > 0) Relax(Index, Index - Resolution - 1, Diagonal);
-					if (X + 1 < Resolution) Relax(Index, Index - Resolution + 1, Diagonal);
+					if (X > 0)
+					{
+						Relax(Index, Index - Resolution - 1, Diagonal);
+					}
+					if (X + 1 < Resolution)
+					{
+						Relax(Index, Index - Resolution + 1, Diagonal);
+					}
 				}
 			}
 		}
@@ -165,12 +178,21 @@ namespace
 			for (int32 X = Resolution - 1; X >= 0; --X)
 			{
 				const int32 Index = Y * Resolution + X;
-				if (X + 1 < Resolution) Relax(Index, Index + 1, Cardinal);
+				if (X + 1 < Resolution)
+				{
+					Relax(Index, Index + 1, Cardinal);
+				}
 				if (Y + 1 < Resolution)
 				{
 					Relax(Index, Index + Resolution, Cardinal);
-					if (X + 1 < Resolution) Relax(Index, Index + Resolution + 1, Diagonal);
-					if (X > 0) Relax(Index, Index + Resolution - 1, Diagonal);
+					if (X + 1 < Resolution)
+					{
+						Relax(Index, Index + Resolution + 1, Diagonal);
+					}
+					if (X > 0)
+					{
+						Relax(Index, Index + Resolution - 1, Diagonal);
+					}
 				}
 			}
 		}
@@ -222,7 +244,9 @@ void FTerrainLandmass::Build(
 	const float Irregularity = FMath::Clamp(Settings.CoastIrregularity, 0.0f, 1.0f);
 	const float EdgeBand = FMath::Max(CellSize * 3.0f, HalfWorldSize * FMath::Clamp(Settings.EdgeOceanMargin, 0.0f, 0.35f));
 
+	TArray<float> LandFieldValues;
 	TArray<uint8> InitialLand;
+	LandFieldValues.SetNumZeroed(NumCells);
 	InitialLand.SetNumZeroed(NumCells);
 
 	for (int32 Y = 0; Y < Resolution; ++Y)
@@ -230,7 +254,10 @@ void FTerrainLandmass::Build(
 		for (int32 X = 0; X < Resolution; ++X)
 		{
 			const int32 Index = HeightField.Index(X, Y);
-			const FVector2D P(static_cast<float>(X) * CellSize - HalfWorldSize, static_cast<float>(Y) * CellSize - HalfWorldSize);
+			const FVector2D P(
+				static_cast<float>(X) * CellSize - HalfWorldSize,
+				static_cast<float>(Y) * CellSize - HalfWorldSize);
+
 			const float CoastNoise = FTerrainNoise::SampleFractal(P, CoastOffset, CoastNoiseSettings);
 			const float CoastDetail = FTerrainNoise::SampleFractal(P, CoastDetailOffset, CoastDetailSettings);
 			float LandField = CoastNoise * FMath::Lerp(0.72f, 1.0f, Irregularity)
@@ -245,17 +272,23 @@ void FTerrainLandmass::Build(
 
 			if (Settings.bIsland || Settings.bArchipelago)
 			{
-				const float DistanceToEdge = FMath::Max(0.0f, FMath::Min(HalfWorldSize - FMath::Abs(P.X), HalfWorldSize - FMath::Abs(P.Y)));
+				const float DistanceToEdge = FMath::Max(
+					0.0f,
+					FMath::Min(HalfWorldSize - FMath::Abs(P.X), HalfWorldSize - FMath::Abs(P.Y)));
 				const float EdgeOcean = 1.0f - SmoothStep01(DistanceToEdge / FMath::Max(EdgeBand, CellSize));
-				LandField -= EdgeOcean * 1.35f;
+				LandField -= EdgeOcean * 1.9f;
 			}
 
 			if (Settings.bArchipelago)
 			{
-				const float Fragmentation = FTerrainNoise::SampleFractal(P * 1.35f, CoastDetailOffset + FVector2D(1700.0f, -2300.0f), CoastDetailSettings);
+				const float Fragmentation = FTerrainNoise::SampleFractal(
+					P * 1.35f,
+					CoastDetailOffset + FVector2D(1700.0f, -2300.0f),
+					CoastDetailSettings);
 				LandField += Fragmentation * 0.28f - 0.06f;
 			}
 
+			LandFieldValues[Index] = LandField;
 			InitialLand[Index] = LandField >= 0.0f ? 1 : 0;
 		}
 	}
@@ -263,51 +296,62 @@ void FTerrainLandmass::Build(
 	if (Settings.bIsland && !Settings.bArchipelago)
 	{
 		KeepLargestLandComponent(InitialLand, Resolution);
+
+		// Positive fragments rejected by single-island mode become negative macro
+		// terrain, but are not flattened. Natural terrain relief can still make small
+		// offshore rocks or seamounts if it genuinely crosses zero later.
+		for (int32 Index = 0; Index < NumCells; ++Index)
+		{
+			if (InitialLand[Index] == 0 && LandFieldValues[Index] >= 0.0f)
+			{
+				LandFieldValues[Index] = -FMath::Max(LandFieldValues[Index] * 0.5f, 0.12f);
+			}
+		}
 	}
 
 	TArray<float> CoastDistance;
 	BuildCoastDistance(InitialLand, Resolution, CellSize, CoastDistance);
 
-	// One continuous signed DEM. Sea level is exactly zero. The landmass contributes
-	// only a broad signed datum around zero; the normal terrain generator supplies
-	// the natural relief above and below it.
-	const float CoastBlendWidth = FMath::Max(CellSize * 2.0f, FMath::Min(Settings.ShelfWidth, HeightField.WorldSize * 0.025f));
-	const float LandDatumCm = VerticalRangeCm * 0.18f;
-	const float OceanDatumCm = VerticalRangeCm * 0.07f;
-	const float CoastVisualWidth = FMath::Max(CellSize * 2.0f, CoastBlendWidth * 0.35f);
+	// This is the only height contribution made by the landmass stage: one smooth,
+	// continuous, signed macro-elevation field. It does not create a shelf, platform,
+	// cliff, basin or trench. The normal terrain generator remains full strength on
+	// both sides of sea level.
+	const float LandmassVerticalScaleCm = VerticalRangeCm * 0.55f;
+	const float LandFieldLimit = 1.25f;
+	const float CoastVisualWidth = FMath::Max(CellSize * 2.0f, HeightField.WorldSize * 0.012f);
 
 	for (int32 Y = 0; Y < Resolution; ++Y)
 	{
 		for (int32 X = 0; X < Resolution; ++X)
 		{
 			const int32 Index = HeightField.Index(X, Y);
-			const FVector2D P(static_cast<float>(X) * CellSize - HalfWorldSize, static_cast<float>(Y) * CellSize - HalfWorldSize);
+			const FVector2D P(
+				static_cast<float>(X) * CellSize - HalfWorldSize,
+				static_cast<float>(Y) * CellSize - HalfWorldSize);
 			const bool bGeneratedLand = InitialLand[Index] != 0;
 			const float Distance = CoastDistance[Index];
-			const float AwayFromCoast = SmoothStep01(Distance / CoastBlendWidth);
+			const float SignedMacro = FMath::Clamp(LandFieldValues[Index] / LandFieldLimit, -1.0f, 1.0f);
 
 			OutMaps.SignedCoastDistanceCm[Index] = bGeneratedLand ? Distance : -Distance;
 			OutMaps.CoastMask[Index] = 1.0f - SmoothStep01(Distance / CoastVisualWidth);
+			OutMaps.LandInfluence[Index] = 1.0f;
+			OutMaps.BaseElevationCm[Index] = SignedMacro * LandmassVerticalScaleCm;
+			OutMaps.LandMask[Index] = bGeneratedLand ? 1.0f : 0.0f;
+			OutMaps.OceanMask[Index] = bGeneratedLand ? 0.0f : 1.0f;
 
 			if (bGeneratedLand)
 			{
-				OutMaps.LandInfluence[Index] = 1.0f;
-				OutMaps.BaseElevationCm[Index] = LandDatumCm * AwayFromCoast;
-				OutMaps.LandMask[Index] = 1.0f;
 				continue;
 			}
 
-			// The same relief continues underwater at lower amplitude. No shelf, basin or
-			// trench value is allowed to directly replace the heightfield.
-			OutMaps.LandInfluence[Index] = FMath::Lerp(0.72f, 0.38f, AwayFromCoast);
-			OutMaps.BaseElevationCm[Index] = -OceanDatumCm * AwayFromCoast;
-			OutMaps.OceanMask[Index] = 1.0f;
-
-			const float ShelfDistance = FMath::Max(CoastBlendWidth, CellSize * 2.0f);
+			// Bathymetry concepts are descriptive masks only. They never write height.
+			const float ShelfDistance = FMath::Max(Settings.ShelfWidth, CellSize * 2.0f);
 			const float SlopeDistance = FMath::Max(Settings.ContinentalSlopeWidth, ShelfDistance * 2.0f);
 			const float ShelfT = SmoothStep01(Distance / ShelfDistance);
 			const float SlopeT = SmoothStep01((Distance - ShelfDistance) / SlopeDistance);
-			const float BasinT = SmoothStep01((Distance - ShelfDistance - SlopeDistance) / FMath::Max(SlopeDistance * 0.5f, CellSize));
+			const float BasinT = SmoothStep01(
+				(Distance - ShelfDistance - SlopeDistance)
+				/ FMath::Max(SlopeDistance * 0.5f, CellSize));
 
 			OutMaps.ShelfMask[Index] = 1.0f - ShelfT;
 			OutMaps.ContinentalSlopeMask[Index] = FMath::Clamp(SlopeT * (1.0f - BasinT), 0.0f, 1.0f);
@@ -363,6 +407,8 @@ void FTerrainLandmass::RefreshSeaLevelClassification(
 			continue;
 		}
 
+		// Classification derives from the ACTUAL negative DEM depth. It never creates
+		// bathymetry; it only labels what the signed terrain already generated.
 		const float ShelfClass = 1.0f - SmoothStep01(DepthCm / ShelfDepthCm);
 		const float BasinClass = SmoothStep01(
 			(DepthCm - ShelfDepthCm * 1.75f)
