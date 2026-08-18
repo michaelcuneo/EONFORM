@@ -3,10 +3,12 @@
 #include "TerrainContext.h"
 #include "TerrainNoise.h"
 #include "TerrainShaping.h"
+#include "TerrainStructure.h"
 
 void FTerrainGeology::Build(
 	const FTerrainHeightField& HeightField,
 	const FTerrainContextMaps& Context,
+	const FTerrainStructuralMaps* Structure,
 	int32 Seed,
 	const FTerrainGeologySettings& Settings,
 	FTerrainGeologyMaps& OutGeology)
@@ -21,6 +23,7 @@ void FTerrainGeology::Build(
 	const int32 Resolution = HeightField.Resolution;
 	const float CellSize = HeightField.WorldSize / static_cast<float>(Resolution - 1);
 	const float HalfWorldSize = HeightField.WorldSize * 0.5f;
+	const bool bHasStructure = Structure && Structure->IsValidFor(HeightField);
 
 	OutGeology.RockHardness.SetNumZeroed(NumCells);
 	OutGeology.Weathering.SetNumZeroed(NumCells);
@@ -51,22 +54,35 @@ void FTerrainGeology::Build(
 			const float Plains = Context.Plains[Index];
 			const float Slope = Context.SlopeDegrees[Index];
 			const float Concavity = Context.Concavity[Index];
+			const float FaultWeakness = bHasStructure ? Structure->FaultWeakness[Index] : 0.0f;
+			const float Bedding = bHasStructure ? Structure->Bedding[Index] : 0.5f;
 
+			const float BeddingBias = (Bedding - 0.5f) * Settings.BeddingHardnessContrast * 2.0f;
 			const float Hardness = FMath::Clamp(
-				Lithology + Mountain * Settings.MountainHardnessBias - Plains * Settings.PlainsSoftnessBias,
+				Lithology
+				+ Mountain * Settings.MountainHardnessBias
+				- Plains * Settings.PlainsSoftnessBias
+				+ BeddingBias
+				- FaultWeakness * Settings.FaultWeakeningStrength,
 				0.0f,
 				1.0f);
 			OutGeology.RockHardness[Index] = Hardness;
 
 			const float Weathering = FMath::Clamp(
-				(1.0f - Hardness) * 0.7f + Concavity * 0.2f + (1.0f - FMath::Clamp(Slope / 45.0f, 0.0f, 1.0f)) * 0.1f,
+				(1.0f - Hardness) * 0.65f
+				+ FaultWeakness * 0.2f
+				+ Concavity * 0.1f
+				+ (1.0f - FMath::Clamp(Slope / 45.0f, 0.0f, 1.0f)) * 0.05f,
 				0.0f,
 				1.0f);
 			OutGeology.Weathering[Index] = Weathering;
 
 			const float StableSurface = 1.0f - FMath::Clamp(Slope / 35.0f, 0.0f, 1.0f);
 			const float SoilDepth = FMath::Clamp(
-				Weathering * StableSurface * (0.45f + Plains * 0.35f + Concavity * 0.2f) * Settings.SoilFormationStrength,
+				Weathering
+				* StableSurface
+				* (0.4f + Plains * 0.35f + Concavity * 0.2f + FaultWeakness * 0.05f)
+				* Settings.SoilFormationStrength,
 				0.0f,
 				1.0f);
 			OutGeology.SoilDepth[Index] = SoilDepth;
