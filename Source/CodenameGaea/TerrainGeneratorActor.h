@@ -35,7 +35,7 @@ private:
 	UPROPERTY(VisibleAnywhere, Category="Terrain")
 	TObjectPtr<UDynamicMeshComponent> RiverWaterMesh;
 
-	UPROPERTY(EditAnywhere, Category="Terrain|World", meta=(ClampMin="2", ClampMax="1025", UIMin="2", UIMax="513"))
+	UPROPERTY(EditAnywhere, Category="Terrain|World", meta=(ClampMin="2", ClampMax="4097", UIMin="2", UIMax="4097"))
 	int32 Resolution = 257;
 
 	UPROPERTY(EditAnywhere, Category="Terrain|World", meta=(ClampMin="100.0", UIMin="1000.0", UIMax="500000.0", Units="cm"))
