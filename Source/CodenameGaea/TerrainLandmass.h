@@ -14,6 +14,10 @@ struct FTerrainLandmassSettings
 	float LandCoverage = 0.5f;
 	float EdgeOceanMargin = 0.14f;
 
+	// Signed DEM vertical reference. Sea level is always 0; land is positive and
+	// bathymetry negative within the same continuous heightfield.
+	float VerticalRangeCm = 8000.0f;
+
 	float ShelfWidth = 1500.0f;
 	float ShelfDepth = 220.0f;
 	float ContinentalSlopeWidth = 4000.0f;
@@ -65,7 +69,6 @@ public:
 		const FTerrainHeightField& HeightField,
 		const FTerrainStructuralMaps* Structure,
 		int32 Seed,
-		float HeightScale,
 		const FTerrainLandmassSettings& Settings,
 		FTerrainLandmassMaps& OutMaps);
 
