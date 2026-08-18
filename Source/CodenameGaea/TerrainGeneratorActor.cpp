@@ -47,7 +47,7 @@ void ATerrainGeneratorActor::RandomizeSeed()
 
 float ATerrainGeneratorActor::SampleFractalNoise(float WorldX, float WorldY) const
 {
-	const FRandomStream RandomStream(Seed);
+	FRandomStream RandomStream(Seed);
 	const FVector2D SeedOffset(
 		RandomStream.FRandRange(-100000.0f, 100000.0f),
 		RandomStream.FRandRange(-100000.0f, 100000.0f));
@@ -99,8 +99,7 @@ void ATerrainGeneratorActor::BuildTerrain()
 		}
 	}
 
-	FDynamicMesh3 Mesh;
-	Mesh.EnableVertexNormals(FVector3f::UpVector);
+	FDynamicMesh3 Mesh(true, false, false, false);
 
 	TArray<int32> VertexIds;
 	VertexIds.SetNumUninitialized(SafeResolution * SafeResolution);
@@ -128,8 +127,8 @@ void ATerrainGeneratorActor::BuildTerrain()
 			const int32 C = VertexIds[(Y + 1) * SafeResolution + X];
 			const int32 D = VertexIds[(Y + 1) * SafeResolution + X + 1];
 
-			Mesh.AppendTriangle(A, D, B);
-			Mesh.AppendTriangle(A, C, D);
+			Mesh.AppendTriangle(A, B, D, 0);
+			Mesh.AppendTriangle(A, D, C, 0);
 		}
 	}
 
