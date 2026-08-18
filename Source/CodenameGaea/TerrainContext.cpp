@@ -119,6 +119,9 @@ void FTerrainContext::BuildProcessMasks(
 	}
 
 	const int32 NumCells = HeightField.Data.Num();
+	const float ThermalRegionality = FMath::Clamp(Settings.ThermalRegionality, 0.0f, 1.0f);
+	const float HydraulicRegionality = FMath::Clamp(Settings.HydraulicRegionality, 0.0f, 1.0f);
+
 	OutMasks.Thermal.SetNumZeroed(NumCells);
 	OutMasks.Rainfall.SetNumZeroed(NumCells);
 	OutMasks.HydraulicErosion.SetNumZeroed(NumCells);
@@ -138,21 +141,22 @@ void FTerrainContext::BuildProcessMasks(
 		const float AboveTalus = SmoothStep01((Slope - ThermalTalusAngleDegrees + 4.0f) / 12.0f);
 		const float Highland = FMath::Clamp(Mountain + Foothill * 0.65f, 0.0f, 1.0f);
 		const float ThermalNatural = AboveTalus * FMath::Clamp(Highland + Convexity * 0.35f, 0.0f, 1.0f);
-		OutMasks.Thermal[Index] = FMath::Lerp(1.0f, ThermalNatural, FMath::Clamp(Settings.ThermalRegionality, 0.0f, 1.0f));
+		OutMasks.Thermal[Index] = FMath::Lerp(1.0f, ThermalNatural, ThermalRegionality);
 
 		const float Orographic = FMath::Clamp(Elevation * Settings.RainfallHighlandBias + Highland * 0.55f + Foothill * 0.15f, 0.0f, 1.0f);
 		const float RainNatural = FMath::Clamp(0.18f + Orographic, 0.0f, 1.0f);
-		OutMasks.Rainfall[Index] = FMath::Lerp(1.0f, RainNatural, FMath::Clamp(Settings.HydraulicRegionality, 0.0f, 1.0f));
+		OutMasks.Rainfall[Index] = FMath::Lerp(1.0f, RainNatural, HydraulicRegionality);
 
 		const float SlopeErosion = SmoothStep01((Slope - 4.0f) / 26.0f);
 		const float ErosionNatural = FMath::Clamp(SlopeErosion * (0.35f + Highland * 0.65f) * (1.0f - Concavity * 0.45f), 0.0f, 1.0f);
-		OutMasks.HydraulicErosion[Index] = FMath::Lerp(1.0f, ErosionNatural, FMath::Clamp(Settings.HydraulicRegionality, 0.0f, 1.0f));
+		OutMasks.HydraulicErosion[Index] = FMath::Lerp(1.0f, ErosionNatural, HydraulicRegionality);
 
 		const float LowSlope = 1.0f - SmoothStep01(Slope / 12.0f);
-		OutMasks.Deposition[Index] = FMath::Clamp(LowSlope * (0.35f + Concavity * 0.65f) * (0.45f + Plains * 0.55f), 0.0f, 1.0f);
+		const float DepositionNatural = FMath::Clamp(LowSlope * (0.35f + Concavity * 0.65f) * (0.45f + Plains * 0.55f), 0.0f, 1.0f);
+		OutMasks.Deposition[Index] = FMath::Lerp(1.0f, DepositionNatural, HydraulicRegionality);
 
 		const float Lowland = 1.0f - Elevation;
-		const float DryNatural = FMath::Clamp(0.25f + Lowland * Settings.EvaporationLowlandBias + Plains * 0.25f - Concavity * 0.25f, 0.0f, 1.0f);
-		OutMasks.Evaporation[Index] = DryNatural;
+		const float EvaporationNatural = FMath::Clamp(0.25f + Lowland * Settings.EvaporationLowlandBias + Plains * 0.25f - Concavity * 0.25f, 0.0f, 1.0f);
+		OutMasks.Evaporation[Index] = FMath::Lerp(1.0f, EvaporationNatural, HydraulicRegionality);
 	}
 }
