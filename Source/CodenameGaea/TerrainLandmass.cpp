@@ -7,6 +7,7 @@ namespace
 {
 	constexpr float DiagonalDistance = 1.41421356237f;
 	constexpr float LargeDistance = 1.0e30f;
+	constexpr float MaxNaturalBathymetrySlopeDegrees = 3.0f;
 
 	float SmoothStep01(float Value)
 	{
@@ -320,6 +321,9 @@ void FTerrainLandmass::Build(
 
 			const float BasinNoise = FTerrainNoise::SampleFractal(P, BasinOffset, BasinNoiseSettings);
 			Depth += BasinNoise * Settings.BasinRelief * BasinMask;
+
+			const float MaxNaturalDepth = FMath::Tan(FMath::DegreesToRadians(MaxNaturalBathymetrySlopeDegrees)) * OffshoreDistance;
+			Depth = FMath::Clamp(Depth, 0.0f, MaxNaturalDepth);
 
 			float Trench = 0.0f;
 			if (bHasStructure)
