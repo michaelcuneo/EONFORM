@@ -93,6 +93,167 @@ bool FTerrainHydrology::BuildRiverMask(
 	return true;
 }
 
+void FTerrainHydrology::BuildRiverNetwork(
+	const FTerrainHeightField& HeightField,
+	const TArray<float>& FlowAccumulation,
+	const FTerrainRiverSettings& Settings,
+	TArray<FIntPoint>& OutRiverEdges)
+{
+	OutRiverEdges.Reset();
+
+	if (!HeightField.IsValid() || FlowAccumulation.Num() != HeightField.Data.Num())
+	{
+		return;
+	}
+
+	const int32 Resolution = HeightField.Resolution;
+	float MaxLogFlow = 0.0f;
+	TArray<float> LogFlow;
+	LogFlow.SetNumZeroed(FlowAccumulation.Num());
+
+	for (int32 Index = 0; Index < FlowAccumulation.Num(); ++Index)
+	{
+		LogFlow[Index] = FMath::Loge(1.0f + FMath::Max(FlowAccumulation[Index], 0.0f));
+		MaxLogFlow = FMath::Max(MaxLogFlow, LogFlow[Index]);
+	}
+
+	if (MaxLogFlow <= UE_SMALL_NUMBER)
+	{
+		return;
+	}
+
+	static const FIntPoint Neighbors[] = {
+		FIntPoint(-1, 0), FIntPoint(1, 0),
+		FIntPoint(0, -1), FIntPoint(0, 1),
+		FIntPoint(-1, -1), FIntPoint(1, -1),
+		FIntPoint(-1, 1), FIntPoint(1, 1)
+	};
+
+	const float Threshold = FMath::Clamp(Settings.FlowThreshold, 0.0f, 1.0f);
+
+	for (int32 Y = 1; Y < Resolution - 1; ++Y)
+	{
+		for (int32 X = 1; X < Resolution - 1; ++X)
+		{
+			const int32 Index = HeightField.Index(X, Y);
+			const float Flow = LogFlow[Index] / MaxLogFlow;
+			if (Flow < Threshold)
+			{
+				continue;
+			}
+
+			int32 BestNeighborIndex = INDEX_NONE;
+			float BestHeight = HeightField.Data[Index];
+
+			for (const FIntPoint& Offset : Neighbors)
+			{
+				const int32 NX = X + Offset.X;
+				const int32 NY = Y + Offset.Y;
+				const int32 NeighborIndex = HeightField.Index(NX, NY);
+				const float NeighborHeight = HeightField.Data[NeighborIndex];
+
+				if (NeighborHeight < BestHeight)
+				{
+					BestHeight = NeighborHeight;
+					BestNeighborIndex = NeighborIndex;
+				}
+			}
+
+			if (BestNeighborIndex != INDEX_NONE)
+			{
+				OutRiverEdges.Add(FIntPoint(Index, BestNeighborIndex));
+			}
+		}
+	}
+}
+
+bool FTerrainHydrology::BuildFloodplainMasks(
+	const FTerrainHeightField& HeightField,
+	const TArray<float>& RiverMask,
+	float HeightScale,
+	const FTerrainFloodplainSettings& Settings,
+	TArray<float>& OutFloodplainMask,
+	TArray<float>& OutWetnessMask)
+{
+	OutFloodplainMask.Reset();
+	OutWetnessMask.Reset();
+
+	if (!HeightField.IsValid() || RiverMask.Num() != HeightField.Data.Num() || HeightScale <= UE_SMALL_NUMBER)
+	{
+		return false;
+	}
+
+	const int32 Resolution = HeightField.Resolution;
+	const int32 NumCells = HeightField.Data.Num();
+	const float CellSize = HeightField.WorldSize / static_cast<float>(Resolution - 1);
+	const float Width = FMath::Max(Settings.Width, CellSize);
+	const int32 RadiusCells = FMath::Max(1, FMath::CeilToInt(Width / CellSize));
+	const float MaxRiseNormalized = FMath::Max(Settings.MaxRise, 0.0f) / HeightScale;
+	const float Falloff = FMath::Max(Settings.Falloff, 0.1f);
+
+	OutFloodplainMask.SetNumZeroed(NumCells);
+	OutWetnessMask.SetNumZeroed(NumCells);
+
+	for (int32 Y = 0; Y < Resolution; ++Y)
+	{
+		for (int32 X = 0; X < Resolution; ++X)
+		{
+			const int32 RiverIndex = HeightField.Index(X, Y);
+			const float River = RiverMask[RiverIndex];
+			if (River < 0.5f)
+			{
+				continue;
+			}
+
+			const float RiverHeight = HeightField.Data[RiverIndex];
+
+			for (int32 DY = -RadiusCells; DY <= RadiusCells; ++DY)
+			{
+				for (int32 DX = -RadiusCells; DX <= RadiusCells; ++DX)
+				{
+					const int32 NX = X + DX;
+					const int32 NY = Y + DY;
+					if (NX < 0 || NX >= Resolution || NY < 0 || NY >= Resolution)
+					{
+						continue;
+					}
+
+					const float Distance = FMath::Sqrt(static_cast<float>(DX * DX + DY * DY)) * CellSize;
+					if (Distance > Width)
+					{
+						continue;
+					}
+
+					const int32 TargetIndex = HeightField.Index(NX, NY);
+					const float Rise = FMath::Max(HeightField.Data[TargetIndex] - RiverHeight, 0.0f);
+					if (Rise > MaxRiseNormalized)
+					{
+						continue;
+					}
+
+					const float DistanceFactor = FMath::Pow(FMath::Max(1.0f - Distance / Width, 0.0f), Falloff);
+					const float HeightFactor = MaxRiseNormalized > UE_SMALL_NUMBER
+						? 1.0f - FMath::Clamp(Rise / MaxRiseNormalized, 0.0f, 1.0f)
+						: 1.0f;
+					const float Floodplain = DistanceFactor * HeightFactor;
+
+					OutFloodplainMask[TargetIndex] = FMath::Max(OutFloodplainMask[TargetIndex], Floodplain);
+				}
+			}
+		}
+	}
+
+	const float WetnessStrength = FMath::Clamp(Settings.WetnessStrength, 0.0f, 1.0f);
+	for (int32 Index = 0; Index < NumCells; ++Index)
+	{
+		const float RiverWetness = FMath::Clamp(RiverMask[Index], 0.0f, 1.0f);
+		const float FloodWetness = OutFloodplainMask[Index] * WetnessStrength;
+		OutWetnessMask[Index] = FMath::Max(RiverWetness, FloodWetness);
+	}
+
+	return true;
+}
+
 void FTerrainHydrology::CarveRivers(
 	FTerrainHeightField& HeightField,
 	float HeightScale,
