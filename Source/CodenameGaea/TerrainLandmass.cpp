@@ -181,12 +181,11 @@ void FTerrainLandmass::Build(
 	const FTerrainHeightField& HeightField,
 	const FTerrainStructuralMaps* Structure,
 	int32 Seed,
-	float HeightScale,
 	const FTerrainLandmassSettings& Settings,
 	FTerrainLandmassMaps& OutMaps)
 {
 	OutMaps = FTerrainLandmassMaps{};
-	if (!HeightField.IsValid() || HeightScale <= UE_SMALL_NUMBER)
+	if (!HeightField.IsValid())
 	{
 		return;
 	}
@@ -195,6 +194,7 @@ void FTerrainLandmass::Build(
 	const int32 NumCells = HeightField.Data.Num();
 	const float CellSize = HeightField.WorldSize / static_cast<float>(Resolution - 1);
 	const float HalfWorldSize = HeightField.WorldSize * 0.5f;
+	const float VerticalRangeCm = FMath::Max(Settings.VerticalRangeCm, 1.0f);
 	const bool bHasStructure = Structure && Structure->IsValidFor(HeightField);
 
 	OutMaps.BaseElevationCm.SetNumZeroed(NumCells);
@@ -268,11 +268,12 @@ void FTerrainLandmass::Build(
 	TArray<float> CoastDistance;
 	BuildCoastDistance(InitialLand, Resolution, CellSize, CoastDistance);
 
-	// One continuous signed DEM. The landmass only contributes a gentle datum around
-	// sea level; the existing terrain generator remains responsible for the actual relief.
+	// One continuous signed DEM. Sea level is exactly zero. The landmass contributes
+	// only a broad signed datum around zero; the normal terrain generator supplies
+	// the natural relief above and below it.
 	const float CoastBlendWidth = FMath::Max(CellSize * 2.0f, FMath::Min(Settings.ShelfWidth, HeightField.WorldSize * 0.025f));
-	const float LandDatumCm = HeightScale * 0.18f;
-	const float OceanDatumCm = HeightScale * 0.07f;
+	const float LandDatumCm = VerticalRangeCm * 0.18f;
+	const float OceanDatumCm = VerticalRangeCm * 0.07f;
 	const float CoastVisualWidth = FMath::Max(CellSize * 2.0f, CoastBlendWidth * 0.35f);
 
 	for (int32 Y = 0; Y < Resolution; ++Y)
@@ -290,21 +291,18 @@ void FTerrainLandmass::Build(
 
 			if (bGeneratedLand)
 			{
-				// Do not flatten or attenuate the terrain on land. The generated coastline is
-				// only a broad positive bias; the final coastline is the actual Z=0 contour.
 				OutMaps.LandInfluence[Index] = 1.0f;
 				OutMaps.BaseElevationCm[Index] = LandDatumCm * AwayFromCoast;
 				OutMaps.LandMask[Index] = 1.0f;
 				continue;
 			}
 
-			// Preserve natural underwater relief, but reduce its amplitude away from shore
-			// so bathymetry does not dominate the visual vertical range.
+			// The same relief continues underwater at lower amplitude. No shelf, basin or
+			// trench value is allowed to directly replace the heightfield.
 			OutMaps.LandInfluence[Index] = FMath::Lerp(0.72f, 0.38f, AwayFromCoast);
 			OutMaps.BaseElevationCm[Index] = -OceanDatumCm * AwayFromCoast;
 			OutMaps.OceanMask[Index] = 1.0f;
 
-			// Descriptive geomorphology masks only; none of these alter height.
 			const float ShelfDistance = FMath::Max(CoastBlendWidth, CellSize * 2.0f);
 			const float SlopeDistance = FMath::Max(Settings.ContinentalSlopeWidth, ShelfDistance * 2.0f);
 			const float ShelfT = SmoothStep01(Distance / ShelfDistance);
