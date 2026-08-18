@@ -5,6 +5,8 @@
 
 namespace
 {
+	constexpr float ReferenceWorldSizeCm = 50000.0f;
+
 	float SmoothStep01(float Value)
 	{
 		const float T = FMath::Clamp(Value, 0.0f, 1.0f);
@@ -38,6 +40,8 @@ void FTerrainStructure::Build(
 	const int32 NumCells = HeightField.Data.Num();
 	const float CellSize = HeightField.WorldSize / static_cast<float>(Resolution - 1);
 	const float HalfWorldSize = HeightField.WorldSize * 0.5f;
+	const float HorizontalScale = FMath::Max(HeightField.WorldSize / ReferenceWorldSizeCm, 0.01f);
+	const float InverseHorizontalScale = 1.0f / HorizontalScale;
 
 	OutStructure.TectonicActivity.SetNumZeroed(NumCells);
 	OutStructure.Uplift.SetNumZeroed(NumCells);
@@ -45,8 +49,11 @@ void FTerrainStructure::Build(
 	OutStructure.FaultWeakness.SetNumZeroed(NumCells);
 	OutStructure.Bedding.SetNumZeroed(NumCells);
 
-	FTerrainFractalNoiseSettings ActivitySettings{ 0.000035f, 3, 0.5f, 2.0f };
-	FTerrainFractalNoiseSettings BendSettings{ 0.000055f, 3, 0.5f, 2.0f };
+	// The structural noise wavelengths are part of the same physical hierarchy as
+	// uplift/fault spacing. Keeping these frequencies fixed in centimetres caused
+	// high-resolution large worlds to resolve hundreds of narrow, ruler-like bands.
+	FTerrainFractalNoiseSettings ActivitySettings{ 0.000035f * InverseHorizontalScale, 3, 0.5f, 2.0f };
+	FTerrainFractalNoiseSettings BendSettings{ 0.000055f * InverseHorizontalScale, 3, 0.5f, 2.0f };
 	const FVector2D ActivityOffset = FTerrainNoise::MakeSeedOffset(Seed, 811);
 	const FVector2D BendOffset = FTerrainNoise::MakeSeedOffset(Seed, 812);
 	const FVector2D FaultBendOffset = FTerrainNoise::MakeSeedOffset(Seed, 813);
