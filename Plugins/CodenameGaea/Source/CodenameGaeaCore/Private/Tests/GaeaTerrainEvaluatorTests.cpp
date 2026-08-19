@@ -52,12 +52,12 @@ namespace
 		return Recipe;
 	}
 
-	FGaeaTerrainRecipe MakeProceduralRecipe(bool bIncludeContext = false)
+	FGaeaTerrainRecipe MakePerlinRecipe(bool bIncludeContext = false)
 	{
 		FGaeaTerrainRecipe Recipe;
 		FGaeaTerrainNode Source;
 		Source.Id = FGuid(11, 12, 13, 14);
-		Source.Type = GaeaTerrainNodeTypes::ProceduralTerrain;
+		Source.Type = GaeaTerrainNodeTypes::PerlinNoise;
 		Source.IntegerParameters.Add(TEXT("Resolution"), 17);
 		Source.IntegerParameters.Add(TEXT("Seed"), 42);
 		Source.NumericParameters.Add(TEXT("WorldSize"), 1600.0);
@@ -160,41 +160,41 @@ bool FGaeaTerrainEvaluatorHydraulicTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FGaeaTerrainEvaluatorProceduralTest,
-	"CodenameGaea.Core.Graph.ProceduralTerrainToHydraulicErosion",
+	FGaeaTerrainEvaluatorPerlinTest,
+	"CodenameGaea.Core.Graph.PerlinNoiseToHydraulicErosion",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-bool FGaeaTerrainEvaluatorProceduralTest::RunTest(const FString& Parameters)
+bool FGaeaTerrainEvaluatorPerlinTest::RunTest(const FString& Parameters)
 {
 	FGaeaTerrainEvaluationContext EmptyContext;
-	const FGaeaTerrainRecipe Recipe = MakeProceduralRecipe();
+	const FGaeaTerrainRecipe Recipe = MakePerlinRecipe();
 	const FGaeaTerrainEvaluationResult First = FGaeaTerrainEvaluator::Evaluate(Recipe, EmptyContext);
 	const FGaeaTerrainEvaluationResult Second = FGaeaTerrainEvaluator::Evaluate(Recipe, EmptyContext);
 
-	TestTrue(TEXT("Procedural recipe evaluates without external dataset"), First.bSuccess);
+	TestTrue(TEXT("Perlin recipe evaluates without external dataset"), First.bSuccess);
 	if (!First.bSuccess)
 	{
 		AddError(First.Error);
 		return false;
 	}
 
-	TestEqual(TEXT("Procedural height scale is preserved through erosion"), First.HeightScale, 6400.0f);
+	TestEqual(TEXT("Perlin height scale is preserved through erosion"), First.HeightScale, 6400.0f);
 	const FGaeaScalarField* Height = First.Dataset.FindScalarField(GaeaTerrainFieldNames::Height);
-	TestNotNull(TEXT("Procedural output has Height"), Height);
+	TestNotNull(TEXT("Perlin output has Height"), Height);
 	if (Height)
 	{
-		TestEqual(TEXT("Procedural resolution is respected"), Height->Domain.Dimensions, FIntPoint(17, 17));
-		TestEqual(TEXT("Procedural sample count is correct"), Height->Values.Num(), 17 * 17);
+		TestEqual(TEXT("Perlin resolution is respected"), Height->Domain.Dimensions, FIntPoint(17, 17));
+		TestEqual(TEXT("Perlin sample count is correct"), Height->Values.Num(), 17 * 17);
 	}
-	TestTrue(TEXT("Procedural output has Wear"), First.Dataset.HasScalarField(GaeaTerrainFieldNames::Wear));
-	TestTrue(TEXT("Repeated procedural evaluation succeeds"), Second.bSuccess);
+	TestTrue(TEXT("Perlin output has Wear"), First.Dataset.HasScalarField(GaeaTerrainFieldNames::Wear));
+	TestTrue(TEXT("Repeated Perlin evaluation succeeds"), Second.bSuccess);
 	if (Height && Second.bSuccess)
 	{
 		const FGaeaScalarField* SecondHeight = Second.Dataset.FindScalarField(GaeaTerrainFieldNames::Height);
-		TestNotNull(TEXT("Repeated procedural output has Height"), SecondHeight);
+		TestNotNull(TEXT("Repeated Perlin output has Height"), SecondHeight);
 		if (SecondHeight)
 		{
-			TestEqual(TEXT("Deterministic procedural values match"), SecondHeight->Values, Height->Values);
+			TestEqual(TEXT("Deterministic Perlin values match"), SecondHeight->Values, Height->Values);
 		}
 	}
 	return true;
@@ -202,14 +202,14 @@ bool FGaeaTerrainEvaluatorProceduralTest::RunTest(const FString& Parameters)
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FGaeaTerrainEvaluatorContextTest,
-	"CodenameGaea.Core.Graph.ProceduralTerrainContextHydraulic",
+	"CodenameGaea.Core.Graph.PerlinNoiseContextHydraulic",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 bool FGaeaTerrainEvaluatorContextTest::RunTest(const FString& Parameters)
 {
 	FGaeaTerrainEvaluationContext EmptyContext;
-	const FGaeaTerrainEvaluationResult Result = FGaeaTerrainEvaluator::Evaluate(MakeProceduralRecipe(true), EmptyContext);
-	TestTrue(TEXT("Procedural context recipe evaluates"), Result.bSuccess);
+	const FGaeaTerrainEvaluationResult Result = FGaeaTerrainEvaluator::Evaluate(MakePerlinRecipe(true), EmptyContext);
+	TestTrue(TEXT("Perlin context recipe evaluates"), Result.bSuccess);
 	if (!Result.bSuccess)
 	{
 		AddError(Result.Error);
