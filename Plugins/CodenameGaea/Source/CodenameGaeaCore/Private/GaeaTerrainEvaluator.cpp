@@ -5,6 +5,7 @@
 #include "GaeaTerrainContext.h"
 #include "GaeaTerrainFieldNames.h"
 #include "GaeaTerrainNoise.h"
+#include "GaeaTerrainShaping.h"
 
 namespace
 {
@@ -85,6 +86,43 @@ namespace
 		}
 		Out.HeightScale = HeightScale;
 		return true;
+	}
+
+	bool EvaluateTerrainShapeNode(
+		const FGaeaTerrainNode& Node,
+		const TMap<FName, const FGaeaTerrainNodeEvaluation*>& Inputs,
+		const FGaeaTerrainEvaluationContext&,
+		FGaeaTerrainNodeEvaluation& Out,
+		FString& Error)
+	{
+		const FGaeaTerrainNodeEvaluation* const* InputPtr = Inputs.Find(TEXT("Terrain"));
+		if (!InputPtr || !*InputPtr)
+		{
+			Error = TEXT("TerrainShape requires a Terrain input.");
+			return false;
+		}
+
+		const FGaeaTerrainNodeEvaluation& Input = **InputPtr;
+		const FGaeaScalarField* Height = Input.Dataset.FindScalarField(GaeaTerrainFieldNames::Height);
+		if (!Height)
+		{
+			Error = TEXT("TerrainShape input dataset has no Height field.");
+			return false;
+		}
+
+		FGaeaTerrainShapeSettings Settings;
+		Settings.Seed = static_cast<int32>(FMath::Clamp<int64>(Node.GetInteger(TEXT("Seed"), Settings.Seed), MIN_int32, MAX_int32));
+		Settings.MacroStrength = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("MacroStrength"), Settings.MacroStrength)), 0.0f, 2.0f);
+		Settings.MountainThreshold = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("MountainThreshold"), Settings.MountainThreshold)), -1.0f, 1.0f);
+		Settings.WarpStrength = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("WarpStrength"), Settings.WarpStrength)), 0.0f, 25000.0f);
+		Settings.RidgeStrength = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("RidgeStrength"), Settings.RidgeStrength)), 0.0f, 2.0f);
+		Settings.FoothillStrength = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("FoothillStrength"), Settings.FoothillStrength)), 0.0f, 1.0f);
+		Settings.ValleyDepth = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("ValleyDepth"), Settings.ValleyDepth)), 0.0f, 1.0f);
+		Settings.PlainsStrength = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("PlainsStrength"), Settings.PlainsStrength)), 0.0f, 1.0f);
+
+		Out.Dataset = Input.Dataset;
+		Out.HeightScale = Input.HeightScale;
+		return FGaeaTerrainShaping::Apply(*Height, Settings, Out.Dataset, &Error);
 	}
 
 	bool EvaluateTerrainContextNode(
@@ -225,6 +263,7 @@ void FGaeaTerrainNodeRegistry::RegisterBuiltIns()
 	FScopeLock Lock(&RegistryMutex);
 	if (!Registry.Contains(GaeaTerrainNodeTypes::SourceDataset)) Registry.Add(GaeaTerrainNodeTypes::SourceDataset, EvaluateSourceDataset);
 	if (!Registry.Contains(GaeaTerrainNodeTypes::ProceduralTerrain)) Registry.Add(GaeaTerrainNodeTypes::ProceduralTerrain, EvaluateProceduralTerrain);
+	if (!Registry.Contains(GaeaTerrainNodeTypes::TerrainShape)) Registry.Add(GaeaTerrainNodeTypes::TerrainShape, EvaluateTerrainShapeNode);
 	if (!Registry.Contains(GaeaTerrainNodeTypes::TerrainContext)) Registry.Add(GaeaTerrainNodeTypes::TerrainContext, EvaluateTerrainContextNode);
 	if (!Registry.Contains(GaeaTerrainNodeTypes::ProcessMasks)) Registry.Add(GaeaTerrainNodeTypes::ProcessMasks, EvaluateProcessMasksNode);
 	if (!Registry.Contains(GaeaTerrainNodeTypes::HydraulicErosion)) Registry.Add(GaeaTerrainNodeTypes::HydraulicErosion, EvaluateHydraulicErosionNode);
