@@ -5,6 +5,18 @@
 #include "TerrainShaping.h"
 #include "TerrainStructure.h"
 
+namespace
+{
+	void InitializeNormalizedField(FGaeaScalarField& Field, const FGaeaGridDomain& Domain, FName Name)
+	{
+		FGaeaFieldDescriptor Descriptor;
+		Descriptor.Name = Name;
+		Descriptor.Unit = EGaeaFieldUnit::Normalized;
+		Descriptor.Interpolation = EGaeaInterpolation::Bilinear;
+		Field.Initialize(Domain, Descriptor);
+	}
+}
+
 void FTerrainGeology::Build(
 	const FTerrainHeightField& HeightField,
 	const FTerrainContextMaps& Context,
@@ -19,15 +31,15 @@ void FTerrainGeology::Build(
 		return;
 	}
 
-	const int32 NumCells = HeightField.Data.Num();
 	const int32 Resolution = HeightField.Resolution;
 	const float CellSize = HeightField.WorldSize / static_cast<float>(Resolution - 1);
 	const float HalfWorldSize = HeightField.WorldSize * 0.5f;
 	const bool bHasStructure = Structure && Structure->IsValidFor(HeightField);
+	const FGaeaGridDomain& Domain = HeightField.GetGaeaDomain();
 
-	OutGeology.RockHardness.SetNumZeroed(NumCells);
-	OutGeology.Weathering.SetNumZeroed(NumCells);
-	OutGeology.SoilDepth.SetNumZeroed(NumCells);
+	InitializeNormalizedField(OutGeology.RockHardnessField, Domain, TEXT("RockHardness"));
+	InitializeNormalizedField(OutGeology.WeatheringField, Domain, TEXT("Weathering"));
+	InitializeNormalizedField(OutGeology.SoilDepthField, Domain, TEXT("SoilDepth"));
 
 	FTerrainFractalNoiseSettings GeologyNoiseSettings;
 	GeologyNoiseSettings.Frequency = Settings.Frequency;
