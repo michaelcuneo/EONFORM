@@ -13,7 +13,15 @@ namespace
 	{
 		FGaeaTerrainPortDescriptor Port;
 		Port.Name = Name;
-		Port.DataType = TEXT("TerrainDataset");
+		Port.DataType = TEXT("Terrain");
+		return Port;
+	}
+
+	FGaeaTerrainPortDescriptor ScalarPort(FName Name)
+	{
+		FGaeaTerrainPortDescriptor Port;
+		Port.Name = Name;
+		Port.DataType = TEXT("ScalarField");
 		return Port;
 	}
 
@@ -58,11 +66,7 @@ namespace
 
 void FGaeaTerrainNodeDescriptorRegistry::Register(const FGaeaTerrainNodeDescriptor& Descriptor)
 {
-	if (Descriptor.Type.IsNone())
-	{
-		return;
-	}
-
+	if (Descriptor.Type.IsNone()) return;
 	FScopeLock Lock(&DescriptorRegistryMutex);
 	DescriptorRegistry.Add(Descriptor.Type, Descriptor);
 }
@@ -178,9 +182,13 @@ void FGaeaTerrainNodeDescriptorRegistry::RegisterBuiltIns()
 		Erosion.Type = GaeaTerrainNodeTypes::HydraulicErosion;
 		Erosion.DisplayName = TEXT("Hydraulic Erosion");
 		Erosion.Category = TEXT("Erosion");
-		Erosion.Description = TEXT("Hydraulically erodes the incoming terrain and produces Wear, Deposits, and Flow data.");
+		Erosion.Description = TEXT("Hydraulically erodes the incoming terrain and exposes Wear, Deposits, and Flow as routable scalar outputs.");
 		Erosion.Inputs.Add(TerrainPort(TEXT("Terrain")));
+		Erosion.Inputs.Add(ScalarPort(TEXT("Mask")));
 		Erosion.Outputs.Add(TerrainPort(TEXT("Terrain")));
+		Erosion.Outputs.Add(ScalarPort(TEXT("Wear")));
+		Erosion.Outputs.Add(ScalarPort(TEXT("Deposits")));
+		Erosion.Outputs.Add(ScalarPort(TEXT("Flow")));
 		Erosion.Parameters.Add(IntegerParameter(TEXT("Iterations"), TEXT("Duration"), 24, 1, 4096));
 		Erosion.Parameters.Add(NumberParameter(TEXT("Strength"), TEXT("Strength"), 1.0, 0.0, 4.0));
 		Erosion.Parameters.Add(NumberParameter(TEXT("RockSoftness"), TEXT("Rock Softness"), 0.0, 0.0, 1.0));
@@ -199,11 +207,7 @@ bool FGaeaTerrainNodeDescriptorRegistry::Get(FName NodeType, FGaeaTerrainNodeDes
 	RegisterBuiltIns();
 	FScopeLock Lock(&DescriptorRegistryMutex);
 	const FGaeaTerrainNodeDescriptor* Descriptor = DescriptorRegistry.Find(NodeType);
-	if (!Descriptor)
-	{
-		return false;
-	}
-
+	if (!Descriptor) return false;
 	OutDescriptor = *Descriptor;
 	return true;
 }
@@ -216,10 +220,7 @@ void FGaeaTerrainNodeDescriptorRegistry::GetAll(TArray<FGaeaTerrainNodeDescripto
 	DescriptorRegistry.GenerateValueArray(OutDescriptors);
 	OutDescriptors.Sort([](const FGaeaTerrainNodeDescriptor& A, const FGaeaTerrainNodeDescriptor& B)
 	{
-		if (A.Category != B.Category)
-		{
-			return A.Category < B.Category;
-		}
+		if (A.Category != B.Category) return A.Category < B.Category;
 		return A.DisplayName < B.DisplayName;
 	});
 }
