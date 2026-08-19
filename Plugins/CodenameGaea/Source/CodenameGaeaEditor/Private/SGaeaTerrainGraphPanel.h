@@ -7,6 +7,7 @@
 #include "Widgets/SCompoundWidget.h"
 
 class SGraphEditor;
+class SVerticalBox;
 
 class SGaeaTerrainGraphPanel : public SCompoundWidget
 {
@@ -19,12 +20,17 @@ public:
 
 private:
 	void BuildDefaultRecipeAndGraph();
+	bool BuildRecipeFromEditorGraph(FGaeaTerrainRecipe& OutRecipe, FString& OutError) const;
+	void OnGraphSelectionChanged(const TSet<UObject*>& NewSelection);
+	void RebuildParameterPanel();
+
 	FReply EvaluateGraph();
 	FText GetStatusText() const;
 
-	FGaeaTerrainRecipe Recipe;
 	TStrongObjectPtr<UGaeaEditorGraph> EditorGraph;
 	TSharedPtr<SGraphEditor> GraphEditor;
+	TSharedPtr<SVerticalBox> ParameterPanel;
+	TWeakObjectPtr<UGaeaEditorGraphNode> SelectedNode;
 	FSimpleDelegate OnEvaluated;
 	FText StatusText;
 };
