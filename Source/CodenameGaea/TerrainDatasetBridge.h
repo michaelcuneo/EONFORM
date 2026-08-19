@@ -6,6 +6,7 @@
 struct FTerrainContextMaps;
 struct FTerrainGeologyMaps;
 struct FTerrainHeightField;
+struct FTerrainHydraulicErosionResult;
 struct FTerrainProcessMasks;
 
 class FTerrainDatasetBridge
@@ -15,5 +16,6 @@ public:
 		const FTerrainHeightField& HeightField,
 		const FTerrainContextMaps* Context = nullptr,
 		const FTerrainProcessMasks* ProcessMasks = nullptr,
-		const FTerrainGeologyMaps* Geology = nullptr);
+		const FTerrainGeologyMaps* Geology = nullptr,
+		const FTerrainHydraulicErosionResult* HydraulicErosion = nullptr);
 };
