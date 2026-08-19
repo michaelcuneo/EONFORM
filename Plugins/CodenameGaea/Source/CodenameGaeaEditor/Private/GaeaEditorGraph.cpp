@@ -44,22 +44,15 @@ namespace
 						Stack.Add(LinkedPin->GetOwningNode());
 					}
 				}
+			}
 		}
 
 		return false;
 	}
 }
 
-UGaeaEditorGraph::UGaeaEditorGraph(const FObjectInitializer& ObjectInitializer)
-	: Super(ObjectInitializer)
-{
-	bEditable = true;
-	SetFlags(RF_Transactional);
-}
-
 void UGaeaEditorGraphNode::Initialize(const FGuid& InRecipeNodeId, FName InRecipeNodeType)
 {
-	SetFlags(RF_Transactional);
 	RecipeNodeId = InRecipeNodeId;
 	RecipeNodeType = InRecipeNodeType;
 	InitializeParameterDefaults();
@@ -174,8 +167,7 @@ UEdGraphNode* FGaeaGraphSchemaAction_NewNode::PerformAction(
 		return nullptr;
 	}
 
-	ParentGraph->Modify();
-	UGaeaEditorGraphNode* NewNode = NewObject<UGaeaEditorGraphNode>(ParentGraph, NAME_None, RF_Transactional);
+	UGaeaEditorGraphNode* NewNode = NewObject<UGaeaEditorGraphNode>(ParentGraph);
 	NewNode->Initialize(FGuid::NewGuid(), NodeType);
 	NewNode->NodePosX = FMath::RoundToInt(Location.X);
 	NewNode->NodePosY = FMath::RoundToInt(Location.Y);
