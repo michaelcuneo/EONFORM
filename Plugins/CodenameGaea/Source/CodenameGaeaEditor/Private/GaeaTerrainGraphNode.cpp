@@ -39,6 +39,7 @@ void SGaeaTerrainGraphNode::UpdateGraphNode()
 				[
 					SNew(STextBlock)
 					.Text(GraphNode ? GraphNode->GetNodeTitle(ENodeTitleType::FullTitle) : FText::GetEmpty())
+					.ColorAndOpacity(FSlateColor(FLinearColor::White))
 				]
 			]
 			+ SVerticalBox::Slot()
