@@ -12,7 +12,7 @@ namespace
 
 		FGaeaTerrainNode Source;
 		Source.Id = FGuid(0x31000001, 0x31000002, 0x31000003, 0x31000004);
-		Source.Type = GaeaTerrainNodeTypes::ProceduralTerrain;
+		Source.Type = GaeaTerrainNodeTypes::PerlinNoise;
 		Source.IntegerParameters.Add(TEXT("Resolution"), 33);
 		Source.IntegerParameters.Add(TEXT("Seed"), 101);
 		Source.NumericParameters.Add(TEXT("WorldSize"), 3200.0);
