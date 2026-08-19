@@ -1,11 +1,17 @@
 #include "SGaeaTerrainGraphPanel.h"
 
-#include "EdGraph/EdGraphSchema.h"
 #include "Framework/Commands/GenericCommands.h"
 #include "Framework/Commands/UICommandList.h"
+#include "InputCoreTypes.h"
 
 FReply SGaeaTerrainGraphPanel::OnPreviewKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent)
 {
+	if (InKeyEvent.GetKey() == EKeys::Delete && CanDeleteSelectedNodes())
+	{
+		DeleteSelectedNodes();
+		return FReply::Handled();
+	}
+
 	if (!GraphCommands.IsValid())
 	{
 		GraphCommands = MakeShared<FUICommandList>();
@@ -49,12 +55,6 @@ void SGaeaTerrainGraphPanel::DeleteSelectedNodes()
 		return;
 	}
 
-	const UEdGraphSchema* Schema = EditorGraph->GetSchema();
-	if (!Schema)
-	{
-		return;
-	}
-
 	const TSet<UObject*> Selection = GraphEditor->GetSelectedNodes();
 	GraphEditor->ClearSelectionSet();
 
@@ -67,10 +67,15 @@ void SGaeaTerrainGraphPanel::DeleteSelectedNodes()
 			continue;
 		}
 
-		if (Schema->SafeDeleteNodeFromGraph(EditorGraph.Get(), Node))
+		if (EditorGraph->RemoveNode(Node, true, false))
 		{
 			++DeletedCount;
 		}
+	}
+
+	if (DeletedCount > 0)
+	{
+		EditorGraph->NotifyGraphChanged();
 	}
 
 	SelectedNode.Reset();
