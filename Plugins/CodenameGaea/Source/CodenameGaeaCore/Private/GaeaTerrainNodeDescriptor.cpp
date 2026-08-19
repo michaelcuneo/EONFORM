@@ -113,6 +113,23 @@ void FGaeaTerrainNodeDescriptorRegistry::RegisterBuiltIns()
 		DescriptorRegistry.Add(Context.Type, MoveTemp(Context));
 	}
 
+	if (!DescriptorRegistry.Contains(GaeaTerrainNodeTypes::ProcessMasks))
+	{
+		FGaeaTerrainNodeDescriptor Masks;
+		Masks.Type = GaeaTerrainNodeTypes::ProcessMasks;
+		Masks.DisplayName = TEXT("Process Masks");
+		Masks.Category = TEXT("Analyze");
+		Masks.Description = TEXT("Derives thermal, rainfall, hydraulic erosion, deposition, and evaporation masks from Terrain Context fields.");
+		Masks.Inputs.Add(TerrainPort(TEXT("Terrain")));
+		Masks.Outputs.Add(TerrainPort(TEXT("Terrain")));
+		Masks.Parameters.Add(NumberParameter(TEXT("ThermalTalusAngle"), TEXT("Thermal Talus Angle (deg)"), 34.0, 0.0, 90.0));
+		Masks.Parameters.Add(NumberParameter(TEXT("ThermalRegionality"), TEXT("Thermal Regionality"), 0.90, 0.0, 1.0));
+		Masks.Parameters.Add(NumberParameter(TEXT("HydraulicRegionality"), TEXT("Hydraulic Regionality"), 0.85, 0.0, 1.0));
+		Masks.Parameters.Add(NumberParameter(TEXT("RainfallHighlandBias"), TEXT("Rainfall Highland Bias"), 0.65, 0.0, 1.0));
+		Masks.Parameters.Add(NumberParameter(TEXT("EvaporationLowlandBias"), TEXT("Evaporation Lowland Bias"), 0.55, 0.0, 1.0));
+		DescriptorRegistry.Add(Masks.Type, MoveTemp(Masks));
+	}
+
 	if (!DescriptorRegistry.Contains(GaeaTerrainNodeTypes::HydraulicErosion))
 	{
 		FGaeaTerrainNodeDescriptor Erosion;
