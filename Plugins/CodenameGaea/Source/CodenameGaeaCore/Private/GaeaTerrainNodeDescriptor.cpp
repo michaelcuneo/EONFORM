@@ -133,6 +133,25 @@ void FGaeaTerrainNodeDescriptorRegistry::RegisterBuiltIns()
 		DescriptorRegistry.Add(Context.Type, MoveTemp(Context));
 	}
 
+	if (!DescriptorRegistry.Contains(GaeaTerrainNodeTypes::Geology))
+	{
+		FGaeaTerrainNodeDescriptor Geology;
+		Geology.Type = GaeaTerrainNodeTypes::Geology;
+		Geology.DisplayName = TEXT("Geology");
+		Geology.Category = TEXT("Analyze");
+		Geology.Description = TEXT("Derives rock hardness, weathering, and soil depth from terrain context and lithology noise.");
+		Geology.Inputs.Add(TerrainPort(TEXT("Terrain")));
+		Geology.Outputs.Add(TerrainPort(TEXT("Terrain")));
+		Geology.Parameters.Add(IntegerParameter(TEXT("Seed"), TEXT("Seed"), 1337, -2147483647, 2147483647));
+		Geology.Parameters.Add(NumberParameter(TEXT("Frequency"), TEXT("Lithology Frequency"), 0.000045, 0.000001, 1.0));
+		Geology.Parameters.Add(IntegerParameter(TEXT("Octaves"), TEXT("Lithology Octaves"), 3, 1, 16));
+		Geology.Parameters.Add(NumberParameter(TEXT("Contrast"), TEXT("Lithology Contrast"), 1.25, 0.1, 4.0));
+		Geology.Parameters.Add(NumberParameter(TEXT("MountainHardnessBias"), TEXT("Mountain Hardness Bias"), 0.18, 0.0, 1.0));
+		Geology.Parameters.Add(NumberParameter(TEXT("PlainsSoftnessBias"), TEXT("Plains Softness Bias"), 0.15, 0.0, 1.0));
+		Geology.Parameters.Add(NumberParameter(TEXT("SoilFormationStrength"), TEXT("Soil Formation Strength"), 0.65, 0.0, 2.0));
+		DescriptorRegistry.Add(Geology.Type, MoveTemp(Geology));
+	}
+
 	if (!DescriptorRegistry.Contains(GaeaTerrainNodeTypes::ProcessMasks))
 	{
 		FGaeaTerrainNodeDescriptor Masks;
