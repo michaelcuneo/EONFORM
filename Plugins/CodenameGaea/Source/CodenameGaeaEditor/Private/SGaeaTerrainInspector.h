@@ -3,9 +3,9 @@
 #include "CoreMinimal.h"
 #include "GaeaTerrainDatasetRegistry.h"
 #include "Widgets/SCompoundWidget.h"
+#include "Widgets/Views/SListView.h"
 
 class SUniformGridPanel;
-template<typename ItemType> class SListView;
 
 class SGaeaTerrainInspector : public SCompoundWidget
 {
