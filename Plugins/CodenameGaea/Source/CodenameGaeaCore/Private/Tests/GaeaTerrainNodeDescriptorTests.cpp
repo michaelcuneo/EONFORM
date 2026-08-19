@@ -23,13 +23,14 @@ bool FGaeaTerrainNodeDescriptorRegistryTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("Source output type"), Source.Outputs[0].DataType, FName(TEXT("Terrain")));
 	}
 
-	FGaeaTerrainNodeDescriptor Procedural;
+	FGaeaTerrainNodeDescriptor Perlin;
 	TestTrue(
-		TEXT("ProceduralTerrain descriptor exists"),
-		FGaeaTerrainNodeDescriptorRegistry::Get(GaeaTerrainNodeTypes::ProceduralTerrain, Procedural));
-	TestEqual(TEXT("Procedural terrain has no inputs"), Procedural.Inputs.Num(), 0);
-	TestEqual(TEXT("Procedural terrain has one output"), Procedural.Outputs.Num(), 1);
-	TestEqual(TEXT("Procedural terrain parameter count"), Procedural.Parameters.Num(), 8);
+		TEXT("PerlinNoise descriptor exists"),
+		FGaeaTerrainNodeDescriptorRegistry::Get(GaeaTerrainNodeTypes::PerlinNoise, Perlin));
+	TestEqual(TEXT("Perlin Noise has no inputs"), Perlin.Inputs.Num(), 0);
+	TestEqual(TEXT("Perlin Noise has one output"), Perlin.Outputs.Num(), 1);
+	TestEqual(TEXT("Perlin Noise parameter count"), Perlin.Parameters.Num(), 8);
+	TestEqual(TEXT("Perlin Noise display name"), Perlin.DisplayName, FString(TEXT("Perlin Noise")));
 
 	FGaeaTerrainNodeDescriptor Erosion;
 	TestTrue(
@@ -103,17 +104,17 @@ bool FGaeaTerrainNodeDescriptorRegistryTest::RunTest(const FString& Parameters)
 	TestNotNull(TEXT("Deterministic parameter exists"), Erosion.Parameters.FindByPredicate([](const FGaeaTerrainParameterDescriptor& P) { return P.Name == FName(TEXT("Deterministic")); }));
 
 	FGaeaTerrainNodeDescriptor Context;
-	TestTrue(TEXT("TerrainContext descriptor still exists for legacy recipes"),
+	TestTrue(TEXT("TerrainContext descriptor exists"),
 		FGaeaTerrainNodeDescriptorRegistry::Get(GaeaTerrainNodeTypes::TerrainContext, Context));
 	TestTrue(TEXT("TerrainContext is hidden from graph authoring"), Context.bHiddenInGraph);
 
 	FGaeaTerrainNodeDescriptor Geology;
-	TestTrue(TEXT("Geology descriptor still exists for legacy recipes"),
+	TestTrue(TEXT("Geology descriptor exists"),
 		FGaeaTerrainNodeDescriptorRegistry::Get(GaeaTerrainNodeTypes::Geology, Geology));
 	TestTrue(TEXT("Geology is hidden from graph authoring"), Geology.bHiddenInGraph);
 
 	FGaeaTerrainNodeDescriptor Masks;
-	TestTrue(TEXT("ProcessMasks descriptor still exists for legacy recipes"),
+	TestTrue(TEXT("ProcessMasks descriptor exists"),
 		FGaeaTerrainNodeDescriptorRegistry::Get(GaeaTerrainNodeTypes::ProcessMasks, Masks));
 	TestTrue(TEXT("ProcessMasks is hidden from graph authoring"), Masks.bHiddenInGraph);
 
