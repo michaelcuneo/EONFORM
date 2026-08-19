@@ -21,6 +21,21 @@ namespace
 		Field.Initialize(Domain, Descriptor);
 		return Field;
 	}
+
+	bool CopyCompatibleField(
+		const FGaeaTerrainDataset& Dataset,
+		FName Name,
+		const FGaeaGridDomain& Domain,
+		FGaeaScalarField& OutField)
+	{
+		const FGaeaScalarField* Existing = Dataset.FindScalarField(Name);
+		if (!Existing || !Existing->IsValid() || Existing->Domain != Domain)
+		{
+			return false;
+		}
+		OutField = *Existing;
+		return true;
+	}
 }
 
 bool FGaeaTerrainContext::Analyze(
@@ -49,9 +64,15 @@ bool FGaeaTerrainContext::Analyze(
 	FGaeaScalarField Slope = MakeField(Height.Domain, GaeaTerrainFieldNames::SlopeDegrees, EGaeaFieldUnit::Degrees);
 	FGaeaScalarField Concavity = MakeField(Height.Domain, GaeaTerrainFieldNames::Concavity);
 	FGaeaScalarField Convexity = MakeField(Height.Domain, GaeaTerrainFieldNames::Convexity);
-	FGaeaScalarField Mountain = MakeField(Height.Domain, GaeaTerrainFieldNames::Mountain);
-	FGaeaScalarField Foothill = MakeField(Height.Domain, GaeaTerrainFieldNames::Foothill);
-	FGaeaScalarField Plains = MakeField(Height.Domain, GaeaTerrainFieldNames::Plains);
+	FGaeaScalarField Mountain;
+	FGaeaScalarField Foothill;
+	FGaeaScalarField Plains;
+	const bool bHasMountain = CopyCompatibleField(InOutDataset, GaeaTerrainFieldNames::Mountain, Height.Domain, Mountain);
+	const bool bHasFoothill = CopyCompatibleField(InOutDataset, GaeaTerrainFieldNames::Foothill, Height.Domain, Foothill);
+	const bool bHasPlains = CopyCompatibleField(InOutDataset, GaeaTerrainFieldNames::Plains, Height.Domain, Plains);
+	if (!bHasMountain) Mountain = MakeField(Height.Domain, GaeaTerrainFieldNames::Mountain);
+	if (!bHasFoothill) Foothill = MakeField(Height.Domain, GaeaTerrainFieldNames::Foothill);
+	if (!bHasPlains) Plains = MakeField(Height.Domain, GaeaTerrainFieldNames::Plains);
 
 	float MinHeight = TNumericLimits<float>::Max();
 	float MaxHeight = TNumericLimits<float>::Lowest();
@@ -105,16 +126,19 @@ bool FGaeaTerrainContext::Analyze(
 				Convexity.AtInterior(X, Y) = FMath::Max(-Curvature, 0.0f);
 			}
 
-			const float MountainValue = SmoothStep01((Elevation.AtInterior(X, Y) - 0.58f) / 0.25f);
-			const float FoothillValue = FMath::Clamp(
-				SmoothStep01((Elevation.AtInterior(X, Y) - 0.38f) / 0.22f) * (1.0f - MountainValue),
-				0.0f,
-				1.0f);
-			const float PlainsValue = FMath::Clamp(1.0f - MountainValue - FoothillValue * 0.65f, 0.0f, 1.0f);
+			const float MountainValue = bHasMountain
+				? Mountain.AtInterior(X, Y)
+				: SmoothStep01((Elevation.AtInterior(X, Y) - 0.58f) / 0.25f);
+			const float FoothillValue = bHasFoothill
+				? Foothill.AtInterior(X, Y)
+				: FMath::Clamp(SmoothStep01((Elevation.AtInterior(X, Y) - 0.38f) / 0.22f) * (1.0f - MountainValue), 0.0f, 1.0f);
+			const float PlainsValue = bHasPlains
+				? Plains.AtInterior(X, Y)
+				: FMath::Clamp(1.0f - MountainValue - FoothillValue * 0.65f, 0.0f, 1.0f);
 
-			Mountain.AtInterior(X, Y) = MountainValue;
-			Foothill.AtInterior(X, Y) = FoothillValue;
-			Plains.AtInterior(X, Y) = PlainsValue;
+			Mountain.AtInterior(X, Y) = FMath::Clamp(MountainValue, 0.0f, 1.0f);
+			Foothill.AtInterior(X, Y) = FMath::Clamp(FoothillValue, 0.0f, 1.0f);
+			Plains.AtInterior(X, Y) = FMath::Clamp(PlainsValue, 0.0f, 1.0f);
 		}
 	}
 
