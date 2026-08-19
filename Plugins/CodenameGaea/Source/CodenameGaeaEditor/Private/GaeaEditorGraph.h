@@ -7,6 +7,15 @@
 #include "GaeaTerrainRecipe.h"
 #include "GaeaEditorGraph.generated.h"
 
+class FConnectionDrawingPolicy;
+class FSlateWindowElementList;
+struct FSlateRect;
+
+namespace GaeaEditorGraphPins
+{
+	extern const FName Terrain;
+}
+
 UCLASS()
 class UGaeaEditorGraph : public UEdGraph
 {
@@ -79,6 +88,14 @@ public:
 	virtual const FPinConnectionResponse CanCreateConnection(
 		const UEdGraphPin* A,
 		const UEdGraphPin* B) const override;
+
+	virtual FConnectionDrawingPolicy* CreateConnectionDrawingPolicy(
+		int32 InBackLayerID,
+		int32 InFrontLayerID,
+		float InZoomFactor,
+		const FSlateRect& InClippingRect,
+		FSlateWindowElementList& InDrawElements,
+		UEdGraph* InGraphObj) const override;
 
 	virtual void GetGraphContextActions(FGraphContextMenuBuilder& ContextMenuBuilder) const override;
 };
