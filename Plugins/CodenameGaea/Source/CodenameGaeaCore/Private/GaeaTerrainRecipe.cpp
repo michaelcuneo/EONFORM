@@ -9,6 +9,7 @@ namespace GaeaTerrainNodeTypes
 	const FName Geology(TEXT("Geology"));
 	const FName ProcessMasks(TEXT("ProcessMasks"));
 	const FName HydraulicErosion(TEXT("HydraulicErosion"));
+	const FName Slope(TEXT("Slope"));
 }
 
 namespace
