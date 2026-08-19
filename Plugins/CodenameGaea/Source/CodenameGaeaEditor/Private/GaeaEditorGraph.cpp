@@ -49,6 +49,7 @@ namespace
 					{
 						Stack.Add(LinkedPin->GetOwningNode());
 					}
+				}
 			}
 		}
 
