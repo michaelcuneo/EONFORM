@@ -21,14 +21,23 @@ namespace
 		return FMath::Lerp(1.0f, 0.18f, Hardness);
 	}
 
-	bool HasTopology(const TArray<uint8>* TopologyLandMask, int32 ExpectedNum)
+	const TArray<uint8>* ResolveTopology(
+		const FTerrainHeightField& HeightField,
+		const TArray<uint8>* RequestedTopology,
+		TArray<uint8>& ScratchTopology)
 	{
-		return TopologyLandMask && TopologyLandMask->Num() == ExpectedNum;
-	}
+		const int32 NumCells = HeightField.Data.Num();
+		if (RequestedTopology && RequestedTopology->Num() == NumCells)
+		{
+			return RequestedTopology;
+		}
 
-	bool IsTopologyLand(const TArray<uint8>* TopologyLandMask, int32 Index, int32 ExpectedNum)
-	{
-		return !HasTopology(TopologyLandMask, ExpectedNum) || (*TopologyLandMask)[Index] != 0;
+		ScratchTopology.SetNumUninitialized(NumCells);
+		for (int32 Index = 0; Index < NumCells; ++Index)
+		{
+			ScratchTopology[Index] = HeightField.Data[Index] > 0.0f ? 1 : 0;
+		}
+		return &ScratchTopology;
 	}
 }
 
@@ -51,7 +60,9 @@ void FTerrainErosion::ApplyThermal(
 	const float TalusHeight = FMath::Tan(FMath::DegreesToRadians(Settings.TalusAngleDegrees)) * CellSize / HeightScale;
 	const float SafeStrength = FMath::Clamp(Settings.Strength, 0.0f, 1.0f);
 	const float MinimumLandHeight = FMath::Max(1.0f / HeightScale, 1.0e-6f);
-	const bool bHasTopology = HasTopology(TopologyLandMask, NumCells);
+
+	TArray<uint8> ScratchTopology;
+	const TArray<uint8>* EffectiveTopology = ResolveTopology(HeightField, TopologyLandMask, ScratchTopology);
 
 	TArray<float> Delta;
 	Delta.SetNumZeroed(NumCells);
@@ -72,7 +83,7 @@ void FTerrainErosion::ApplyThermal(
 			for (int32 X = 1; X < Resolution - 1; ++X)
 			{
 				const int32 CenterIndex = HeightField.Index(X, Y);
-				if (bHasTopology && !IsTopologyLand(TopologyLandMask, CenterIndex, NumCells))
+				if ((*EffectiveTopology)[CenterIndex] == 0)
 				{
 					continue;
 				}
@@ -91,7 +102,7 @@ void FTerrainErosion::ApplyThermal(
 				{
 					const FIntPoint Offset = Neighbors[NeighborIndex];
 					const int32 NeighborFlatIndex = HeightField.Index(X + Offset.X, Y + Offset.Y);
-					if (bHasTopology && !IsTopologyLand(TopologyLandMask, NeighborFlatIndex, NumCells))
+					if ((*EffectiveTopology)[NeighborFlatIndex] == 0)
 					{
 						continue;
 					}
@@ -136,16 +147,14 @@ void FTerrainErosion::ApplyThermal(
 		{
 			for (int32 Index = Start; Index < End; ++Index)
 			{
-				if (bHasTopology && !IsTopologyLand(TopologyLandMask, Index, NumCells))
+				if ((*EffectiveTopology)[Index] == 0)
 				{
 					continue;
 				}
 
-				HeightField.Data[Index] += Delta[Index];
-				if (bHasTopology)
-				{
-					HeightField.Data[Index] = FMath::Max(HeightField.Data[Index], MinimumLandHeight);
-				}
+				HeightField.Data[Index] = FMath::Max(
+					HeightField.Data[Index] + Delta[Index],
+					MinimumLandHeight);
 			}
 		});
 	}
@@ -178,7 +187,9 @@ void FTerrainErosion::ApplyHydraulic(
 	const float CellSize = HeightField.WorldSize / static_cast<float>(Resolution - 1);
 	const float HeightToSlope = HeightScale / FMath::Max(CellSize, UE_SMALL_NUMBER);
 	const float MinimumLandHeight = FMath::Max(1.0f / HeightScale, 1.0e-6f);
-	const bool bHasTopology = HasTopology(TopologyLandMask, NumCells);
+
+	TArray<uint8> ScratchTopology;
+	const TArray<uint8>* EffectiveTopology = ResolveTopology(HeightField, TopologyLandMask, ScratchTopology);
 
 	const float Rainfall = FMath::Max(Settings.Rainfall, 0.0f);
 	const float FlowRate = FMath::Clamp(Settings.FlowRate, 0.0f, 1.0f);
@@ -213,11 +224,10 @@ void FTerrainErosion::ApplyHydraulic(
 		{
 			for (int32 Index = Start; Index < End; ++Index)
 			{
-				if (bHasTopology && !IsTopologyLand(TopologyLandMask, Index, NumCells))
+				if ((*EffectiveTopology)[Index] != 0)
 				{
-					continue;
+					Water[Index] += Rainfall * MaskValue(RainfallMask, Index, NumCells);
 				}
-				Water[Index] += Rainfall * MaskValue(RainfallMask, Index, NumCells);
 			}
 		});
 
@@ -303,7 +313,7 @@ void FTerrainErosion::ApplyHydraulic(
 			for (int32 X = 1; X < Resolution - 1; ++X)
 			{
 				const int32 Index = HeightField.Index(X, Y);
-				if (bHasTopology && !IsTopologyLand(TopologyLandMask, Index, NumCells))
+				if ((*EffectiveTopology)[Index] == 0)
 				{
 					continue;
 				}
@@ -341,10 +351,7 @@ void FTerrainErosion::ApplyHydraulic(
 					Sediment[Index] += Erode;
 				}
 
-				if (bHasTopology)
-				{
-					HeightField.Data[Index] = FMath::Max(HeightField.Data[Index], MinimumLandHeight);
-				}
+				HeightField.Data[Index] = FMath::Max(HeightField.Data[Index], MinimumLandHeight);
 			}
 		}
 
