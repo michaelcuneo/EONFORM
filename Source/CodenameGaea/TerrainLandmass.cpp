@@ -100,10 +100,6 @@ namespace
 			BaseMax = FMath::Max(BaseMax, Value);
 		}
 
-		// The island must remain closed inside the finite simulation domain, but the
-		// closure mechanism must not become the island shape. Only a thin outer guard
-		// band is biased toward ocean. Everywhere else, the coastline is determined
-		// exclusively by the terrain-derived suitability field and sea-level threshold.
 		if (Settings.bIsland || Settings.bArchipelago)
 		{
 			const float Span = FMath::Max(BaseMax - BaseMin, 0.001f);
@@ -501,14 +497,9 @@ void FTerrainLandmass::RefreshSeaLevelClassification(
 			const float Residual = OriginalTerrain[Index] - Suitability[Index];
 			const float DetailFade = SmoothStep01(Distance / ShoreDetailFadeWidth);
 
-			// One continuous terrain decomposition: low-frequency relief establishes the
-			// coastline, while the original high-frequency terrain returns progressively
-			// away from the shore. No land/ocean min-max normalization is performed.
 			float SignedHeight = (bLand ? FMath::Abs(LowFrequency) : -FMath::Abs(LowFrequency))
 				+ Residual * FMath::Lerp(0.18f, 1.0f, DetailFade);
 
-			// Preserve the selected topology without creating a flat zero shelf. If detail
-			// tries to cross the coast locally, retain the low-frequency relief magnitude.
 			if (bLand && SignedHeight <= 0.0f)
 			{
 				SignedHeight = FMath::Max(FMath::Abs(LowFrequency) * 0.35f, MinimumSignedHeight);
@@ -524,6 +515,27 @@ void FTerrainLandmass::RefreshSeaLevelClassification(
 		}
 
 		InOutMaps.bCompositionApplied = true;
+	}
+	else if (Settings.bIsland || Settings.bArchipelago)
+	{
+		// SignedCoastDistanceCm is the persistent topology established by the initial
+		// composition. Land-only processes may reshape relief, but until an explicit
+		// marine/coastal evolution solver exists they must not turn an island into a
+		// continent or fill the exterior ocean. Keep a one-centimetre sign separation
+		// around sea level while preserving all relief away from the crossing itself.
+		const float MinimumSignedHeight = FMath::Max(1.0f / HeightScale, 1.0e-6f);
+		for (int32 Index = 0; Index < NumCells; ++Index)
+		{
+			const float TopologyDistance = InOutMaps.SignedCoastDistanceCm[Index];
+			if (TopologyDistance > 0.0f)
+			{
+				HeightField.Data[Index] = FMath::Max(HeightField.Data[Index], MinimumSignedHeight);
+			}
+			else if (TopologyDistance < 0.0f)
+			{
+				HeightField.Data[Index] = FMath::Min(HeightField.Data[Index], -MinimumSignedHeight);
+			}
+		}
 	}
 
 	const float CoastBandCm = FMath::Max(HeightScale * 0.015f, 50.0f);
