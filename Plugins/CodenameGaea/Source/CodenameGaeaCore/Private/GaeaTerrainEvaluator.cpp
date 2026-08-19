@@ -2,6 +2,7 @@
 
 #include "GaeaGridDomain.h"
 #include "GaeaHydraulicErosion.h"
+#include "GaeaTerrainContext.h"
 #include "GaeaTerrainFieldNames.h"
 #include "GaeaTerrainNoise.h"
 
@@ -86,6 +87,33 @@ namespace
 		return true;
 	}
 
+	bool EvaluateTerrainContextNode(
+		const FGaeaTerrainNode&,
+		const TMap<FName, const FGaeaTerrainNodeEvaluation*>& Inputs,
+		const FGaeaTerrainEvaluationContext&,
+		FGaeaTerrainNodeEvaluation& Out,
+		FString& Error)
+	{
+		const FGaeaTerrainNodeEvaluation* const* InputPtr = Inputs.Find(TEXT("Terrain"));
+		if (!InputPtr || !*InputPtr)
+		{
+			Error = TEXT("TerrainContext requires a Terrain input.");
+			return false;
+		}
+
+		const FGaeaTerrainNodeEvaluation& Input = **InputPtr;
+		const FGaeaScalarField* Height = Input.Dataset.FindScalarField(GaeaTerrainFieldNames::Height);
+		if (!Height)
+		{
+			Error = TEXT("TerrainContext input dataset has no Height field.");
+			return false;
+		}
+
+		Out.Dataset = Input.Dataset;
+		Out.HeightScale = Input.HeightScale;
+		return FGaeaTerrainContext::Analyze(*Height, FMath::Max(Input.HeightScale, 1.0f), Out.Dataset, &Error);
+	}
+
 	bool EvaluateHydraulicErosionNode(
 		const FGaeaTerrainNode& Node,
 		const TMap<FName, const FGaeaTerrainNodeEvaluation*>& Inputs,
@@ -163,6 +191,7 @@ void FGaeaTerrainNodeRegistry::RegisterBuiltIns()
 	FScopeLock Lock(&RegistryMutex);
 	if (!Registry.Contains(GaeaTerrainNodeTypes::SourceDataset)) Registry.Add(GaeaTerrainNodeTypes::SourceDataset, EvaluateSourceDataset);
 	if (!Registry.Contains(GaeaTerrainNodeTypes::ProceduralTerrain)) Registry.Add(GaeaTerrainNodeTypes::ProceduralTerrain, EvaluateProceduralTerrain);
+	if (!Registry.Contains(GaeaTerrainNodeTypes::TerrainContext)) Registry.Add(GaeaTerrainNodeTypes::TerrainContext, EvaluateTerrainContextNode);
 	if (!Registry.Contains(GaeaTerrainNodeTypes::HydraulicErosion)) Registry.Add(GaeaTerrainNodeTypes::HydraulicErosion, EvaluateHydraulicErosionNode);
 }
 
