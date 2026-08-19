@@ -176,6 +176,21 @@ void FGaeaTerrainNodeDescriptorRegistry::RegisterBuiltIns()
 		DescriptorRegistry.Add(Masks.Type, MoveTemp(Masks));
 	}
 
+	if (!DescriptorRegistry.Contains(GaeaTerrainNodeTypes::Slope))
+	{
+		FGaeaTerrainNodeDescriptor Slope;
+		Slope.Type = GaeaTerrainNodeTypes::Slope;
+		Slope.DisplayName = TEXT("Slope");
+		Slope.Category = TEXT("Data");
+		Slope.Description = TEXT("Creates a scalar selection mask for terrain within a slope range.");
+		Slope.Inputs.Add(TerrainPort(TEXT("Terrain")));
+		Slope.Outputs.Add(ScalarPort(TEXT("Mask")));
+		Slope.Parameters.Add(NumberParameter(TEXT("Min"), TEXT("Min"), 0.0, 0.0, 90.0));
+		Slope.Parameters.Add(NumberParameter(TEXT("Max"), TEXT("Max"), 45.0, 0.0, 90.0));
+		Slope.Parameters.Add(NumberParameter(TEXT("Falloff"), TEXT("Falloff"), 5.0, 0.0, 45.0));
+		DescriptorRegistry.Add(Slope.Type, MoveTemp(Slope));
+	}
+
 	if (!DescriptorRegistry.Contains(GaeaTerrainNodeTypes::HydraulicErosion))
 	{
 		FGaeaTerrainNodeDescriptor Erosion;
