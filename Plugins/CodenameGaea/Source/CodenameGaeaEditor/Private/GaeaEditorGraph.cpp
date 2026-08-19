@@ -244,11 +244,6 @@ void UGaeaEditorGraphSchema::GetGraphContextActions(FGraphContextMenuBuilder& Co
 
 	for (const FGaeaTerrainNodeDescriptor& Descriptor : Descriptors)
 	{
-		if (Descriptor.Type == GaeaTerrainNodeTypes::SourceDataset)
-		{
-			continue;
-		}
-
 		ContextMenuBuilder.AddAction(MakeShared<FGaeaGraphSchemaAction_NewNode>(
 			FText::FromString(Descriptor.Category),
 			FText::FromString(Descriptor.DisplayName),
