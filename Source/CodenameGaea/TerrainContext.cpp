@@ -7,6 +7,19 @@ namespace
 		const float T = FMath::Clamp(Value, 0.0f, 1.0f);
 		return T * T * (3.0f - 2.0f * T);
 	}
+
+	void InitializeField(
+		FGaeaScalarField& Field,
+		const FGaeaGridDomain& Domain,
+		FName Name,
+		EGaeaFieldUnit Unit = EGaeaFieldUnit::Normalized)
+	{
+		FGaeaFieldDescriptor Descriptor;
+		Descriptor.Name = Name;
+		Descriptor.Unit = Unit;
+		Descriptor.Interpolation = EGaeaInterpolation::Bilinear;
+		Field.Initialize(Domain, Descriptor);
+	}
 }
 
 void FTerrainContext::Analyze(
@@ -27,14 +40,15 @@ void FTerrainContext::Analyze(
 	const int32 Resolution = HeightField.Resolution;
 	const int32 NumCells = HeightField.Data.Num();
 	const float CellSize = HeightField.WorldSize / static_cast<float>(Resolution - 1);
+	const FGaeaGridDomain& Domain = HeightField.GetGaeaDomain();
 
-	OutContext.Elevation.SetNumZeroed(NumCells);
-	OutContext.SlopeDegrees.SetNumZeroed(NumCells);
-	OutContext.Concavity.SetNumZeroed(NumCells);
-	OutContext.Convexity.SetNumZeroed(NumCells);
-	OutContext.Mountain.SetNumZeroed(NumCells);
-	OutContext.Foothill.SetNumZeroed(NumCells);
-	OutContext.Plains.SetNumZeroed(NumCells);
+	InitializeField(OutContext.ElevationField, Domain, TEXT("Elevation"));
+	InitializeField(OutContext.SlopeDegreesField, Domain, TEXT("SlopeDegrees"), EGaeaFieldUnit::Degrees);
+	InitializeField(OutContext.ConcavityField, Domain, TEXT("Concavity"));
+	InitializeField(OutContext.ConvexityField, Domain, TEXT("Convexity"));
+	InitializeField(OutContext.MountainField, Domain, TEXT("Mountain"));
+	InitializeField(OutContext.FoothillField, Domain, TEXT("Foothill"));
+	InitializeField(OutContext.PlainsField, Domain, TEXT("Plains"));
 
 	float MinHeight = TNumericLimits<float>::Max();
 	float MaxHeight = TNumericLimits<float>::Lowest();
@@ -121,12 +135,13 @@ void FTerrainContext::BuildProcessMasks(
 	const int32 NumCells = HeightField.Data.Num();
 	const float ThermalRegionality = FMath::Clamp(Settings.ThermalRegionality, 0.0f, 1.0f);
 	const float HydraulicRegionality = FMath::Clamp(Settings.HydraulicRegionality, 0.0f, 1.0f);
+	const FGaeaGridDomain& Domain = HeightField.GetGaeaDomain();
 
-	OutMasks.Thermal.SetNumZeroed(NumCells);
-	OutMasks.Rainfall.SetNumZeroed(NumCells);
-	OutMasks.HydraulicErosion.SetNumZeroed(NumCells);
-	OutMasks.Deposition.SetNumZeroed(NumCells);
-	OutMasks.Evaporation.SetNumZeroed(NumCells);
+	InitializeField(OutMasks.ThermalField, Domain, TEXT("Thermal"));
+	InitializeField(OutMasks.RainfallField, Domain, TEXT("Rainfall"));
+	InitializeField(OutMasks.HydraulicErosionField, Domain, TEXT("HydraulicErosion"));
+	InitializeField(OutMasks.DepositionField, Domain, TEXT("Deposition"));
+	InitializeField(OutMasks.EvaporationField, Domain, TEXT("Evaporation"));
 
 	for (int32 Index = 0; Index < NumCells; ++Index)
 	{
