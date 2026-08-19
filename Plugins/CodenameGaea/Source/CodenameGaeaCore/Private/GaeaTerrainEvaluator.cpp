@@ -4,6 +4,7 @@
 #include "GaeaHydraulicErosion.h"
 #include "GaeaTerrainContext.h"
 #include "GaeaTerrainFieldNames.h"
+#include "GaeaTerrainGeology.h"
 #include "GaeaTerrainNoise.h"
 #include "GaeaTerrainShaping.h"
 
@@ -152,6 +153,42 @@ namespace
 		return FGaeaTerrainContext::Analyze(*Height, FMath::Max(Input.HeightScale, 1.0f), Out.Dataset, &Error);
 	}
 
+	bool EvaluateGeologyNode(
+		const FGaeaTerrainNode& Node,
+		const TMap<FName, const FGaeaTerrainNodeEvaluation*>& Inputs,
+		const FGaeaTerrainEvaluationContext&,
+		FGaeaTerrainNodeEvaluation& Out,
+		FString& Error)
+	{
+		const FGaeaTerrainNodeEvaluation* const* InputPtr = Inputs.Find(TEXT("Terrain"));
+		if (!InputPtr || !*InputPtr)
+		{
+			Error = TEXT("Geology requires a Terrain input.");
+			return false;
+		}
+
+		const FGaeaTerrainNodeEvaluation& Input = **InputPtr;
+		const FGaeaScalarField* Height = Input.Dataset.FindScalarField(GaeaTerrainFieldNames::Height);
+		if (!Height)
+		{
+			Error = TEXT("Geology input dataset has no Height field.");
+			return false;
+		}
+
+		FGaeaTerrainGeologySettings Settings;
+		const int32 Seed = static_cast<int32>(FMath::Clamp<int64>(Node.GetInteger(TEXT("Seed"), 1337), MIN_int32, MAX_int32));
+		Settings.Frequency = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Frequency"), Settings.Frequency)), 0.000001f, 1.0f);
+		Settings.Octaves = FMath::Clamp<int32>(static_cast<int32>(Node.GetInteger(TEXT("Octaves"), Settings.Octaves)), 1, 16);
+		Settings.Contrast = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Contrast"), Settings.Contrast)), 0.1f, 4.0f);
+		Settings.MountainHardnessBias = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("MountainHardnessBias"), Settings.MountainHardnessBias)), 0.0f, 1.0f);
+		Settings.PlainsSoftnessBias = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("PlainsSoftnessBias"), Settings.PlainsSoftnessBias)), 0.0f, 1.0f);
+		Settings.SoilFormationStrength = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("SoilFormationStrength"), Settings.SoilFormationStrength)), 0.0f, 2.0f);
+
+		Out.Dataset = Input.Dataset;
+		Out.HeightScale = Input.HeightScale;
+		return FGaeaTerrainGeology::Build(*Height, Seed, Settings, Out.Dataset, &Error);
+	}
+
 	bool EvaluateProcessMasksNode(
 		const FGaeaTerrainNode& Node,
 		const TMap<FName, const FGaeaTerrainNodeEvaluation*>& Inputs,
@@ -265,6 +302,7 @@ void FGaeaTerrainNodeRegistry::RegisterBuiltIns()
 	if (!Registry.Contains(GaeaTerrainNodeTypes::ProceduralTerrain)) Registry.Add(GaeaTerrainNodeTypes::ProceduralTerrain, EvaluateProceduralTerrain);
 	if (!Registry.Contains(GaeaTerrainNodeTypes::TerrainShape)) Registry.Add(GaeaTerrainNodeTypes::TerrainShape, EvaluateTerrainShapeNode);
 	if (!Registry.Contains(GaeaTerrainNodeTypes::TerrainContext)) Registry.Add(GaeaTerrainNodeTypes::TerrainContext, EvaluateTerrainContextNode);
+	if (!Registry.Contains(GaeaTerrainNodeTypes::Geology)) Registry.Add(GaeaTerrainNodeTypes::Geology, EvaluateGeologyNode);
 	if (!Registry.Contains(GaeaTerrainNodeTypes::ProcessMasks)) Registry.Add(GaeaTerrainNodeTypes::ProcessMasks, EvaluateProcessMasksNode);
 	if (!Registry.Contains(GaeaTerrainNodeTypes::HydraulicErosion)) Registry.Add(GaeaTerrainNodeTypes::HydraulicErosion, EvaluateHydraulicErosionNode);
 }
