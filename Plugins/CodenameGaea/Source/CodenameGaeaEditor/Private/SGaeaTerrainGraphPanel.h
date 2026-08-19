@@ -3,10 +3,12 @@
 #include "CoreMinimal.h"
 #include "GaeaEditorGraph.h"
 #include "GaeaTerrainRecipe.h"
+#include "GraphEditor.h"
 #include "UObject/StrongObjectPtr.h"
 #include "Widgets/SCompoundWidget.h"
 
-class SGraphEditor;
+using FGaeaGraphEditorEvents = SGraphEditor::FGraphEditorEvents;
+
 class SVerticalBox;
 
 class SGaeaTerrainGraphPanel : public SCompoundWidget
