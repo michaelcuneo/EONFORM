@@ -40,7 +40,8 @@ namespace
 		Erosion.Type = GaeaTerrainNodeTypes::HydraulicErosion;
 		Erosion.IntegerParameters.Add(TEXT("Iterations"), 4);
 		Erosion.NumericParameters.Add(TEXT("Rainfall"), 0.02);
-		Recipe.Nodes = { Source, Erosion };
+		Recipe.Nodes.Add(Source);
+		Recipe.Nodes.Add(Erosion);
 		FGaeaTerrainConnection Connection;
 		Connection.FromNode = Source.Id;
 		Connection.FromOutput = TEXT("Terrain");
@@ -63,7 +64,7 @@ bool FGaeaTerrainRecipeValidationTest::RunTest(const FString& Parameters)
 	FString Error;
 	TestTrue(TEXT("Valid recipe passes validation"), Recipe.Validate(&Error));
 	const uint32 FirstHash = Recipe.GetDeterministicHash();
-	Algo::Reverse(Recipe.Nodes);
+	Recipe.Nodes.Swap(0, 1);
 	TestEqual(TEXT("Node ordering does not affect recipe hash"), Recipe.GetDeterministicHash(), FirstHash);
 
 	FGaeaTerrainConnection Duplicate = Recipe.Connections[0];
@@ -97,7 +98,17 @@ bool FGaeaTerrainEvaluatorHydraulicTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Output has Wear"), Result.Dataset.HasScalarField(GaeaTerrainFieldNames::Wear));
 	TestTrue(TEXT("Output has Deposits"), Result.Dataset.HasScalarField(GaeaTerrainFieldNames::Deposits));
 	TestTrue(TEXT("Output has Flow"), Result.Dataset.HasScalarField(GaeaTerrainFieldNames::Flow));
-	TestEqual(TEXT("Source dataset remains unchanged"), Context.SourceDataset.FindScalarField(GaeaTerrainFieldNames::Height)->Values, OriginalHeight);
+
+	const TArray<float>& CurrentHeight = Context.SourceDataset.FindScalarField(GaeaTerrainFieldNames::Height)->Values;
+	TestEqual(TEXT("Source sample count remains unchanged"), CurrentHeight.Num(), OriginalHeight.Num());
+	for (int32 Index = 0; Index < CurrentHeight.Num(); ++Index)
+	{
+		if (!FMath::IsNearlyEqual(CurrentHeight[Index], OriginalHeight[Index]))
+		{
+			AddError(FString::Printf(TEXT("Graph evaluation mutated source height at index %d"), Index));
+			break;
+		}
+	}
 	return true;
 }
 
@@ -112,7 +123,7 @@ bool FGaeaTerrainEvaluatorCycleTest::RunTest(const FString& Parameters)
 	FGaeaTerrainConnection BackEdge;
 	BackEdge.FromNode = Recipe.OutputNode;
 	BackEdge.FromOutput = TEXT("Terrain");
-	BackEdge.ToNode = Recipe.Nodes[0].Id;
+	BackEdge.ToNode = FGuid(1, 2, 3, 4);
 	BackEdge.ToInput = TEXT("Terrain");
 	Recipe.Connections.Add(BackEdge);
 
