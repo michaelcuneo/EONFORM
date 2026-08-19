@@ -3,15 +3,24 @@
 #include "CoreMinimal.h"
 #include "GaeaTerrainDataset.h"
 
+struct CODENAMEGAEARUNTIME_API FGaeaTerrainDatasetMetadata
+{
+	float HeightScale = 1000.0f;
+};
+
 struct CODENAMEGAEARUNTIME_API FGaeaTerrainDatasetSnapshot
 {
 	FName SourceId = NAME_None;
 	uint64 Revision = 0;
+	FGaeaTerrainDatasetMetadata Metadata;
 	FGaeaTerrainDataset Dataset;
 
 	bool IsValid() const
 	{
-		return !SourceId.IsNone() && Revision > 0 && !Dataset.IsEmpty();
+		return !SourceId.IsNone()
+			&& Revision > 0
+			&& Metadata.HeightScale > UE_SMALL_NUMBER
+			&& !Dataset.IsEmpty();
 	}
 };
 
@@ -25,8 +34,15 @@ struct CODENAMEGAEARUNTIME_API FGaeaTerrainDatasetSnapshot
 class CODENAMEGAEARUNTIME_API FGaeaTerrainDatasetRegistry
 {
 public:
-	static uint64 Publish(FName SourceId, const FGaeaTerrainDataset& Dataset);
-	static uint64 Publish(FName SourceId, FGaeaTerrainDataset&& Dataset);
+	static uint64 Publish(
+		FName SourceId,
+		const FGaeaTerrainDataset& Dataset,
+		const FGaeaTerrainDatasetMetadata& Metadata = FGaeaTerrainDatasetMetadata());
+
+	static uint64 Publish(
+		FName SourceId,
+		FGaeaTerrainDataset&& Dataset,
+		const FGaeaTerrainDatasetMetadata& Metadata = FGaeaTerrainDatasetMetadata());
 
 	static bool Get(FName SourceId, FGaeaTerrainDatasetSnapshot& OutSnapshot);
 	static bool GetLatest(FGaeaTerrainDatasetSnapshot& OutSnapshot);
