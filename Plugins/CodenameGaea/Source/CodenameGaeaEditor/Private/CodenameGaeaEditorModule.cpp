@@ -1,8 +1,10 @@
 #include "Modules/ModuleManager.h"
 
+#include "EdGraphUtilities.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Framework/Commands/UIAction.h"
 #include "Framework/Docking/TabManager.h"
+#include "GaeaTerrainGraphNode.h"
 #include "SGaeaTerrainInspector.h"
 #include "ToolMenus.h"
 #include "Widgets/Docking/SDockTab.h"
@@ -19,6 +21,9 @@ class FCodenameGaeaEditorModule : public IModuleInterface
 public:
 	virtual void StartupModule() override
 	{
+		TerrainGraphNodeFactory = MakeShared<FGaeaTerrainGraphNodeFactory>();
+		FEdGraphUtilities::RegisterVisualNodeFactory(TerrainGraphNodeFactory);
+
 		FGlobalTabmanager::Get()->RegisterNomadTabSpawner(
 			CodenameGaeaTabName,
 			FOnSpawnTab::CreateRaw(this, &FCodenameGaeaEditorModule::SpawnCodenameGaeaTab))
@@ -32,6 +37,12 @@ public:
 
 	virtual void ShutdownModule() override
 	{
+		if (TerrainGraphNodeFactory.IsValid())
+		{
+			FEdGraphUtilities::UnregisterVisualNodeFactory(TerrainGraphNodeFactory);
+			TerrainGraphNodeFactory.Reset();
+		}
+
 		UToolMenus::UnRegisterStartupCallback(this);
 		UToolMenus::UnregisterOwner(this);
 
@@ -68,6 +79,8 @@ private:
 				SNew(SGaeaTerrainInspector)
 			];
 	}
+
+	TSharedPtr<FGaeaTerrainGraphNodeFactory> TerrainGraphNodeFactory;
 };
 
 IMPLEMENT_MODULE(FCodenameGaeaEditorModule, CodenameGaeaEditor)
