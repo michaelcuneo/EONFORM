@@ -22,6 +22,14 @@ bool FGaeaTerrainNodeDescriptorRegistryTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("Source output name"), Source.Outputs[0].Name, FName(TEXT("Terrain")));
 	}
 
+	FGaeaTerrainNodeDescriptor Procedural;
+	TestTrue(
+		TEXT("ProceduralTerrain descriptor exists"),
+		FGaeaTerrainNodeDescriptorRegistry::Get(GaeaTerrainNodeTypes::ProceduralTerrain, Procedural));
+	TestEqual(TEXT("Procedural terrain has no inputs"), Procedural.Inputs.Num(), 0);
+	TestEqual(TEXT("Procedural terrain has one output"), Procedural.Outputs.Num(), 1);
+	TestEqual(TEXT("Procedural terrain parameter count"), Procedural.Parameters.Num(), 8);
+
 	FGaeaTerrainNodeDescriptor Erosion;
 	TestTrue(
 		TEXT("HydraulicErosion descriptor exists"),
@@ -48,7 +56,7 @@ bool FGaeaTerrainNodeDescriptorRegistryTest::RunTest(const FString& Parameters)
 
 	TArray<FGaeaTerrainNodeDescriptor> AllDescriptors;
 	FGaeaTerrainNodeDescriptorRegistry::GetAll(AllDescriptors);
-	TestTrue(TEXT("Built-in descriptor list includes at least two nodes"), AllDescriptors.Num() >= 2);
+	TestTrue(TEXT("Built-in descriptor list includes at least three nodes"), AllDescriptors.Num() >= 3);
 	return true;
 }
 
