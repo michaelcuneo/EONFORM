@@ -35,14 +35,12 @@ void SGaeaTerrainGraphNode::UpdateGraphNode()
 			[
 				SNew(SBorder)
 				.BorderImage(FAppStyle::GetBrush("Graph.Node.TitleBackground"))
+				.BorderBackgroundColor(FLinearColor(0.05f, 0.05f, 0.06f, 1.0f))
 				.Padding(FMargin(8.0f, 4.0f))
 				[
 					SNew(STextBlock)
 					.Text(GraphNode ? GraphNode->GetNodeTitle(ENodeTitleType::FullTitle) : FText::GetEmpty())
-					.ColorAndOpacity_Lambda([this]()
-					{
-						return FSlateColor(GetNodeTitleTextColor());
-					})
+					.ColorAndOpacity(FLinearColor(0.95f, 0.95f, 0.95f, 1.0f))
 				]
 			]
 			+ SVerticalBox::Slot()
