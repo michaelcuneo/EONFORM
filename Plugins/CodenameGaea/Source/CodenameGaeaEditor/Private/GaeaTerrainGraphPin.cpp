@@ -11,6 +11,7 @@ namespace GaeaEditorGraphPins
 void SGaeaTerrainGraphPin::Construct(const FArguments& InArgs, UEdGraphPin* InPin)
 {
 	SGraphPin::Construct(SGraphPin::FArguments(), InPin);
+	EnableDragAndDrop(true);
 }
 
 TSharedRef<SWidget> SGaeaTerrainGraphPin::GetDefaultValueWidget()
