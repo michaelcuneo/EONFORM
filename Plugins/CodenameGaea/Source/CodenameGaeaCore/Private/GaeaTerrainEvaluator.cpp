@@ -14,6 +14,42 @@ namespace
 	FCriticalSection RegistryMutex;
 	TMap<FName, FGaeaTerrainNodeEvaluator> Registry;
 
+	bool BuildFlatTerrainResult(FGaeaTerrainEvaluationResult& Result)
+	{
+		constexpr int32 Resolution = 257;
+		constexpr double WorldSize = 100000.0;
+		constexpr float HeightScale = 8000.0f;
+		const double HalfWorldSize = WorldSize * 0.5;
+
+		const FGaeaGridDomain Domain = FGaeaGridDomain::Make(
+			FIntPoint(Resolution, Resolution),
+			FVector2d(-HalfWorldSize, -HalfWorldSize),
+			FVector2d(HalfWorldSize, HalfWorldSize));
+		if (!Domain.IsValid())
+		{
+			Result.Error = TEXT("Could not create the default flat terrain domain.");
+			return false;
+		}
+
+		FGaeaFieldDescriptor Descriptor;
+		Descriptor.Name = GaeaTerrainFieldNames::Height;
+		Descriptor.Unit = EGaeaFieldUnit::Normalized;
+		Descriptor.Interpolation = EGaeaInterpolation::Bilinear;
+
+		FGaeaScalarField Height;
+		Height.Initialize(Domain, Descriptor);
+		if (!Height.IsValid() || !Result.Dataset.SetScalarField(MoveTemp(Height)))
+		{
+			Result.Error = TEXT("Could not create the default flat Height field.");
+			return false;
+		}
+
+		Result.HeightScale = HeightScale;
+		Result.bSuccess = true;
+		Result.Error.Reset();
+		return true;
+	}
+
 	bool EvaluateSourceDataset(
 		const FGaeaTerrainNode&,
 		const TMap<FName, const FGaeaTerrainNodeEvaluation*>&,
@@ -259,6 +295,8 @@ namespace
 
 		FGaeaHydraulicErosionSettings Settings;
 		Settings.Iterations = FMath::Clamp<int32>(static_cast<int32>(Node.GetInteger(TEXT("Iterations"), Settings.Iterations)), 1, 4096);
+		Settings.Strength = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Strength"), Settings.Strength)), 0.0f, 4.0f);
+		Settings.RockSoftness = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("RockSoftness"), Settings.RockSoftness)), 0.0f, 1.0f);
 		Settings.Rainfall = static_cast<float>(Node.GetNumber(TEXT("Rainfall"), Settings.Rainfall));
 		Settings.FlowRate = static_cast<float>(Node.GetNumber(TEXT("FlowRate"), Settings.FlowRate));
 		Settings.SedimentCapacity = static_cast<float>(Node.GetNumber(TEXT("SedimentCapacity"), Settings.SedimentCapacity));
@@ -337,6 +375,12 @@ FGaeaTerrainEvaluationResult FGaeaTerrainEvaluator::Evaluate(
 	FGaeaTerrainEvaluationResult Result;
 	Result.RecipeHash = Recipe.GetDeterministicHash();
 	if (!Recipe.Validate(&Result.Error)) return Result;
+
+	if (Recipe.Nodes.IsEmpty())
+	{
+		BuildFlatTerrainResult(Result);
+		return Result;
+	}
 
 	FGaeaTerrainNodeRegistry::RegisterBuiltIns();
 
