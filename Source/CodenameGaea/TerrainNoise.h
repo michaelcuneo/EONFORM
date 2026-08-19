@@ -1,14 +1,9 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "GaeaTerrainNoise.h"
 
-struct FTerrainFractalNoiseSettings
-{
-	float Frequency = 0.00055f;
-	int32 Octaves = 6;
-	float Persistence = 0.5f;
-	float Lacunarity = 2.0f;
-};
+using FTerrainFractalNoiseSettings = FGaeaFractalNoiseSettings;
 
 class FTerrainNoise
 {
