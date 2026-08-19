@@ -436,8 +436,6 @@ namespace
 			}
 		}
 
-		// Lakes belong to the drainage/lake system, not to the base coastline selector.
-		// Fill enclosed topology holes so Island mode produces one coherent landmass.
 		FillEnclosedOceanHoles(OutLand, Resolution);
 		OutCoastDatum = ComputeCoastDatum(OutLand, ReliefSurface, Resolution);
 	}
@@ -632,6 +630,63 @@ namespace
 		}
 	}
 
+	float BuildBathymetryDepthCm(
+		float DistanceFromCoastCm,
+		float BroadSignedCm,
+		float ResidualCm,
+		float CellSize,
+		const FTerrainLandmassSettings& Settings)
+	{
+		const float ShelfWidthCm = FMath::Max(Settings.ShelfWidth, CellSize * 2.0f);
+		const float SlopeWidthCm = FMath::Max(Settings.ContinentalSlopeWidth, CellSize * 3.0f);
+		const float ShelfDepthCm = FMath::Max(Settings.ShelfDepth, 1.0f);
+		const float BasinDepthCm = FMath::Max(Settings.BasinDepth, ShelfDepthCm + 1.0f);
+		const float Distance = FMath::Max(DistanceFromCoastCm, 0.0f);
+
+		float ProfileDepthCm = 0.0f;
+		if (Distance <= ShelfWidthCm)
+		{
+			const float ShelfT = SmoothStep01(Distance / ShelfWidthCm);
+			ProfileDepthCm = ShelfDepthCm * ShelfT;
+		}
+		else
+		{
+			const float SlopeT = SmoothStep01((Distance - ShelfWidthCm) / SlopeWidthCm);
+			ProfileDepthCm = FMath::Lerp(ShelfDepthCm, BasinDepthCm, SlopeT);
+		}
+
+		// The offshore profile supplies the large-scale shelf/slope/basin structure.
+		// The terrain that existed before sea-level composition supplies the local
+		// submarine morphology, so the seabed is related to the land rather than a
+		// disconnected random-noise surface.
+		const float OffshoreT = SmoothStep01(
+			Distance / FMath::Max(ShelfWidthCm * 0.65f, CellSize * 4.0f));
+		const float DeepWaterT = SmoothStep01(
+			(Distance - ShelfWidthCm * 0.35f)
+			/ FMath::Max(ShelfWidthCm + SlopeWidthCm, CellSize));
+
+		const float NaturalDeepeningCm = FMath::Min(
+			FMath::Max(-BroadSignedCm, 0.0f) * 0.45f,
+			FMath::Max(Settings.TrenchDepth, 0.0f));
+		const float NaturalShoalingCm = FMath::Min(
+			FMath::Max(BroadSignedCm, 0.0f) * 0.35f,
+			FMath::Max(Settings.SeamountHeight, 0.0f));
+		const float ResidualReliefCm = FMath::Clamp(
+			-ResidualCm,
+			-FMath::Max(Settings.BasinRelief, 0.0f),
+			FMath::Max(Settings.BasinRelief, 0.0f));
+
+		float DepthCm = ProfileDepthCm;
+		DepthCm += NaturalDeepeningCm * OffshoreT;
+		DepthCm -= NaturalShoalingCm * DeepWaterT;
+		DepthCm += ResidualReliefCm * OffshoreT * 0.65f;
+
+		// Keep the exact coast as the zero crossing while preventing offshore terrain
+		// peaks from punching above sea level and creating accidental new islands.
+		const float MinimumDepthCm = FMath::Max(1.0f, ShelfDepthCm * 0.0025f);
+		return FMath::Max(DepthCm, MinimumDepthCm);
+	}
+
 	void ClassifyDepth(
 		float DepthCm,
 		const FTerrainLandmassSettings& Settings,
@@ -746,22 +801,24 @@ void FTerrainLandmass::RefreshSeaLevelClassification(
 			const float BroadSigned = ReliefSurface[Index] - SeaLevelThreshold;
 			const float Residual = OriginalTerrain[Index] - ReliefSurface[Index];
 			const float DetailFade = SmoothStep01(Distance / ShoreDetailFadeWidth);
-			float SignedHeight = BroadSigned + Residual * FMath::Lerp(0.10f, 1.0f, DetailFade);
 
-			// The relief field remains the source of elevation magnitude. Topology only
-			// resolves ambiguous cells whose natural sign disagrees with the selected
-			// coherent island; those cells are placed just across sea level rather than
-			// mirrored into artificial cliffs or deep trenches.
-			if (bLand && SignedHeight <= MinimumSignedHeight)
+			if (bLand)
 			{
-				SignedHeight = MinimumSignedHeight;
+				float SignedHeight = BroadSigned
+					+ Residual * FMath::Lerp(0.10f, 1.0f, DetailFade);
+				HeightField.Data[Index] = FMath::Max(SignedHeight, MinimumSignedHeight);
 			}
-			else if (!bLand && SignedHeight >= -MinimumSignedHeight)
+			else
 			{
-				SignedHeight = -MinimumSignedHeight;
+				const float DepthCm = BuildBathymetryDepthCm(
+					Distance,
+					BroadSigned * HeightScale,
+					Residual * HeightScale,
+					CellSize,
+					Settings);
+				HeightField.Data[Index] = -DepthCm / HeightScale;
 			}
 
-			HeightField.Data[Index] = SignedHeight;
 			InOutMaps.SignedCoastDistanceCm[Index] = bLand ? Distance : -Distance;
 			InOutMaps.CoastMask[Index] = 1.0f - SmoothStep01(Distance / CoastVisualWidth);
 		}
@@ -817,5 +874,19 @@ void FTerrainLandmass::RefreshSeaLevelClassification(
 			InOutMaps.ShelfMask[Index],
 			InOutMaps.ContinentalSlopeMask[Index],
 			InOutMaps.OceanBasinMask[Index]);
+
+		const float BasinDepthCm = FMath::Max(Settings.BasinDepth, Settings.ShelfDepth + 1.0f);
+		const float TrenchRangeCm = FMath::Max(Settings.TrenchDepth, 1.0f);
+		InOutMaps.TrenchMask[Index] = SmoothStep01(
+			(DepthCm - BasinDepthCm) / TrenchRangeCm);
+
+		const float OffshoreT = SmoothStep01(
+			(FMath::Abs(InOutMaps.SignedCoastDistanceCm[Index]) - Settings.ShelfWidth)
+			/ FMath::Max(Settings.ContinentalSlopeWidth, CellSize));
+		const float SeamountReferenceDepth = FMath::Max(BasinDepthCm - Settings.SeamountHeight, Settings.ShelfDepth);
+		InOutMaps.SeamountMask[Index] = OffshoreT
+			* (1.0f - SmoothStep01(
+				(DepthCm - SeamountReferenceDepth)
+				/ FMath::Max(Settings.SeamountHeight, 1.0f)));
 	}
 }
