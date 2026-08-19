@@ -51,7 +51,7 @@ namespace
 		Parameter.bHasMinimum = true;
 		Parameter.Minimum = static_cast<double>(Minimum);
 		Parameter.bHasMaximum = true;
-		Parameter.Maximum = static_cast<double>(Maximum);
+		Parameter.Maximum = Maximum;
 		return Parameter;
 	}
 }
@@ -99,6 +99,18 @@ void FGaeaTerrainNodeDescriptorRegistry::RegisterBuiltIns()
 		Source.Parameters.Add(NumberParameter(TEXT("Persistence"), TEXT("Persistence"), 0.5, 0.0, 1.0));
 		Source.Parameters.Add(NumberParameter(TEXT("Lacunarity"), TEXT("Lacunarity"), 2.0, 1.0, 8.0));
 		DescriptorRegistry.Add(Source.Type, MoveTemp(Source));
+	}
+
+	if (!DescriptorRegistry.Contains(GaeaTerrainNodeTypes::TerrainContext))
+	{
+		FGaeaTerrainNodeDescriptor Context;
+		Context.Type = GaeaTerrainNodeTypes::TerrainContext;
+		Context.DisplayName = TEXT("Terrain Context");
+		Context.Category = TEXT("Analyze");
+		Context.Description = TEXT("Derives elevation, slope, curvature, mountain, foothill, and plains fields from terrain height.");
+		Context.Inputs.Add(TerrainPort(TEXT("Terrain")));
+		Context.Outputs.Add(TerrainPort(TEXT("Terrain")));
+		DescriptorRegistry.Add(Context.Type, MoveTemp(Context));
 	}
 
 	if (!DescriptorRegistry.Contains(GaeaTerrainNodeTypes::HydraulicErosion))
