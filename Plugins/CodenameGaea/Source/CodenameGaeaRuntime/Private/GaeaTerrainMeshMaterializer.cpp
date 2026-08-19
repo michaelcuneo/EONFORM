@@ -61,8 +61,8 @@ bool FGaeaTerrainMeshMaterializer::BuildDynamicMesh(
 			const int32 V01 = VertexIds[(Y + 1) * Dimensions.X + X];
 			const int32 V11 = VertexIds[(Y + 1) * Dimensions.X + X + 1];
 
-			if (OutMesh.AppendTriangle(V00, V10, V01) < 0 ||
-				OutMesh.AppendTriangle(V10, V11, V01) < 0)
+			if (OutMesh.AppendTriangle(V00, V10, V01, -1) < 0 ||
+				OutMesh.AppendTriangle(V10, V11, V01, -1) < 0)
 			{
 				return Fail(TEXT("Failed to append terrain mesh triangles."));
 			}
