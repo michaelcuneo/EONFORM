@@ -3,6 +3,7 @@
 namespace GaeaTerrainNodeTypes
 {
 	const FName SourceDataset(TEXT("SourceDataset"));
+	const FName ProceduralTerrain(TEXT("ProceduralTerrain"));
 	const FName HydraulicErosion(TEXT("HydraulicErosion"));
 }
 
