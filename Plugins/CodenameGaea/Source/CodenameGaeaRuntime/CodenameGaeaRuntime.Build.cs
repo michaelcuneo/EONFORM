@@ -11,6 +11,8 @@ public class CodenameGaeaRuntime : ModuleRules
             "Core",
             "CoreUObject",
             "Engine",
+            "GeometryCore",
+            "GeometryFramework",
             "CodenameGaeaCore"
         });
     }
