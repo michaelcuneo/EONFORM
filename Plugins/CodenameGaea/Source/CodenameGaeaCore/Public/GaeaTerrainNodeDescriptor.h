@@ -14,18 +14,21 @@ struct CODENAMEGAEACORE_API FGaeaTerrainPortDescriptor
 {
 	FName Name = NAME_None;
 	FName DataType = NAME_None;
+	FString DisplayName;
 };
 
 struct CODENAMEGAEACORE_API FGaeaTerrainParameterDescriptor
 {
 	FName Name = NAME_None;
 	FString DisplayName;
+	FString Group;
 	EGaeaTerrainParameterType Type = EGaeaTerrainParameterType::Number;
 
 	double DefaultNumber = 0.0;
 	int64 DefaultInteger = 0;
 	bool DefaultBoolean = false;
 	FName DefaultName = NAME_None;
+	TArray<FName> NameOptions;
 
 	bool bHasMinimum = false;
 	double Minimum = 0.0;
