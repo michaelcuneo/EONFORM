@@ -108,7 +108,6 @@ private:
 		if (!MeshActor)
 		{
 			FActorSpawnParameters SpawnParameters;
-			SpawnParameters.Name = TEXT("CodenameGaeaDynamicMesh");
 			SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 			MeshActor = World->SpawnActor<AGaeaTerrainDynamicMeshActor>(
 				FVector::ZeroVector,
