@@ -67,7 +67,7 @@ void SGaeaTerrainGraphPanel::DeleteSelectedNodes()
 			continue;
 		}
 
-		if (Schema->SafeDeleteNodeFromGraph(*EditorGraph.Get(), *Node))
+		if (Schema->SafeDeleteNodeFromGraph(EditorGraph.Get(), Node))
 		{
 			++DeletedCount;
 		}
