@@ -6,6 +6,8 @@
 struct CODENAMEGAEACORE_API FGaeaHydraulicErosionSettings
 {
 	int32 Iterations = 24;
+	float Strength = 1.0f;
+	float RockSoftness = 0.0f;
 	float Rainfall = 0.01f;
 	float FlowRate = 0.55f;
 	float SedimentCapacity = 0.7f;
