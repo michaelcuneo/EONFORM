@@ -52,7 +52,7 @@ namespace
 		return Recipe;
 	}
 
-	FGaeaTerrainRecipe MakeProceduralRecipe()
+	FGaeaTerrainRecipe MakeProceduralRecipe(bool bIncludeContext = false)
 	{
 		FGaeaTerrainRecipe Recipe;
 		FGaeaTerrainNode Source;
@@ -64,19 +64,36 @@ namespace
 		Source.NumericParameters.Add(TEXT("HeightScale"), 6400.0);
 		Source.NumericParameters.Add(TEXT("Frequency"), 0.001);
 
+		FGaeaTerrainNode ContextNode;
+		ContextNode.Id = FGuid(21, 22, 23, 24);
+		ContextNode.Type = GaeaTerrainNodeTypes::TerrainContext;
+
 		FGaeaTerrainNode Erosion;
 		Erosion.Id = FGuid(15, 16, 17, 18);
 		Erosion.Type = GaeaTerrainNodeTypes::HydraulicErosion;
 		Erosion.IntegerParameters.Add(TEXT("Iterations"), 2);
 
 		Recipe.Nodes.Add(Source);
+		if (bIncludeContext) Recipe.Nodes.Add(ContextNode);
 		Recipe.Nodes.Add(Erosion);
-		FGaeaTerrainConnection Connection;
-		Connection.FromNode = Source.Id;
-		Connection.FromOutput = TEXT("Terrain");
-		Connection.ToNode = Erosion.Id;
-		Connection.ToInput = TEXT("Terrain");
-		Recipe.Connections.Add(Connection);
+
+		FGaeaTerrainConnection FirstConnection;
+		FirstConnection.FromNode = Source.Id;
+		FirstConnection.FromOutput = TEXT("Terrain");
+		FirstConnection.ToNode = bIncludeContext ? ContextNode.Id : Erosion.Id;
+		FirstConnection.ToInput = TEXT("Terrain");
+		Recipe.Connections.Add(FirstConnection);
+
+		if (bIncludeContext)
+		{
+			FGaeaTerrainConnection SecondConnection;
+			SecondConnection.FromNode = ContextNode.Id;
+			SecondConnection.FromOutput = TEXT("Terrain");
+			SecondConnection.ToNode = Erosion.Id;
+			SecondConnection.ToInput = TEXT("Terrain");
+			Recipe.Connections.Add(SecondConnection);
+		}
+
 		Recipe.OutputNode = Erosion.Id;
 		return Recipe;
 	}
@@ -180,6 +197,34 @@ bool FGaeaTerrainEvaluatorProceduralTest::RunTest(const FString& Parameters)
 			TestEqual(TEXT("Deterministic procedural values match"), SecondHeight->Values, Height->Values);
 		}
 	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FGaeaTerrainEvaluatorContextTest,
+	"CodenameGaea.Core.Graph.ProceduralTerrainContextHydraulic",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FGaeaTerrainEvaluatorContextTest::RunTest(const FString& Parameters)
+{
+	FGaeaTerrainEvaluationContext EmptyContext;
+	const FGaeaTerrainEvaluationResult Result = FGaeaTerrainEvaluator::Evaluate(MakeProceduralRecipe(true), EmptyContext);
+	TestTrue(TEXT("Procedural context recipe evaluates"), Result.bSuccess);
+	if (!Result.bSuccess)
+	{
+		AddError(Result.Error);
+		return false;
+	}
+
+	TestEqual(TEXT("Context pipeline preserves height scale"), Result.HeightScale, 6400.0f);
+	TestTrue(TEXT("Context output has Elevation"), Result.Dataset.HasScalarField(GaeaTerrainFieldNames::Elevation));
+	TestTrue(TEXT("Context output has SlopeDegrees"), Result.Dataset.HasScalarField(GaeaTerrainFieldNames::SlopeDegrees));
+	TestTrue(TEXT("Context output has Concavity"), Result.Dataset.HasScalarField(GaeaTerrainFieldNames::Concavity));
+	TestTrue(TEXT("Context output has Convexity"), Result.Dataset.HasScalarField(GaeaTerrainFieldNames::Convexity));
+	TestTrue(TEXT("Context output has Mountain"), Result.Dataset.HasScalarField(GaeaTerrainFieldNames::Mountain));
+	TestTrue(TEXT("Context output has Foothill"), Result.Dataset.HasScalarField(GaeaTerrainFieldNames::Foothill));
+	TestTrue(TEXT("Context output has Plains"), Result.Dataset.HasScalarField(GaeaTerrainFieldNames::Plains));
+	TestTrue(TEXT("Context fields survive hydraulic erosion"), Result.Dataset.HasScalarField(GaeaTerrainFieldNames::Wear));
 	return true;
 }
 
