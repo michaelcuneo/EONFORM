@@ -7,9 +7,11 @@
 
 The protected baseline must remain unchanged.
 
-## Verified checkpoint: plugin boundary
+## Verified checkpoints
 
-The following structural milestone has been compiled successfully in Unreal Engine 5.8 by the project owner:
+### Plugin boundary
+
+Compiled successfully in Unreal Engine 5.8 by the project owner:
 
 - `Plugins/CodenameGaea/CodenameGaea.uplugin`
 - `CodenameGaeaCore`
@@ -17,56 +19,45 @@ The following structural milestone has been compiled successfully in Unreal Engi
 - `CodenameGaeaEditor`
 - host-project plugin enablement
 
-## Current checkpoint: spatial primitives
+### Spatial primitives
 
-The active branch now introduces the first shared terrain-data primitives in `CodenameGaeaCore`.
+Compiled successfully in Unreal Engine 5.8 by the project owner:
 
-### `FGaeaGridDomain`
+- `FGaeaGridDomain`
+- `FGaeaScalarField`
+- field metadata for units/interpolation
+- guard-band-aware storage and sampling
+- one-way legacy `FTerrainHeightField` conversion seam
 
-Defines a regular 2D world-space sample domain with:
+## Current checkpoint: heightfield storage migration
 
-- rectangular interior dimensions
-- explicit `WorldMin` / `WorldMax`
-- derived cell spacing
-- optional guard-band samples
-- interior and storage coordinate/index helpers
-- sample-to-world and world-to-sample transforms
-- evaluation bounds that include guard storage
+`FTerrainHeightField` is now backed internally by `FGaeaScalarField`.
 
-`Dimensions` always describes the requested interior grid. `BorderSamples` expands evaluation/storage outside that requested region without changing interior resolution or spacing.
+The existing public compatibility surface is deliberately preserved:
 
-A default-constructed domain is invalid by design.
+- `Resolution`
+- `WorldSize`
+- `Data`
+- `Index()`
+- `At()`
+- `Initialize()`
+- `IsValid()`
 
-### `FGaeaScalarField`
+`Data` is a reference alias bound to the authoritative `FGaeaScalarField::Values` storage. Existing terrain algorithms can therefore continue accessing `HeightField.Data` without behavior changes while new code can consume the shared field/domain model directly.
 
-Defines dense scalar values over an `FGaeaGridDomain` with:
+Explicit copy/move constructors and assignments preserve value semantics and ensure copied heightfields never accidentally share the same backing buffer.
 
-- field name
-- semantic unit
-- nearest or bilinear interpolation
-- guard-band-aware storage
-- interior/storage accessors
-- world-space sampling
-- explicit clamp/no-clamp behavior outside the evaluation domain
-
-Current unit metadata includes unitless, normalized, centimetres, metres, degrees, and Celsius.
-
-### Legacy compatibility seam
-
-`FTerrainHeightField` remains structurally unchanged so existing terrain generation, erosion, geology, and hydrology code continue to use the exact same storage and access patterns.
-
-It now exposes:
+New direct accessors:
 
 - `GetGaeaDomain()`
+- `GetGaeaField()`
 - `ToGaeaScalarField()`
 
-The conversion maps the existing centered square terrain domain from `-WorldSize/2` to `+WorldSize/2` and marks legacy height values as normalized.
-
-This is intentionally one-way for now. Replacing `FTerrainHeightField` storage with `FGaeaScalarField` is deferred until the new primitives compile and their behavior is validated.
+Legacy height values remain normalized and the centered world domain remains `[-WorldSize/2, +WorldSize/2]` in both axes.
 
 ## Automated coverage
 
-Development automation tests currently cover:
+Core spatial tests cover:
 
 - domain validity
 - guard-band storage dimensions
@@ -77,16 +68,23 @@ Development automation tests currently cover:
 - bilinear center sampling
 - explicit out-of-domain clamp behavior
 
+Legacy heightfield regression tests now cover:
+
+- legacy `Data` writes and new scalar-field access sharing identical storage
+- `At()` writes and legacy `Data` sharing identical storage
+- copy construction preserving values without buffer aliasing
+- move construction preserving values
+
 ## Validation required before next step
 
 1. Pull `agent/mesh-terrain-foundation`.
-2. Regenerate project files if Unreal Build Tool requests it.
-3. Build `CodenameGaeaEditor` / Development Editor / Win64 in UE 5.8.
-4. Run automation tests matching `CodenameGaea.Core` if convenient.
-5. Do not proceed with migration if the module or tests fail.
+2. Build `CodenameGaeaEditor` / Development Editor / Win64 in UE 5.8.
+3. Run automation tests matching `CodenameGaea.Core` and `CodenameGaea.Legacy` if convenient.
+4. Confirm existing terrain generation remains visually unchanged.
+5. Do not proceed if this storage migration fails compilation or changes terrain behavior.
 
 ## Next implementation step
 
-Once this checkpoint compiles, migrate `FTerrainHeightField` incrementally onto the shared field/domain model while preserving terrain output and all existing algorithm behavior.
+After this checkpoint is verified, migrate context and geology outputs from subsystem-specific anonymous `TArray<float>` collections into first-class named scalar fields while keeping their current public structs available as compatibility facades.
 
-After that migration is verified, move context/geology outputs into first-class fields before changing erosion semantics or introducing graph execution.
+Erosion semantics and graph execution remain unchanged until those field migrations are stable.
