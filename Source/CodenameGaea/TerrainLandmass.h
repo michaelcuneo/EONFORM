@@ -3,7 +3,7 @@
 #include "CoreMinimal.h"
 #include "TerrainHeightField.h"
 
-struct FTerrainStructuralMaps;
+struct FTerrainBaseShapeMaps;
 
 struct FTerrainLandmassSettings
 {
@@ -30,9 +30,9 @@ struct FTerrainLandmassMaps
 	TArray<float> BaseElevationCm;
 	TArray<float> LandInfluence;
 
-	// Authoritative topology chosen during the initial signed-DEM composition.
-	// This is deliberately separate from LandMask, which is a derived classification
-	// map used by downstream systems.
+	// Authoritative topology comes from TerrainBaseShape. TerrainLandmass never
+	// grows or repairs islands; it only carries that topology through downstream
+	// processes and derives coast/marine classifications from it.
 	TArray<uint8> TopologyLandMask;
 
 	TArray<float> LandMask;
@@ -72,17 +72,15 @@ struct FTerrainLandmassMaps
 class FTerrainLandmass
 {
 public:
-	// Height-neutral initialization. The natural terrain generator runs unchanged.
 	static void Build(
 		const FTerrainHeightField& HeightField,
-		const FTerrainStructuralMaps* Structure,
-		int32 Seed,
+		const FTerrainBaseShapeMaps* BaseShape,
 		const FTerrainLandmassSettings& Settings,
 		FTerrainLandmassMaps& OutMaps);
 
-	// The first call establishes the signed DEM and its authoritative topology.
-	// Later calls preserve that topology while refreshing classification maps after
-	// terrain processes. Land and ocean are never min/max-normalized to fill a range.
+	// The first call composes the signed DEM from the pre-generated base-shape
+	// topology. Later calls preserve that topology while refreshing classifications
+	// after terrain processes. No topology search or connected-region growth occurs.
 	static void RefreshSeaLevelClassification(
 		FTerrainHeightField& HeightField,
 		float HeightScale,
