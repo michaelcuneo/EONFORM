@@ -9,32 +9,30 @@ namespace
 	FCriticalSection DescriptorRegistryMutex;
 	TMap<FName, FGaeaTerrainNodeDescriptor> DescriptorRegistry;
 
-	FGaeaTerrainPortDescriptor TerrainPort(FName Name)
+	FGaeaTerrainPortDescriptor TerrainPort(FName Name, const TCHAR* DisplayName = nullptr)
 	{
 		FGaeaTerrainPortDescriptor Port;
 		Port.Name = Name;
 		Port.DataType = TEXT("Terrain");
+		if (DisplayName) Port.DisplayName = DisplayName;
 		return Port;
 	}
 
-	FGaeaTerrainPortDescriptor ScalarPort(FName Name)
+	FGaeaTerrainPortDescriptor ScalarPort(FName Name, const TCHAR* DisplayName = nullptr)
 	{
 		FGaeaTerrainPortDescriptor Port;
 		Port.Name = Name;
 		Port.DataType = TEXT("ScalarField");
+		if (DisplayName) Port.DisplayName = DisplayName;
 		return Port;
 	}
 
-	FGaeaTerrainParameterDescriptor NumberParameter(
-		FName Name,
-		const TCHAR* DisplayName,
-		double DefaultValue,
-		double Minimum,
-		double Maximum)
+	FGaeaTerrainParameterDescriptor NumberParameter(FName Name, const TCHAR* DisplayName, double DefaultValue, double Minimum, double Maximum, const TCHAR* Group = nullptr)
 	{
 		FGaeaTerrainParameterDescriptor Parameter;
 		Parameter.Name = Name;
 		Parameter.DisplayName = DisplayName;
+		if (Group) Parameter.Group = Group;
 		Parameter.Type = EGaeaTerrainParameterType::Number;
 		Parameter.DefaultNumber = DefaultValue;
 		Parameter.bHasMinimum = true;
@@ -44,22 +42,41 @@ namespace
 		return Parameter;
 	}
 
-	FGaeaTerrainParameterDescriptor IntegerParameter(
-		FName Name,
-		const TCHAR* DisplayName,
-		int64 DefaultValue,
-		int64 Minimum,
-		int64 Maximum)
+	FGaeaTerrainParameterDescriptor IntegerParameter(FName Name, const TCHAR* DisplayName, int64 DefaultValue, int64 Minimum, int64 Maximum, const TCHAR* Group = nullptr)
 	{
 		FGaeaTerrainParameterDescriptor Parameter;
 		Parameter.Name = Name;
 		Parameter.DisplayName = DisplayName;
+		if (Group) Parameter.Group = Group;
 		Parameter.Type = EGaeaTerrainParameterType::Integer;
 		Parameter.DefaultInteger = DefaultValue;
 		Parameter.bHasMinimum = true;
 		Parameter.Minimum = static_cast<double>(Minimum);
 		Parameter.bHasMaximum = true;
 		Parameter.Maximum = Maximum;
+		return Parameter;
+	}
+
+	FGaeaTerrainParameterDescriptor BooleanParameter(FName Name, const TCHAR* DisplayName, bool DefaultValue, const TCHAR* Group = nullptr)
+	{
+		FGaeaTerrainParameterDescriptor Parameter;
+		Parameter.Name = Name;
+		Parameter.DisplayName = DisplayName;
+		if (Group) Parameter.Group = Group;
+		Parameter.Type = EGaeaTerrainParameterType::Boolean;
+		Parameter.DefaultBoolean = DefaultValue;
+		return Parameter;
+	}
+
+	FGaeaTerrainParameterDescriptor NameParameter(FName Name, const TCHAR* DisplayName, FName DefaultValue, std::initializer_list<FName> Options, const TCHAR* Group = nullptr)
+	{
+		FGaeaTerrainParameterDescriptor Parameter;
+		Parameter.Name = Name;
+		Parameter.DisplayName = DisplayName;
+		if (Group) Parameter.Group = Group;
+		Parameter.Type = EGaeaTerrainParameterType::Name;
+		Parameter.DefaultName = DefaultValue;
+		for (const FName Option : Options) Parameter.NameOptions.Add(Option);
 		return Parameter;
 	}
 }
@@ -195,24 +212,34 @@ void FGaeaTerrainNodeDescriptorRegistry::RegisterBuiltIns()
 	{
 		FGaeaTerrainNodeDescriptor Erosion;
 		Erosion.Type = GaeaTerrainNodeTypes::HydraulicErosion;
-		Erosion.DisplayName = TEXT("Hydraulic Erosion");
+		Erosion.DisplayName = TEXT("Erosion");
 		Erosion.Category = TEXT("Erosion");
-		Erosion.Description = TEXT("Hydraulically erodes the incoming terrain and exposes Wear, Deposits, and Flow as routable scalar outputs.");
-		Erosion.Inputs.Add(TerrainPort(TEXT("Terrain")));
-		Erosion.Inputs.Add(ScalarPort(TEXT("Mask")));
-		Erosion.Outputs.Add(TerrainPort(TEXT("Terrain")));
-		Erosion.Outputs.Add(ScalarPort(TEXT("Wear")));
-		Erosion.Outputs.Add(ScalarPort(TEXT("Deposits")));
-		Erosion.Outputs.Add(ScalarPort(TEXT("Flow")));
-		Erosion.Parameters.Add(IntegerParameter(TEXT("Iterations"), TEXT("Duration"), 24, 1, 4096));
-		Erosion.Parameters.Add(NumberParameter(TEXT("Strength"), TEXT("Strength"), 1.0, 0.0, 4.0));
-		Erosion.Parameters.Add(NumberParameter(TEXT("RockSoftness"), TEXT("Rock Softness"), 0.0, 0.0, 1.0));
-		Erosion.Parameters.Add(NumberParameter(TEXT("Rainfall"), TEXT("Precipitation"), 0.01, 0.0, 1.0));
-		Erosion.Parameters.Add(NumberParameter(TEXT("FlowRate"), TEXT("Flow Rate"), 0.55, 0.0, 1.0));
-		Erosion.Parameters.Add(NumberParameter(TEXT("SedimentCapacity"), TEXT("Sediment Capacity"), 0.7, 0.0, 8.0));
-		Erosion.Parameters.Add(NumberParameter(TEXT("DepositionRate"), TEXT("Deposits"), 0.12, 0.0, 1.0));
-		Erosion.Parameters.Add(NumberParameter(TEXT("Evaporation"), TEXT("Evaporation"), 0.08, 0.0, 1.0));
-		Erosion.Parameters.Add(NumberParameter(TEXT("MinimumSlope"), TEXT("Minimum Slope"), 0.01, 0.0, 1.0));
+		Erosion.Description = TEXT("Gaea-style hydraulic erosion with routable Wear, Deposits, and Flow outputs.");
+		Erosion.Inputs.Add(TerrainPort(TEXT("Terrain"), TEXT("Input")));
+		Erosion.Inputs.Add(ScalarPort(TEXT("Mask"), TEXT("Area Mask")));
+		Erosion.Inputs.Add(ScalarPort(TEXT("Sediment"), TEXT("Sediment")));
+		Erosion.Outputs.Add(TerrainPort(TEXT("Terrain"), TEXT("Out")));
+		Erosion.Outputs.Add(ScalarPort(TEXT("Wear"), TEXT("Wear")));
+		Erosion.Outputs.Add(ScalarPort(TEXT("Deposits"), TEXT("Deposits")));
+		Erosion.Outputs.Add(ScalarPort(TEXT("Flow"), TEXT("Flow")));
+
+		Erosion.Parameters.Add(IntegerParameter(TEXT("Iterations"), TEXT("Duration"), 24, 1, 4096, TEXT("Erosion")));
+		Erosion.Parameters.Add(NumberParameter(TEXT("RockSoftness"), TEXT("Rock Softness"), 0.0, 0.0, 1.0, TEXT("Erosion")));
+		Erosion.Parameters.Add(NumberParameter(TEXT("Strength"), TEXT("Strength"), 1.0, 0.0, 4.0, TEXT("Erosion")));
+		Erosion.Parameters.Add(NumberParameter(TEXT("Downcutting"), TEXT("Downcutting"), 0.5, 0.0, 2.0, TEXT("Downcutting")));
+		Erosion.Parameters.Add(NumberParameter(TEXT("Inhibition"), TEXT("Inhibition"), 0.0, 0.0, 1.0, TEXT("Downcutting")));
+		Erosion.Parameters.Add(NumberParameter(TEXT("BaseLevel"), TEXT("Base Level"), -1.0, -1.0, 1.0, TEXT("Downcutting")));
+		Erosion.Parameters.Add(NumberParameter(TEXT("FeatureScale"), TEXT("Feature Scale"), 1.0, 0.25, 8.0, TEXT("Scale")));
+		Erosion.Parameters.Add(NumberParameter(TEXT("Debris"), TEXT("Debris"), 0.5, 0.0, 1.0, TEXT("Flow")));
+		Erosion.Parameters.Add(NumberParameter(TEXT("Volume"), TEXT("Volume"), 1.0, 0.0, 4.0, TEXT("Flow")));
+		Erosion.Parameters.Add(NumberParameter(TEXT("SedimentRemoval"), TEXT("Sediment Removal"), 0.0, 0.0, 1.0, TEXT("Flow")));
+		Erosion.Parameters.Add(NameParameter(
+			TEXT("SelectiveProcessing"), TEXT("Selective Processing"), TEXT("None"),
+			{ TEXT("None"), TEXT("ErosionStrength"), TEXT("RockSoftness"), TEXT("Precipitation") },
+			TEXT("Selective Processing")));
+		Erosion.Parameters.Add(IntegerParameter(TEXT("Seed"), TEXT("Seed"), 1337, -2147483647, 2147483647));
+		Erosion.Parameters.Add(BooleanParameter(TEXT("AggressiveMode"), TEXT("Aggressive Mode"), false));
+		Erosion.Parameters.Add(BooleanParameter(TEXT("Deterministic"), TEXT("Deterministic"), true));
 		DescriptorRegistry.Add(Erosion.Type, MoveTemp(Erosion));
 	}
 }
