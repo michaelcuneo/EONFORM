@@ -135,7 +135,7 @@ private:
 
 		MeshActor->Modify();
 		GEditor->SelectNone(false, true, false);
-		GEditor->SelectActor(MeshActor, true, true, true);
+		GEditor->SelectActor(MeshActor, true, true, true, true);
 	}
 
 	TSharedRef<SDockTab> SpawnCodenameGaeaTab(const FSpawnTabArgs& Args)
