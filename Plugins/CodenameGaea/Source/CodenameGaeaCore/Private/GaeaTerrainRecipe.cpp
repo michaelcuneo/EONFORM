@@ -3,7 +3,7 @@
 namespace GaeaTerrainNodeTypes
 {
 	const FName SourceDataset(TEXT("SourceDataset"));
-	const FName ProceduralTerrain(TEXT("ProceduralTerrain"));
+	const FName PerlinNoise(TEXT("PerlinNoise"));
 	const FName TerrainShape(TEXT("TerrainShape"));
 	const FName TerrainContext(TEXT("TerrainContext"));
 	const FName Geology(TEXT("Geology"));
