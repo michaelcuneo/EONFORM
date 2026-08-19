@@ -26,6 +26,10 @@ namespace
 
 	FText FriendlyPinName(const FGaeaTerrainPortDescriptor& Port, EEdGraphPinDirection Direction)
 	{
+		if (!Port.DisplayName.IsEmpty())
+		{
+			return FText::FromString(Port.DisplayName);
+		}
 		if (Port.DataType == TEXT("Terrain"))
 		{
 			return FText::FromString(Direction == EGPD_Input ? TEXT("In") : TEXT("Out"));
