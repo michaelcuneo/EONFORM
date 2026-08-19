@@ -4,18 +4,18 @@
 #include "Framework/Commands/GenericCommands.h"
 #include "Framework/Commands/UICommandList.h"
 
-SGaeaTerrainGraphPanel::SGaeaTerrainGraphPanel()
-	: GraphCommands(MakeShared<FUICommandList>())
-{
-	GraphCommands->MapAction(
-		FGenericCommands::Get().Delete,
-		FExecuteAction::CreateSP(this, &SGaeaTerrainGraphPanel::DeleteSelectedNodes),
-		FCanExecuteAction::CreateSP(this, &SGaeaTerrainGraphPanel::CanDeleteSelectedNodes));
-}
-
 FReply SGaeaTerrainGraphPanel::OnPreviewKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent)
 {
-	if (GraphCommands.IsValid() && GraphCommands->ProcessCommandBindings(InKeyEvent))
+	if (!GraphCommands.IsValid())
+	{
+		GraphCommands = MakeShared<FUICommandList>();
+		GraphCommands->MapAction(
+			FGenericCommands::Get().Delete,
+			FExecuteAction::CreateSP(SharedThis(this), &SGaeaTerrainGraphPanel::DeleteSelectedNodes),
+			FCanExecuteAction::CreateSP(SharedThis(this), &SGaeaTerrainGraphPanel::CanDeleteSelectedNodes));
+	}
+
+	if (GraphCommands->ProcessCommandBindings(InKeyEvent))
 	{
 		return FReply::Handled();
 	}
