@@ -14,6 +14,43 @@ namespace
 	FCriticalSection RegistryMutex;
 	TMap<FName, FGaeaTerrainNodeEvaluator> Registry;
 
+	const FGaeaTerrainValue* FindInput(const FGaeaTerrainNodeInputs& Inputs, FName Name)
+	{
+		const FGaeaTerrainValue* const* Value = Inputs.Find(Name);
+		return Value ? *Value : nullptr;
+	}
+
+	const FGaeaTerrainValue* RequireTerrainInput(
+		const FGaeaTerrainNodeInputs& Inputs,
+		FName Name,
+		const TCHAR* NodeName,
+		FString& Error)
+	{
+		const FGaeaTerrainValue* Value = FindInput(Inputs, Name);
+		if (!Value || Value->Type != EGaeaTerrainValueType::Terrain || !Value->IsValid())
+		{
+			Error = FString::Printf(TEXT("%s requires a terrain input '%s'."), NodeName, *Name.ToString());
+			return nullptr;
+		}
+		return Value;
+	}
+
+	bool PublishTerrain(
+		FGaeaTerrainNodeEvaluation& Out,
+		FGaeaTerrainDataset&& Dataset,
+		float HeightScale,
+		FString& Error)
+	{
+		FGaeaTerrainValue Value = FGaeaTerrainValue::MakeTerrain(MoveTemp(Dataset), HeightScale);
+		if (!Value.IsValid())
+		{
+			Error = TEXT("Terrain node produced an invalid terrain value.");
+			return false;
+		}
+		Out.Outputs.Add(TEXT("Terrain"), MoveTemp(Value));
+		return true;
+	}
+
 	bool BuildFlatTerrainResult(FGaeaTerrainEvaluationResult& Result)
 	{
 		constexpr int32 Resolution = 257;
@@ -52,7 +89,7 @@ namespace
 
 	bool EvaluateSourceDataset(
 		const FGaeaTerrainNode&,
-		const TMap<FName, const FGaeaTerrainNodeEvaluation*>&,
+		const FGaeaTerrainNodeInputs&,
 		const FGaeaTerrainEvaluationContext& Context,
 		FGaeaTerrainNodeEvaluation& Out,
 		FString& Error)
@@ -62,14 +99,13 @@ namespace
 			Error = TEXT("SourceDataset node received an empty source dataset.");
 			return false;
 		}
-		Out.Dataset = Context.SourceDataset;
-		Out.HeightScale = FMath::Max(Context.HeightScale, 1.0f);
-		return true;
+		FGaeaTerrainDataset Dataset = Context.SourceDataset;
+		return PublishTerrain(Out, MoveTemp(Dataset), FMath::Max(Context.HeightScale, 1.0f), Error);
 	}
 
 	bool EvaluateProceduralTerrain(
 		const FGaeaTerrainNode& Node,
-		const TMap<FName, const FGaeaTerrainNodeEvaluation*>&,
+		const FGaeaTerrainNodeInputs&,
 		const FGaeaTerrainEvaluationContext&,
 		FGaeaTerrainNodeEvaluation& Out,
 		FString& Error)
@@ -116,32 +152,26 @@ namespace
 			}
 		}
 
-		Out.Dataset.Reset();
-		if (!Out.Dataset.SetScalarField(MoveTemp(Height)))
+		FGaeaTerrainDataset Dataset;
+		if (!Dataset.SetScalarField(MoveTemp(Height)))
 		{
 			Error = TEXT("ProceduralTerrain could not publish its Height field.");
 			return false;
 		}
-		Out.HeightScale = HeightScale;
-		return true;
+		return PublishTerrain(Out, MoveTemp(Dataset), HeightScale, Error);
 	}
 
 	bool EvaluateTerrainShapeNode(
 		const FGaeaTerrainNode& Node,
-		const TMap<FName, const FGaeaTerrainNodeEvaluation*>& Inputs,
+		const FGaeaTerrainNodeInputs& Inputs,
 		const FGaeaTerrainEvaluationContext&,
 		FGaeaTerrainNodeEvaluation& Out,
 		FString& Error)
 	{
-		const FGaeaTerrainNodeEvaluation* const* InputPtr = Inputs.Find(TEXT("Terrain"));
-		if (!InputPtr || !*InputPtr)
-		{
-			Error = TEXT("TerrainShape requires a Terrain input.");
-			return false;
-		}
+		const FGaeaTerrainValue* Input = RequireTerrainInput(Inputs, TEXT("Terrain"), TEXT("TerrainShape"), Error);
+		if (!Input) return false;
 
-		const FGaeaTerrainNodeEvaluation& Input = **InputPtr;
-		const FGaeaScalarField* Height = Input.Dataset.FindScalarField(GaeaTerrainFieldNames::Height);
+		const FGaeaScalarField* Height = Input->TerrainDataset.FindScalarField(GaeaTerrainFieldNames::Height);
 		if (!Height)
 		{
 			Error = TEXT("TerrainShape input dataset has no Height field.");
@@ -158,54 +188,42 @@ namespace
 		Settings.ValleyDepth = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("ValleyDepth"), Settings.ValleyDepth)), 0.0f, 1.0f);
 		Settings.PlainsStrength = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("PlainsStrength"), Settings.PlainsStrength)), 0.0f, 1.0f);
 
-		Out.Dataset = Input.Dataset;
-		Out.HeightScale = Input.HeightScale;
-		return FGaeaTerrainShaping::Apply(*Height, Settings, Out.Dataset, &Error);
+		FGaeaTerrainDataset Dataset = Input->TerrainDataset;
+		if (!FGaeaTerrainShaping::Apply(*Height, Settings, Dataset, &Error)) return false;
+		return PublishTerrain(Out, MoveTemp(Dataset), Input->HeightScale, Error);
 	}
 
 	bool EvaluateTerrainContextNode(
 		const FGaeaTerrainNode&,
-		const TMap<FName, const FGaeaTerrainNodeEvaluation*>& Inputs,
+		const FGaeaTerrainNodeInputs& Inputs,
 		const FGaeaTerrainEvaluationContext&,
 		FGaeaTerrainNodeEvaluation& Out,
 		FString& Error)
 	{
-		const FGaeaTerrainNodeEvaluation* const* InputPtr = Inputs.Find(TEXT("Terrain"));
-		if (!InputPtr || !*InputPtr)
-		{
-			Error = TEXT("TerrainContext requires a Terrain input.");
-			return false;
-		}
-
-		const FGaeaTerrainNodeEvaluation& Input = **InputPtr;
-		const FGaeaScalarField* Height = Input.Dataset.FindScalarField(GaeaTerrainFieldNames::Height);
+		const FGaeaTerrainValue* Input = RequireTerrainInput(Inputs, TEXT("Terrain"), TEXT("TerrainContext"), Error);
+		if (!Input) return false;
+		const FGaeaScalarField* Height = Input->TerrainDataset.FindScalarField(GaeaTerrainFieldNames::Height);
 		if (!Height)
 		{
 			Error = TEXT("TerrainContext input dataset has no Height field.");
 			return false;
 		}
 
-		Out.Dataset = Input.Dataset;
-		Out.HeightScale = Input.HeightScale;
-		return FGaeaTerrainContext::Analyze(*Height, FMath::Max(Input.HeightScale, 1.0f), Out.Dataset, &Error);
+		FGaeaTerrainDataset Dataset = Input->TerrainDataset;
+		if (!FGaeaTerrainContext::Analyze(*Height, FMath::Max(Input->HeightScale, 1.0f), Dataset, &Error)) return false;
+		return PublishTerrain(Out, MoveTemp(Dataset), Input->HeightScale, Error);
 	}
 
 	bool EvaluateGeologyNode(
 		const FGaeaTerrainNode& Node,
-		const TMap<FName, const FGaeaTerrainNodeEvaluation*>& Inputs,
+		const FGaeaTerrainNodeInputs& Inputs,
 		const FGaeaTerrainEvaluationContext&,
 		FGaeaTerrainNodeEvaluation& Out,
 		FString& Error)
 	{
-		const FGaeaTerrainNodeEvaluation* const* InputPtr = Inputs.Find(TEXT("Terrain"));
-		if (!InputPtr || !*InputPtr)
-		{
-			Error = TEXT("Geology requires a Terrain input.");
-			return false;
-		}
-
-		const FGaeaTerrainNodeEvaluation& Input = **InputPtr;
-		const FGaeaScalarField* Height = Input.Dataset.FindScalarField(GaeaTerrainFieldNames::Height);
+		const FGaeaTerrainValue* Input = RequireTerrainInput(Inputs, TEXT("Terrain"), TEXT("Geology"), Error);
+		if (!Input) return false;
+		const FGaeaScalarField* Height = Input->TerrainDataset.FindScalarField(GaeaTerrainFieldNames::Height);
 		if (!Height)
 		{
 			Error = TEXT("Geology input dataset has no Height field.");
@@ -221,27 +239,21 @@ namespace
 		Settings.PlainsSoftnessBias = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("PlainsSoftnessBias"), Settings.PlainsSoftnessBias)), 0.0f, 1.0f);
 		Settings.SoilFormationStrength = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("SoilFormationStrength"), Settings.SoilFormationStrength)), 0.0f, 2.0f);
 
-		Out.Dataset = Input.Dataset;
-		Out.HeightScale = Input.HeightScale;
-		return FGaeaTerrainGeology::Build(*Height, Seed, Settings, Out.Dataset, &Error);
+		FGaeaTerrainDataset Dataset = Input->TerrainDataset;
+		if (!FGaeaTerrainGeology::Build(*Height, Seed, Settings, Dataset, &Error)) return false;
+		return PublishTerrain(Out, MoveTemp(Dataset), Input->HeightScale, Error);
 	}
 
 	bool EvaluateProcessMasksNode(
 		const FGaeaTerrainNode& Node,
-		const TMap<FName, const FGaeaTerrainNodeEvaluation*>& Inputs,
+		const FGaeaTerrainNodeInputs& Inputs,
 		const FGaeaTerrainEvaluationContext&,
 		FGaeaTerrainNodeEvaluation& Out,
 		FString& Error)
 	{
-		const FGaeaTerrainNodeEvaluation* const* InputPtr = Inputs.Find(TEXT("Terrain"));
-		if (!InputPtr || !*InputPtr)
-		{
-			Error = TEXT("ProcessMasks requires a Terrain input.");
-			return false;
-		}
-
-		const FGaeaTerrainNodeEvaluation& Input = **InputPtr;
-		const FGaeaScalarField* Height = Input.Dataset.FindScalarField(GaeaTerrainFieldNames::Height);
+		const FGaeaTerrainValue* Input = RequireTerrainInput(Inputs, TEXT("Terrain"), TEXT("ProcessMasks"), Error);
+		if (!Input) return false;
+		const FGaeaScalarField* Height = Input->TerrainDataset.FindScalarField(GaeaTerrainFieldNames::Height);
 		if (!Height)
 		{
 			Error = TEXT("ProcessMasks input dataset has no Height field.");
@@ -255,31 +267,26 @@ namespace
 		Settings.RainfallHighlandBias = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("RainfallHighlandBias"), Settings.RainfallHighlandBias)), 0.0f, 1.0f);
 		Settings.EvaporationLowlandBias = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("EvaporationLowlandBias"), Settings.EvaporationLowlandBias)), 0.0f, 1.0f);
 
-		Out.Dataset = Input.Dataset;
-		Out.HeightScale = Input.HeightScale;
-		return FGaeaTerrainContext::BuildProcessMasks(*Height, Settings, Out.Dataset, &Error);
+		FGaeaTerrainDataset Dataset = Input->TerrainDataset;
+		if (!FGaeaTerrainContext::BuildProcessMasks(*Height, Settings, Dataset, &Error)) return false;
+		return PublishTerrain(Out, MoveTemp(Dataset), Input->HeightScale, Error);
 	}
 
 	bool EvaluateHydraulicErosionNode(
 		const FGaeaTerrainNode& Node,
-		const TMap<FName, const FGaeaTerrainNodeEvaluation*>& Inputs,
+		const FGaeaTerrainNodeInputs& Inputs,
 		const FGaeaTerrainEvaluationContext&,
 		FGaeaTerrainNodeEvaluation& Out,
 		FString& Error)
 	{
-		const FGaeaTerrainNodeEvaluation* const* InputPtr = Inputs.Find(TEXT("Terrain"));
-		if (!InputPtr || !*InputPtr)
-		{
-			Error = TEXT("HydraulicErosion requires a Terrain input.");
-			return false;
-		}
+		const FGaeaTerrainValue* Input = RequireTerrainInput(Inputs, TEXT("Terrain"), TEXT("HydraulicErosion"), Error);
+		if (!Input) return false;
 
-		const FGaeaTerrainNodeEvaluation& Input = **InputPtr;
-		FGaeaTerrainDataset PreparedDataset = Input.Dataset;
+		FGaeaTerrainDataset PreparedDataset = Input->TerrainDataset;
 		FGaeaTerrainDerivedDataSettings DerivedSettings;
 		if (!FGaeaTerrainDerivedData::EnsureHydraulicInputs(
 			PreparedDataset,
-			FMath::Max(Input.HeightScale, 1.0f),
+			FMath::Max(Input->HeightScale, 1.0f),
 			DerivedSettings,
 			&Error))
 		{
@@ -291,6 +298,38 @@ namespace
 		{
 			Error = TEXT("HydraulicErosion input dataset has no Height field.");
 			return false;
+		}
+
+		const FGaeaTerrainValue* MaskInput = FindInput(Inputs, TEXT("Mask"));
+		const FGaeaScalarField* DerivedErosionMask = PreparedDataset.FindScalarField(GaeaTerrainFieldNames::HydraulicErosion);
+		const FGaeaScalarField* ErosionMask = DerivedErosionMask;
+		FGaeaScalarField CombinedErosionMask;
+		if (MaskInput)
+		{
+			if (MaskInput->Type != EGaeaTerrainValueType::ScalarField || !MaskInput->ScalarField.IsValid())
+			{
+				Error = TEXT("HydraulicErosion Mask input must be a valid scalar field.");
+				return false;
+			}
+			if (MaskInput->ScalarField.Domain != Height->Domain)
+			{
+				Error = TEXT("HydraulicErosion Mask input must use the same domain as Height.");
+				return false;
+			}
+
+			CombinedErosionMask = MaskInput->ScalarField;
+			CombinedErosionMask.Descriptor.Name = GaeaTerrainFieldNames::HydraulicErosion;
+			if (DerivedErosionMask && DerivedErosionMask->IsValid() && DerivedErosionMask->Domain == Height->Domain)
+			{
+				for (int32 Index = 0; Index < CombinedErosionMask.Values.Num(); ++Index)
+				{
+					CombinedErosionMask.Values[Index] = FMath::Clamp(
+						CombinedErosionMask.Values[Index] * DerivedErosionMask->Values[Index],
+						0.0f,
+						1.0f);
+				}
+			}
+			ErosionMask = &CombinedErosionMask;
 		}
 
 		FGaeaHydraulicErosionSettings Settings;
@@ -308,11 +347,11 @@ namespace
 		FGaeaHydraulicErosionResult Result;
 		if (!FGaeaHydraulicErosion::Evaluate(
 			*Height,
-			FMath::Max(Input.HeightScale, 1.0f),
+			FMath::Max(Input->HeightScale, 1.0f),
 			Settings,
 			Result,
 			PreparedDataset.FindScalarField(GaeaTerrainFieldNames::Rainfall),
-			PreparedDataset.FindScalarField(GaeaTerrainFieldNames::HydraulicErosion),
+			ErosionMask,
 			PreparedDataset.FindScalarField(GaeaTerrainFieldNames::Deposition),
 			PreparedDataset.FindScalarField(GaeaTerrainFieldNames::Evaporation),
 			PreparedDataset.FindScalarField(GaeaTerrainFieldNames::RockHardness),
@@ -322,12 +361,19 @@ namespace
 			return false;
 		}
 
-		Out.Dataset = MoveTemp(PreparedDataset);
-		Out.Dataset.SetScalarField(MoveTemp(Result.Height));
-		Out.Dataset.SetScalarField(MoveTemp(Result.Wear));
-		Out.Dataset.SetScalarField(MoveTemp(Result.Deposits));
-		Out.Dataset.SetScalarField(MoveTemp(Result.Flow));
-		Out.HeightScale = Input.HeightScale;
+		FGaeaScalarField WearOutput = Result.Wear;
+		FGaeaScalarField DepositsOutput = Result.Deposits;
+		FGaeaScalarField FlowOutput = Result.Flow;
+
+		PreparedDataset.SetScalarField(MoveTemp(Result.Height));
+		PreparedDataset.SetScalarField(MoveTemp(Result.Wear));
+		PreparedDataset.SetScalarField(MoveTemp(Result.Deposits));
+		PreparedDataset.SetScalarField(MoveTemp(Result.Flow));
+		if (!PublishTerrain(Out, MoveTemp(PreparedDataset), Input->HeightScale, Error)) return false;
+
+		Out.Outputs.Add(TEXT("Wear"), FGaeaTerrainValue::MakeScalarField(MoveTemp(WearOutput)));
+		Out.Outputs.Add(TEXT("Deposits"), FGaeaTerrainValue::MakeScalarField(MoveTemp(DepositsOutput)));
+		Out.Outputs.Add(TEXT("Flow"), FGaeaTerrainValue::MakeScalarField(MoveTemp(FlowOutput)));
 		return true;
 	}
 }
@@ -404,12 +450,22 @@ FGaeaTerrainEvaluationResult FGaeaTerrainEvaluator::Evaluate(
 		}
 
 		Visiting.Add(NodeId);
-		TMap<FName, const FGaeaTerrainNodeEvaluation*> Inputs;
+		FGaeaTerrainNodeInputs Inputs;
 		for (const FGaeaTerrainConnection& Connection : Recipe.Connections)
 		{
 			if (Connection.ToNode != NodeId) continue;
 			if (!EvaluateNode(Connection.FromNode)) return false;
-			Inputs.Add(Connection.ToInput, Cache.Find(Connection.FromNode));
+
+			const FGaeaTerrainNodeEvaluation* SourceEvaluation = Cache.Find(Connection.FromNode);
+			const FGaeaTerrainValue* SourceOutput = SourceEvaluation ? SourceEvaluation->FindOutput(Connection.FromOutput) : nullptr;
+			if (!SourceOutput || !SourceOutput->IsValid())
+			{
+				Result.Error = FString::Printf(
+					TEXT("Node connection references missing or invalid output '%s'."),
+					*Connection.FromOutput.ToString());
+				return false;
+			}
+			Inputs.Add(Connection.ToInput, SourceOutput);
 		}
 
 		FGaeaTerrainNodeEvaluator Evaluator;
@@ -426,6 +482,11 @@ FGaeaTerrainEvaluationResult FGaeaTerrainEvaluator::Evaluate(
 
 		FGaeaTerrainNodeEvaluation NodeResult;
 		if (!Evaluator(*Node, Inputs, Context, NodeResult, Result.Error)) return false;
+		if (NodeResult.Outputs.IsEmpty())
+		{
+			Result.Error = FString::Printf(TEXT("Node '%s' produced no outputs."), *Node->Type.ToString());
+			return false;
+		}
 		Cache.Add(NodeId, MoveTemp(NodeResult));
 		Visiting.Remove(NodeId);
 		return true;
@@ -433,13 +494,14 @@ FGaeaTerrainEvaluationResult FGaeaTerrainEvaluator::Evaluate(
 
 	if (!EvaluateNode(Recipe.OutputNode)) return Result;
 	const FGaeaTerrainNodeEvaluation* Output = Cache.Find(Recipe.OutputNode);
-	if (!Output)
+	const FGaeaTerrainValue* TerrainOutput = Output ? Output->FindOutput(TEXT("Terrain")) : nullptr;
+	if (!TerrainOutput || TerrainOutput->Type != EGaeaTerrainValueType::Terrain || !TerrainOutput->IsValid())
 	{
-		Result.Error = TEXT("Recipe output node produced no result.");
+		Result.Error = TEXT("Recipe output node produced no Terrain output.");
 		return Result;
 	}
-	Result.Dataset = Output->Dataset;
-	Result.HeightScale = Output->HeightScale;
+	Result.Dataset = TerrainOutput->TerrainDataset;
+	Result.HeightScale = TerrainOutput->HeightScale;
 	Result.bSuccess = true;
 	return Result;
 }
