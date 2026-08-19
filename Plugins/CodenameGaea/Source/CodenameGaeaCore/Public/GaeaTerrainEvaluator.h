@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GaeaTerrainDataset.h"
 #include "GaeaTerrainRecipe.h"
+#include "GaeaTerrainValue.h"
 
 struct CODENAMEGAEACORE_API FGaeaTerrainEvaluationContext
 {
@@ -21,13 +22,19 @@ struct CODENAMEGAEACORE_API FGaeaTerrainEvaluationResult
 
 struct CODENAMEGAEACORE_API FGaeaTerrainNodeEvaluation
 {
-	float HeightScale = 1000.0f;
-	FGaeaTerrainDataset Dataset;
+	TMap<FName, FGaeaTerrainValue> Outputs;
+
+	const FGaeaTerrainValue* FindOutput(FName Name) const
+	{
+		return Outputs.Find(Name);
+	}
 };
+
+using FGaeaTerrainNodeInputs = TMap<FName, const FGaeaTerrainValue*>;
 
 using FGaeaTerrainNodeEvaluator = TFunction<bool(
 	const FGaeaTerrainNode&,
-	const TMap<FName, const FGaeaTerrainNodeEvaluation*>&,
+	const FGaeaTerrainNodeInputs&,
 	const FGaeaTerrainEvaluationContext&,
 	FGaeaTerrainNodeEvaluation&,
 	FString&)>;
