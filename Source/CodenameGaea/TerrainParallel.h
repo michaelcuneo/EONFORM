@@ -39,16 +39,33 @@ namespace TerrainParallel
 			1);
 		const int32 NumChunks = FMath::DivideAndRoundUp(Resolution, SafeChunkRows);
 
+		auto ExecuteChunk = [Resolution, SafeChunkRows, &Function](int32 ChunkIndex)
+		{
+			const int32 StartY = ChunkIndex * SafeChunkRows;
+			const int32 EndY = FMath::Min(StartY + SafeChunkRows, Resolution);
+			Function(StartY, EndY);
+		};
+
+		// Terrain generation is currently entered from actor construction/editor
+		// callbacks on the game thread. Do not dispatch long-running nested work into
+		// the Task Graph from that path. Apart from avoiding editor/live-coding task
+		// allocator failures, this keeps the helper ready for the intended architecture:
+		// once the top-level pure-data build is moved to a background worker, calls made
+		// from that worker can use ParallelFor safely.
+		if (IsInGameThread())
+		{
+			for (int32 ChunkIndex = 0; ChunkIndex < NumChunks; ++ChunkIndex)
+			{
+				ExecuteChunk(ChunkIndex);
+			}
+			return;
+		}
+
 		ParallelFor(
 			DebugName,
 			NumChunks,
 			1,
-			[Resolution, SafeChunkRows, &Function](int32 ChunkIndex)
-			{
-				const int32 StartY = ChunkIndex * SafeChunkRows;
-				const int32 EndY = FMath::Min(StartY + SafeChunkRows, Resolution);
-				Function(StartY, EndY);
-			},
+			ExecuteChunk,
 			EParallelForFlags::None);
 	}
 
@@ -67,16 +84,27 @@ namespace TerrainParallel
 		const int32 SafeChunkSize = FMath::Max(ChunkSize, 1);
 		const int32 NumChunks = FMath::DivideAndRoundUp(NumItems, SafeChunkSize);
 
+		auto ExecuteChunk = [NumItems, SafeChunkSize, &Function](int32 ChunkIndex)
+		{
+			const int32 Start = ChunkIndex * SafeChunkSize;
+			const int32 End = FMath::Min(Start + SafeChunkSize, NumItems);
+			Function(Start, End);
+		};
+
+		if (IsInGameThread())
+		{
+			for (int32 ChunkIndex = 0; ChunkIndex < NumChunks; ++ChunkIndex)
+			{
+				ExecuteChunk(ChunkIndex);
+			}
+			return;
+		}
+
 		ParallelFor(
 			DebugName,
 			NumChunks,
 			1,
-			[NumItems, SafeChunkSize, &Function](int32 ChunkIndex)
-			{
-				const int32 Start = ChunkIndex * SafeChunkSize;
-				const int32 End = FMath::Min(Start + SafeChunkSize, NumItems);
-				Function(Start, End);
-			},
+			ExecuteChunk,
 			EParallelForFlags::None);
 	}
 }
