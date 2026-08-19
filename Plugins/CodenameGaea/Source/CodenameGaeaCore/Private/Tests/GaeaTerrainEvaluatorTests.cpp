@@ -51,6 +51,35 @@ namespace
 		Recipe.OutputNode = Erosion.Id;
 		return Recipe;
 	}
+
+	FGaeaTerrainRecipe MakeProceduralRecipe()
+	{
+		FGaeaTerrainRecipe Recipe;
+		FGaeaTerrainNode Source;
+		Source.Id = FGuid(11, 12, 13, 14);
+		Source.Type = GaeaTerrainNodeTypes::ProceduralTerrain;
+		Source.IntegerParameters.Add(TEXT("Resolution"), 17);
+		Source.IntegerParameters.Add(TEXT("Seed"), 42);
+		Source.NumericParameters.Add(TEXT("WorldSize"), 1600.0);
+		Source.NumericParameters.Add(TEXT("HeightScale"), 6400.0);
+		Source.NumericParameters.Add(TEXT("Frequency"), 0.001);
+
+		FGaeaTerrainNode Erosion;
+		Erosion.Id = FGuid(15, 16, 17, 18);
+		Erosion.Type = GaeaTerrainNodeTypes::HydraulicErosion;
+		Erosion.IntegerParameters.Add(TEXT("Iterations"), 2);
+
+		Recipe.Nodes.Add(Source);
+		Recipe.Nodes.Add(Erosion);
+		FGaeaTerrainConnection Connection;
+		Connection.FromNode = Source.Id;
+		Connection.FromOutput = TEXT("Terrain");
+		Connection.ToNode = Erosion.Id;
+		Connection.ToInput = TEXT("Terrain");
+		Recipe.Connections.Add(Connection);
+		Recipe.OutputNode = Erosion.Id;
+		return Recipe;
+	}
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -94,6 +123,7 @@ bool FGaeaTerrainEvaluatorHydraulicTest::RunTest(const FString& Parameters)
 		return false;
 	}
 
+	TestEqual(TEXT("External source height scale is preserved"), Result.HeightScale, Context.HeightScale);
 	TestTrue(TEXT("Output has Height"), Result.Dataset.HasScalarField(GaeaTerrainFieldNames::Height));
 	TestTrue(TEXT("Output has Wear"), Result.Dataset.HasScalarField(GaeaTerrainFieldNames::Wear));
 	TestTrue(TEXT("Output has Deposits"), Result.Dataset.HasScalarField(GaeaTerrainFieldNames::Deposits));
@@ -107,6 +137,47 @@ bool FGaeaTerrainEvaluatorHydraulicTest::RunTest(const FString& Parameters)
 		{
 			AddError(FString::Printf(TEXT("Graph evaluation mutated source height at index %d"), Index));
 			break;
+		}
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FGaeaTerrainEvaluatorProceduralTest,
+	"CodenameGaea.Core.Graph.ProceduralTerrainToHydraulicErosion",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FGaeaTerrainEvaluatorProceduralTest::RunTest(const FString& Parameters)
+{
+	FGaeaTerrainEvaluationContext EmptyContext;
+	const FGaeaTerrainRecipe Recipe = MakeProceduralRecipe();
+	const FGaeaTerrainEvaluationResult First = FGaeaTerrainEvaluator::Evaluate(Recipe, EmptyContext);
+	const FGaeaTerrainEvaluationResult Second = FGaeaTerrainEvaluator::Evaluate(Recipe, EmptyContext);
+
+	TestTrue(TEXT("Procedural recipe evaluates without external dataset"), First.bSuccess);
+	if (!First.bSuccess)
+	{
+		AddError(First.Error);
+		return false;
+	}
+
+	TestEqual(TEXT("Procedural height scale is preserved through erosion"), First.HeightScale, 6400.0f);
+	const FGaeaScalarField* Height = First.Dataset.FindScalarField(GaeaTerrainFieldNames::Height);
+	TestNotNull(TEXT("Procedural output has Height"), Height);
+	if (Height)
+	{
+		TestEqual(TEXT("Procedural resolution is respected"), Height->Domain.Dimensions, FIntPoint(17, 17));
+		TestEqual(TEXT("Procedural sample count is correct"), Height->Values.Num(), 17 * 17);
+	}
+	TestTrue(TEXT("Procedural output has Wear"), First.Dataset.HasScalarField(GaeaTerrainFieldNames::Wear));
+	TestTrue(TEXT("Repeated procedural evaluation succeeds"), Second.bSuccess);
+	if (Height && Second.bSuccess)
+	{
+		const FGaeaScalarField* SecondHeight = Second.Dataset.FindScalarField(GaeaTerrainFieldNames::Height);
+		TestNotNull(TEXT("Repeated procedural output has Height"), SecondHeight);
+		if (SecondHeight)
+		{
+			TestEqual(TEXT("Deterministic procedural values match"), SecondHeight->Values, Height->Values);
 		}
 	}
 	return true;
