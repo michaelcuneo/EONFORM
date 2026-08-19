@@ -103,13 +103,13 @@ void FGaeaTerrainNodeDescriptorRegistry::RegisterBuiltIns()
 		DescriptorRegistry.Add(Source.Type, MoveTemp(Source));
 	}
 
-	if (!DescriptorRegistry.Contains(GaeaTerrainNodeTypes::ProceduralTerrain))
+	if (!DescriptorRegistry.Contains(GaeaTerrainNodeTypes::PerlinNoise))
 	{
 		FGaeaTerrainNodeDescriptor Source;
-		Source.Type = GaeaTerrainNodeTypes::ProceduralTerrain;
-		Source.DisplayName = TEXT("Procedural Terrain");
+		Source.Type = GaeaTerrainNodeTypes::PerlinNoise;
+		Source.DisplayName = TEXT("Perlin Noise");
 		Source.Category = TEXT("Generate");
-		Source.Description = TEXT("Generates a deterministic normalized fractal heightfield without an external actor or dataset.");
+		Source.Description = TEXT("Generates a deterministic fractal Perlin noise heightfield.");
 		Source.Outputs.Add(TerrainPort(TEXT("Terrain")));
 		Source.Parameters.Add(IntegerParameter(TEXT("Resolution"), TEXT("Resolution"), 257, 2, 1025));
 		Source.Parameters.Add(NumberParameter(TEXT("WorldSize"), TEXT("World Size (cm)"), 100000.0, 1.0, 10000000.0));
