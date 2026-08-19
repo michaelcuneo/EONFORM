@@ -22,6 +22,19 @@ struct CODENAMEGAEACORE_API FGaeaGridDomain
 		const FVector2d& InWorldMax,
 		int32 InBorderSamples = 0);
 
+	bool operator==(const FGaeaGridDomain& Other) const
+	{
+		return Dimensions == Other.Dimensions
+			&& WorldMin == Other.WorldMin
+			&& WorldMax == Other.WorldMax
+			&& BorderSamples == Other.BorderSamples;
+	}
+
+	bool operator!=(const FGaeaGridDomain& Other) const
+	{
+		return !(*this == Other);
+	}
+
 	bool IsValid() const;
 
 	int32 GetInteriorSampleCount() const;
