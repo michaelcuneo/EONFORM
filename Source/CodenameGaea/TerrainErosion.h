@@ -22,6 +22,25 @@ struct FTerrainHydraulicErosionSettings
 	float MinimumSlope = 0.01f;
 };
 
+struct FTerrainHydraulicErosionResult
+{
+	FGaeaScalarField Height;
+	FGaeaScalarField Wear;
+	FGaeaScalarField Deposits;
+	FGaeaScalarField Flow;
+
+	bool IsValid() const
+	{
+		return Height.IsValid()
+			&& Wear.IsValid()
+			&& Deposits.IsValid()
+			&& Flow.IsValid()
+			&& Wear.Domain == Height.Domain
+			&& Deposits.Domain == Height.Domain
+			&& Flow.Domain == Height.Domain;
+	}
+};
+
 class FTerrainErosion
 {
 public:
@@ -37,6 +56,20 @@ public:
 		float HeightScale,
 		const FTerrainHydraulicErosionSettings& Settings,
 		TArray<float>* OutFlowAccumulation = nullptr,
+		const TArray<float>* RainfallMask = nullptr,
+		const TArray<float>* ErosionMask = nullptr,
+		const TArray<float>* DepositionMask = nullptr,
+		const TArray<float>* EvaporationMask = nullptr,
+		const TArray<float>* RockHardness = nullptr,
+		const TArray<float>* SoilDepth = nullptr,
+		TArray<float>* OutWear = nullptr,
+		TArray<float>* OutDeposits = nullptr);
+
+	static bool EvaluateHydraulic(
+		const FTerrainHeightField& InputHeightField,
+		float HeightScale,
+		const FTerrainHydraulicErosionSettings& Settings,
+		FTerrainHydraulicErosionResult& OutResult,
 		const TArray<float>* RainfallMask = nullptr,
 		const TArray<float>* ErosionMask = nullptr,
 		const TArray<float>* DepositionMask = nullptr,
