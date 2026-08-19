@@ -29,6 +29,12 @@ struct FTerrainLandmassMaps
 {
 	TArray<float> BaseElevationCm;
 	TArray<float> LandInfluence;
+
+	// Authoritative topology chosen during the initial signed-DEM composition.
+	// This is deliberately separate from LandMask, which is a derived classification
+	// map used by downstream systems.
+	TArray<uint8> TopologyLandMask;
+
 	TArray<float> LandMask;
 	TArray<float> OceanMask;
 	TArray<float> CoastMask;
@@ -49,6 +55,7 @@ struct FTerrainLandmassMaps
 		return HeightField.IsValid()
 			&& BaseElevationCm.Num() == NumCells
 			&& LandInfluence.Num() == NumCells
+			&& TopologyLandMask.Num() == NumCells
 			&& LandMask.Num() == NumCells
 			&& OceanMask.Num() == NumCells
 			&& CoastMask.Num() == NumCells
@@ -73,9 +80,9 @@ public:
 		const FTerrainLandmassSettings& Settings,
 		FTerrainLandmassMaps& OutMaps);
 
-	// The first call establishes sea level as a datum through the existing terrain.
-	// It never normalizes land or ocean to the available numeric range. Later calls
-	// are classification-only.
+	// The first call establishes the signed DEM and its authoritative topology.
+	// Later calls preserve that topology while refreshing classification maps after
+	// terrain processes. Land and ocean are never min/max-normalized to fill a range.
 	static void RefreshSeaLevelClassification(
 		FTerrainHeightField& HeightField,
 		float HeightScale,
