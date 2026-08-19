@@ -3,7 +3,9 @@
 #include "Components/DynamicMeshComponent.h"
 #include "DynamicMesh/DynamicMesh3.h"
 #include "DynamicMesh/MeshNormals.h"
+#include "GaeaTerrainDatasetRegistry.h"
 #include "TerrainContext.h"
+#include "TerrainDatasetBridge.h"
 #include "TerrainErosion.h"
 #include "TerrainGeology.h"
 #include "TerrainHeightField.h"
@@ -271,6 +273,7 @@ void ATerrainGeneratorActor::BuildTerrain()
 	FTerrainProcessMasks ProcessMasks;
 	FTerrainGeologyMaps GeologyMaps;
 	FTerrainGeologySettings GeologySettings;
+	FTerrainHydraulicErosionResult HydraulicErosionResult;
 
 	FTerrainContext::Analyze(
 		HeightField,
@@ -340,17 +343,21 @@ void ATerrainGeneratorActor::BuildTerrain()
 
 		const bool bHasProcessMasks = ProcessMasks.IsValidFor(HeightField);
 		const bool bHasGeology = GeologyMaps.IsValidFor(HeightField);
-		FTerrainErosion::ApplyHydraulic(
+		if (FTerrainErosion::EvaluateHydraulic(
 			HeightField,
 			HeightScale,
 			HydraulicSettings,
-			&FlowAccumulation,
+			HydraulicErosionResult,
 			bHasProcessMasks ? &ProcessMasks.Rainfall : nullptr,
 			bHasProcessMasks ? &ProcessMasks.HydraulicErosion : nullptr,
 			bHasProcessMasks ? &ProcessMasks.Deposition : nullptr,
 			bHasProcessMasks ? &ProcessMasks.Evaporation : nullptr,
 			bHasGeology ? &GeologyMaps.RockHardness : nullptr,
-			bHasGeology ? &GeologyMaps.SoilDepth : nullptr);
+			bHasGeology ? &GeologyMaps.SoilDepth : nullptr))
+		{
+			HeightField.GetGaeaField() = HydraulicErosionResult.Height;
+			FlowAccumulation = HydraulicErosionResult.Flow.Values;
+		}
 	}
 
 	RiverMask.Reset();
@@ -425,6 +432,14 @@ void ATerrainGeneratorActor::BuildTerrain()
 	TerrainMesh->SetMesh(MoveTemp(Mesh));
 
 	BuildRiverWaterMesh(HeightField, CellSize, HalfWorldSize);
+
+	FGaeaTerrainDataset Dataset = FTerrainDatasetBridge::Build(
+		HeightField,
+		&TerrainContext,
+		&ProcessMasks,
+		&GeologyMaps,
+		HydraulicErosionResult.IsValid() ? &HydraulicErosionResult : nullptr);
+	FGaeaTerrainDatasetRegistry::Publish(TEXT("LegacyTerrainGenerator"), MoveTemp(Dataset));
 }
 
 void ATerrainGeneratorActor::BuildRiverWaterMesh(
