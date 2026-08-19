@@ -16,6 +16,9 @@ UCLASS()
 class UGaeaEditorGraph : public UEdGraph
 {
 	GENERATED_BODY()
+
+public:
+	UGaeaEditorGraph(const FObjectInitializer& ObjectInitializer);
 };
 
 UCLASS()
