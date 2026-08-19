@@ -1,5 +1,7 @@
 #include "Modules/ModuleManager.h"
 
+#include "Framework/Application/SlateApplication.h"
+#include "Framework/Commands/UIAction.h"
 #include "Framework/Docking/TabManager.h"
 #include "SGaeaTerrainInspector.h"
 #include "ToolMenus.h"
