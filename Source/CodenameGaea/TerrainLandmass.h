@@ -3,7 +3,7 @@
 #include "CoreMinimal.h"
 #include "TerrainHeightField.h"
 
-struct FTerrainBaseShapeMaps;
+struct FTerrainStructuralMaps;
 
 struct FTerrainLandmassSettings
 {
@@ -72,9 +72,12 @@ struct FTerrainLandmassMaps
 class FTerrainLandmass
 {
 public:
+	// Stable integration point for the generator actor. This now delegates the
+	// actual regional footprint to TerrainBaseShape before local terrain synthesis.
 	static void Build(
 		const FTerrainHeightField& HeightField,
-		const FTerrainBaseShapeMaps* BaseShape,
+		const FTerrainStructuralMaps* Structure,
+		int32 Seed,
 		const FTerrainLandmassSettings& Settings,
 		FTerrainLandmassMaps& OutMaps);
 
