@@ -3,6 +3,11 @@
 #include "GaeaTerrainNodeDescriptor.h"
 #include "GaeaTerrainRecipe.h"
 
+namespace GaeaEditorNodeTypes
+{
+	const FName TerrainOutput(TEXT("__TerrainOutput"));
+}
+
 namespace
 {
 	const FName TerrainPinCategory(TEXT("GaeaTerrain"));
@@ -43,7 +48,6 @@ namespace
 					{
 						Stack.Add(LinkedPin->GetOwningNode());
 					}
-				}
 			}
 		}
 
@@ -64,6 +68,11 @@ void UGaeaEditorGraphNode::InitializeParameterDefaults()
 	IntegerParameters.Reset();
 	BoolParameters.Reset();
 	NameParameters.Reset();
+
+	if (RecipeNodeType == GaeaEditorNodeTypes::TerrainOutput)
+	{
+		return;
+	}
 
 	FGaeaTerrainNodeDescriptor Descriptor;
 	if (!FGaeaTerrainNodeDescriptorRegistry::Get(RecipeNodeType, Descriptor))
@@ -93,13 +102,19 @@ void UGaeaEditorGraphNode::InitializeParameterDefaults()
 
 void UGaeaEditorGraphNode::AllocateDefaultPins()
 {
+	FCreatePinParams PinParams;
+	if (RecipeNodeType == GaeaEditorNodeTypes::TerrainOutput)
+	{
+		CreatePin(EGPD_Input, TerrainPinCategory, GaeaEditorGraphPins::Terrain, PinParams);
+		return;
+	}
+
 	FGaeaTerrainNodeDescriptor Descriptor;
 	if (!FGaeaTerrainNodeDescriptorRegistry::Get(RecipeNodeType, Descriptor))
 	{
 		return;
 	}
 
-	FCreatePinParams PinParams;
 	for (const FGaeaTerrainPortDescriptor& Input : Descriptor.Inputs)
 	{
 		CreatePin(EGPD_Input, TerrainPinCategory, Input.Name, PinParams);
@@ -112,6 +127,11 @@ void UGaeaEditorGraphNode::AllocateDefaultPins()
 
 FText UGaeaEditorGraphNode::GetNodeTitle(ENodeTitleType::Type TitleType) const
 {
+	if (RecipeNodeType == GaeaEditorNodeTypes::TerrainOutput)
+	{
+		return FText::FromString(TEXT("Terrain Output"));
+	}
+
 	FGaeaTerrainNodeDescriptor Descriptor;
 	if (FGaeaTerrainNodeDescriptorRegistry::Get(RecipeNodeType, Descriptor))
 	{
@@ -122,6 +142,11 @@ FText UGaeaEditorGraphNode::GetNodeTitle(ENodeTitleType::Type TitleType) const
 
 FText UGaeaEditorGraphNode::GetTooltipText() const
 {
+	if (RecipeNodeType == GaeaEditorNodeTypes::TerrainOutput)
+	{
+		return FText::FromString(TEXT("The terrain dataset connected here is the graph result used by Evaluate Graph and terrain outputs."));
+	}
+
 	FGaeaTerrainNodeDescriptor Descriptor;
 	if (FGaeaTerrainNodeDescriptorRegistry::Get(RecipeNodeType, Descriptor))
 	{
@@ -132,7 +157,7 @@ FText UGaeaEditorGraphNode::GetTooltipText() const
 
 bool UGaeaEditorGraphNode::CanUserDeleteNode() const
 {
-	return true;
+	return RecipeNodeType != GaeaEditorNodeTypes::TerrainOutput;
 }
 
 void UGaeaEditorGraphNode::PrepareForCopying()
