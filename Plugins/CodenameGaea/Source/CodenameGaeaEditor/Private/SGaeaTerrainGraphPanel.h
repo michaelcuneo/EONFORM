@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GaeaEditorGraph.h"
+#include "GaeaTerrainGraphAsset.h"
 #include "GaeaTerrainRecipe.h"
 #include "GraphEditor.h"
 #include "UObject/StrongObjectPtr.h"
@@ -9,7 +10,6 @@
 
 class SBox;
 class SVerticalBox;
-class UGaeaTerrainGraphAsset;
 
 class SGaeaTerrainGraphPanel : public SCompoundWidget
 {
