@@ -272,6 +272,79 @@ namespace
 		return PublishTerrain(Out, MoveTemp(Dataset), Input->HeightScale, Error);
 	}
 
+	bool EvaluateSlopeNode(
+		const FGaeaTerrainNode& Node,
+		const FGaeaTerrainNodeInputs& Inputs,
+		const FGaeaTerrainEvaluationContext&,
+		FGaeaTerrainNodeEvaluation& Out,
+		FString& Error)
+	{
+		const FGaeaTerrainValue* Input = RequireTerrainInput(Inputs, TEXT("Terrain"), TEXT("Slope"), Error);
+		if (!Input) return false;
+
+		const FGaeaScalarField* Height = Input->TerrainDataset.FindScalarField(GaeaTerrainFieldNames::Height);
+		if (!Height || !Height->IsValid())
+		{
+			Error = TEXT("Slope input terrain has no valid Height field.");
+			return false;
+		}
+
+		const float MinSlope = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Min"), 0.0)), 0.0f, 90.0f);
+		const float MaxSlope = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Max"), 45.0)), MinSlope, 90.0f);
+		const float Falloff = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Falloff"), 5.0)), 0.0f, 45.0f);
+		const FVector2d CellSize = Height->Domain.GetCellSize();
+		if (CellSize.X <= UE_SMALL_NUMBER || CellSize.Y <= UE_SMALL_NUMBER)
+		{
+			Error = TEXT("Slope input terrain has an invalid grid spacing.");
+			return false;
+		}
+
+		FGaeaFieldDescriptor Descriptor;
+		Descriptor.Name = TEXT("SlopeMask");
+		Descriptor.Unit = EGaeaFieldUnit::Normalized;
+		Descriptor.Interpolation = EGaeaInterpolation::Bilinear;
+		FGaeaScalarField Mask;
+		Mask.Initialize(Height->Domain, Descriptor);
+
+		const FIntPoint Dimensions = Height->Domain.Dimensions;
+		for (int32 Y = 0; Y < Dimensions.Y; ++Y)
+		{
+			for (int32 X = 0; X < Dimensions.X; ++X)
+			{
+				const int32 XL = FMath::Max(0, X - 1);
+				const int32 XR = FMath::Min(Dimensions.X - 1, X + 1);
+				const int32 YD = FMath::Max(0, Y - 1);
+				const int32 YU = FMath::Min(Dimensions.Y - 1, Y + 1);
+				const float DX = (Height->AtInterior(XR, Y) - Height->AtInterior(XL, Y)) * Input->HeightScale
+					/ FMath::Max(static_cast<float>(XR - XL) * static_cast<float>(CellSize.X), UE_SMALL_NUMBER);
+				const float DY = (Height->AtInterior(X, YU) - Height->AtInterior(X, YD)) * Input->HeightScale
+					/ FMath::Max(static_cast<float>(YU - YD) * static_cast<float>(CellSize.Y), UE_SMALL_NUMBER);
+				const float SlopeDegrees = FMath::RadiansToDegrees(FMath::Atan(FMath::Sqrt(DX * DX + DY * DY)));
+
+				float Weight = 0.0f;
+				if (SlopeDegrees >= MinSlope && SlopeDegrees <= MaxSlope)
+				{
+					Weight = 1.0f;
+				}
+				else if (SlopeDegrees > MaxSlope && Falloff > UE_SMALL_NUMBER && SlopeDegrees < MaxSlope + Falloff)
+				{
+					const float T = FMath::Clamp((SlopeDegrees - MaxSlope) / Falloff, 0.0f, 1.0f);
+					const float Smooth = T * T * (3.0f - 2.0f * T);
+					Weight = 1.0f - Smooth;
+				}
+				Mask.AtInterior(X, Y) = Weight;
+			}
+		}
+
+		if (!Mask.IsValid())
+		{
+			Error = TEXT("Slope produced an invalid mask.");
+			return false;
+		}
+		Out.Outputs.Add(TEXT("Mask"), FGaeaTerrainValue::MakeScalarField(MoveTemp(Mask)));
+		return true;
+	}
+
 	bool EvaluateHydraulicErosionNode(
 		const FGaeaTerrainNode& Node,
 		const FGaeaTerrainNodeInputs& Inputs,
@@ -400,6 +473,7 @@ void FGaeaTerrainNodeRegistry::RegisterBuiltIns()
 	if (!Registry.Contains(GaeaTerrainNodeTypes::TerrainContext)) Registry.Add(GaeaTerrainNodeTypes::TerrainContext, EvaluateTerrainContextNode);
 	if (!Registry.Contains(GaeaTerrainNodeTypes::Geology)) Registry.Add(GaeaTerrainNodeTypes::Geology, EvaluateGeologyNode);
 	if (!Registry.Contains(GaeaTerrainNodeTypes::ProcessMasks)) Registry.Add(GaeaTerrainNodeTypes::ProcessMasks, EvaluateProcessMasksNode);
+	if (!Registry.Contains(GaeaTerrainNodeTypes::Slope)) Registry.Add(GaeaTerrainNodeTypes::Slope, EvaluateSlopeNode);
 	if (!Registry.Contains(GaeaTerrainNodeTypes::HydraulicErosion)) Registry.Add(GaeaTerrainNodeTypes::HydraulicErosion, EvaluateHydraulicErosionNode);
 }
 
