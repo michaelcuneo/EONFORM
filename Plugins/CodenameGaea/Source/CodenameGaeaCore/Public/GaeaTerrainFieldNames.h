@@ -20,4 +20,7 @@ namespace GaeaTerrainFieldNames
 	CODENAMEGAEACORE_API extern const FName RockHardness;
 	CODENAMEGAEACORE_API extern const FName Weathering;
 	CODENAMEGAEACORE_API extern const FName SoilDepth;
+	CODENAMEGAEACORE_API extern const FName Wear;
+	CODENAMEGAEACORE_API extern const FName Deposits;
+	CODENAMEGAEACORE_API extern const FName Flow;
 }
