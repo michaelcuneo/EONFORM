@@ -80,8 +80,23 @@ namespace
 			return false;
 		}
 
+		FGaeaThermalErosionSettings Settings;
+		Settings.Iterations = FMath::Clamp<int32>(
+			static_cast<int32>(Node.GetInteger(TEXT("Iterations"), Settings.Iterations)),
+			1,
+			4096);
+		Settings.TalusAngleDegrees = FMath::Clamp(
+			static_cast<float>(Node.GetNumber(TEXT("TalusAngle"), Settings.TalusAngleDegrees)),
+			0.0f,
+			89.9f);
+		Settings.Strength = FMath::Clamp(
+			static_cast<float>(Node.GetNumber(TEXT("Strength"), Settings.Strength)),
+			0.0f,
+			1.0f);
+
 		FGaeaTerrainDataset PreparedDataset = Input->TerrainDataset;
 		FGaeaTerrainDerivedDataSettings DerivedSettings;
+		DerivedSettings.ProcessMasks.ThermalTalusAngleDegrees = Settings.TalusAngleDegrees;
 		if (!FGaeaTerrainDerivedData::EnsureHydraulicInputs(
 			PreparedDataset,
 			FMath::Max(Input->HeightScale, 1.0f),
@@ -114,20 +129,6 @@ namespace
 			}
 			AreaMask = &MaskValue->ScalarField;
 		}
-
-		FGaeaThermalErosionSettings Settings;
-		Settings.Iterations = FMath::Clamp<int32>(
-			static_cast<int32>(Node.GetInteger(TEXT("Iterations"), Settings.Iterations)),
-			1,
-			4096);
-		Settings.TalusAngleDegrees = FMath::Clamp(
-			static_cast<float>(Node.GetNumber(TEXT("TalusAngle"), Settings.TalusAngleDegrees)),
-			0.0f,
-			89.9f);
-		Settings.Strength = FMath::Clamp(
-			static_cast<float>(Node.GetNumber(TEXT("Strength"), Settings.Strength)),
-			0.0f,
-			1.0f);
 
 		FGaeaScalarField ErodedHeight = *Height;
 		if (!FGaeaThermalErosion::ApplyInPlace(
