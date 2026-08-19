@@ -17,7 +17,10 @@ public class CodenameGaeaEditor : ModuleRules
 
         PrivateDependencyModuleNames.AddRange(new string[]
         {
-            "UnrealEd"
+            "UnrealEd",
+            "Slate",
+            "SlateCore",
+            "ToolMenus"
         });
     }
 }
