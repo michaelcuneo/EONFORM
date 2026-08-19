@@ -30,7 +30,8 @@ public:
 		float HeightScale,
 		const FTerrainThermalErosionSettings& Settings,
 		const TArray<float>* ProcessMask = nullptr,
-		const TArray<float>* RockHardness = nullptr);
+		const TArray<float>* RockHardness = nullptr,
+		const TArray<uint8>* TopologyLandMask = nullptr);
 
 	static void ApplyHydraulic(
 		FTerrainHeightField& HeightField,
@@ -42,5 +43,6 @@ public:
 		const TArray<float>* DepositionMask = nullptr,
 		const TArray<float>* EvaporationMask = nullptr,
 		const TArray<float>* RockHardness = nullptr,
-		const TArray<float>* SoilDepth = nullptr);
+		const TArray<float>* SoilDepth = nullptr,
+		const TArray<uint8>* TopologyLandMask = nullptr);
 };
