@@ -3,11 +3,13 @@
 #include "GaeaEditorGraph.h"
 #include "Widgets/SNullWidget.h"
 
+namespace GaeaEditorGraphPins
+{
+	const FName Terrain(TEXT("GaeaTerrain"));
+}
+
 void SGaeaTerrainGraphPin::Construct(const FArguments& InArgs, UEdGraphPin* InPin)
 {
-	SetCursor(EMouseCursor::Default);
-	bShowLabel = true;
-	GraphPinObj = InPin;
 	SGraphPin::Construct(SGraphPin::FArguments(), InPin);
 }
 
