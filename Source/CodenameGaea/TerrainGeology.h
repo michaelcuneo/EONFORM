@@ -20,17 +20,49 @@ struct FTerrainGeologySettings
 
 struct FTerrainGeologyMaps
 {
-	TArray<float> RockHardness;
-	TArray<float> Weathering;
-	TArray<float> SoilDepth;
+	FGaeaScalarField RockHardnessField;
+	FGaeaScalarField WeatheringField;
+	FGaeaScalarField SoilDepthField;
+
+	TArray<float>& RockHardness;
+	TArray<float>& Weathering;
+	TArray<float>& SoilDepth;
+
+	FTerrainGeologyMaps()
+		: RockHardness(RockHardnessField.Values)
+		, Weathering(WeatheringField.Values)
+		, SoilDepth(SoilDepthField.Values)
+	{
+	}
+
+	FTerrainGeologyMaps(const FTerrainGeologyMaps& Other)
+		: RockHardnessField(Other.RockHardnessField)
+		, WeatheringField(Other.WeatheringField)
+		, SoilDepthField(Other.SoilDepthField)
+		, RockHardness(RockHardnessField.Values)
+		, Weathering(WeatheringField.Values)
+		, SoilDepth(SoilDepthField.Values)
+	{
+	}
+
+	FTerrainGeologyMaps& operator=(const FTerrainGeologyMaps& Other)
+	{
+		if (this != &Other)
+		{
+			RockHardnessField = Other.RockHardnessField;
+			WeatheringField = Other.WeatheringField;
+			SoilDepthField = Other.SoilDepthField;
+		}
+		return *this;
+	}
 
 	bool IsValidFor(const FTerrainHeightField& HeightField) const
 	{
-		const int32 NumCells = HeightField.Data.Num();
+		const FGaeaGridDomain& Domain = HeightField.GetGaeaDomain();
 		return HeightField.IsValid()
-			&& RockHardness.Num() == NumCells
-			&& Weathering.Num() == NumCells
-			&& SoilDepth.Num() == NumCells;
+			&& RockHardnessField.IsValid() && RockHardnessField.Domain == Domain
+			&& WeatheringField.IsValid() && WeatheringField.Domain == Domain
+			&& SoilDepthField.IsValid() && SoilDepthField.Domain == Domain;
 	}
 };
 
