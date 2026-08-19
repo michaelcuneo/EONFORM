@@ -11,9 +11,9 @@
  */
 struct CODENAMEGAEACORE_API FGaeaGridDomain
 {
-	FIntPoint Dimensions = FIntPoint(2, 2);
-	FVector2d WorldMin = FVector2d(0.0, 0.0);
-	FVector2d WorldMax = FVector2d(1.0, 1.0);
+	FIntPoint Dimensions = FIntPoint::ZeroValue;
+	FVector2d WorldMin = FVector2d::ZeroVector;
+	FVector2d WorldMax = FVector2d::ZeroVector;
 	int32 BorderSamples = 0;
 
 	static FGaeaGridDomain Make(
