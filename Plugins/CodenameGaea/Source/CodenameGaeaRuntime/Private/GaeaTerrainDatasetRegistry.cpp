@@ -1,0 +1,102 @@
+#include "GaeaTerrainDatasetRegistry.h"
+
+#include "HAL/CriticalSection.h"
+#include "Misc/ScopeLock.h"
+
+namespace
+{
+	FCriticalSection RegistryMutex;
+	TMap<FName, FGaeaTerrainDatasetSnapshot> Registry;
+	uint64 NextRevision = 1;
+	FName LatestSourceId = NAME_None;
+
+	uint64 PublishInternal(FName SourceId, FGaeaTerrainDataset&& Dataset)
+	{
+		if (SourceId.IsNone() || Dataset.IsEmpty())
+		{
+			return 0;
+		}
+
+		FScopeLock Lock(&RegistryMutex);
+
+		FGaeaTerrainDatasetSnapshot Snapshot;
+		Snapshot.SourceId = SourceId;
+		Snapshot.Revision = NextRevision++;
+		Snapshot.Dataset = MoveTemp(Dataset);
+
+		const uint64 Revision = Snapshot.Revision;
+		Registry.Add(SourceId, MoveTemp(Snapshot));
+		LatestSourceId = SourceId;
+		return Revision;
+	}
+}
+
+uint64 FGaeaTerrainDatasetRegistry::Publish(FName SourceId, const FGaeaTerrainDataset& Dataset)
+{
+	FGaeaTerrainDataset Copy = Dataset;
+	return PublishInternal(SourceId, MoveTemp(Copy));
+}
+
+uint64 FGaeaTerrainDatasetRegistry::Publish(FName SourceId, FGaeaTerrainDataset&& Dataset)
+{
+	return PublishInternal(SourceId, MoveTemp(Dataset));
+}
+
+bool FGaeaTerrainDatasetRegistry::Get(FName SourceId, FGaeaTerrainDatasetSnapshot& OutSnapshot)
+{
+	FScopeLock Lock(&RegistryMutex);
+	const FGaeaTerrainDatasetSnapshot* Snapshot = Registry.Find(SourceId);
+	if (!Snapshot)
+	{
+		return false;
+	}
+
+	OutSnapshot = *Snapshot;
+	return true;
+}
+
+bool FGaeaTerrainDatasetRegistry::GetLatest(FGaeaTerrainDatasetSnapshot& OutSnapshot)
+{
+	FScopeLock Lock(&RegistryMutex);
+	if (LatestSourceId.IsNone())
+	{
+		return false;
+	}
+
+	const FGaeaTerrainDatasetSnapshot* Snapshot = Registry.Find(LatestSourceId);
+	if (!Snapshot)
+	{
+		return false;
+	}
+
+	OutSnapshot = *Snapshot;
+	return true;
+}
+
+bool FGaeaTerrainDatasetRegistry::Remove(FName SourceId)
+{
+	FScopeLock Lock(&RegistryMutex);
+	const bool bRemoved = Registry.Remove(SourceId) > 0;
+	if (bRemoved && LatestSourceId == SourceId)
+	{
+		LatestSourceId = NAME_None;
+		uint64 HighestRevision = 0;
+		for (const TPair<FName, FGaeaTerrainDatasetSnapshot>& Pair : Registry)
+		{
+			if (Pair.Value.Revision > HighestRevision)
+			{
+				HighestRevision = Pair.Value.Revision;
+				LatestSourceId = Pair.Key;
+			}
+		}
+	}
+	return bRemoved;
+}
+
+void FGaeaTerrainDatasetRegistry::Reset()
+{
+	FScopeLock Lock(&RegistryMutex);
+	Registry.Reset();
+	LatestSourceId = NAME_None;
+	NextRevision = 1;
+}
