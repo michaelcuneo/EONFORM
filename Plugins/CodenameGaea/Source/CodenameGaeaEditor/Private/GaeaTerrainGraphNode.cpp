@@ -21,8 +21,6 @@ void SGaeaTerrainGraphNode::UpdateGraphNode()
 	RightNodeBox.Reset();
 	LeftNodeBox.Reset();
 
-	ContentScale.Bind(this, &SGraphNode::GetContentScale);
-
 	GetOrAddSlot(ENodeZone::Center)
 	.HAlign(HAlign_Fill)
 	.VAlign(VAlign_Center)
@@ -71,7 +69,7 @@ TSharedPtr<SGraphPin> SGaeaTerrainGraphNode::CreatePinWidget(UEdGraphPin* Pin) c
 	return PinWidget;
 }
 
-TSharedPtr<SGraphNode> FGaeaTerrainGraphNodeFactory::CreateNodeWidget(UEdGraphNode* InNode)
+TSharedPtr<SGraphNode> FGaeaTerrainGraphNodeFactory::CreateNode(UEdGraphNode* InNode) const
 {
 	if (!Cast<UGaeaEditorGraphNode>(InNode))
 	{
