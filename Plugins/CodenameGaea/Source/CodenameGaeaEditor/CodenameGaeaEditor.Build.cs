@@ -17,6 +17,7 @@ public class CodenameGaeaEditor : ModuleRules
 
         PrivateDependencyModuleNames.AddRange(new string[]
         {
+            "GraphEditor",
             "InputCore",
             "UnrealEd",
             "Slate",
