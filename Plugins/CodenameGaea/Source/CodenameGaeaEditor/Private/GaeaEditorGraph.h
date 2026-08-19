@@ -24,13 +24,46 @@ public:
 	UPROPERTY()
 	FName RecipeNodeType = NAME_None;
 
+	UPROPERTY()
+	TMap<FName, double> NumericParameters;
+
+	UPROPERTY()
+	TMap<FName, int64> IntegerParameters;
+
+	UPROPERTY()
+	TMap<FName, bool> BoolParameters;
+
+	UPROPERTY()
+	TMap<FName, FName> NameParameters;
+
 	void Initialize(const FGuid& InRecipeNodeId, FName InRecipeNodeType);
+	void InitializeParameterDefaults();
 
 	virtual void AllocateDefaultPins() override;
 	virtual FText GetNodeTitle(ENodeTitleType::Type TitleType) const override;
 	virtual FText GetTooltipText() const override;
-	virtual bool CanUserDeleteNode() const override { return false; }
-	virtual bool CanDuplicateNode() const override { return false; }
+	virtual bool CanUserDeleteNode() const override;
+	virtual bool CanDuplicateNode() const override { return true; }
+	virtual void PrepareForCopying() override;
+	virtual void PostPasteNode() override;
+};
+
+struct FGaeaGraphSchemaAction_NewNode : public FEdGraphSchemaAction
+{
+	FName NodeType = NAME_None;
+
+	FGaeaGraphSchemaAction_NewNode() = default;
+	FGaeaGraphSchemaAction_NewNode(
+		const FText& InNodeCategory,
+		const FText& InMenuDesc,
+		const FText& InToolTip,
+		FName InNodeType);
+
+	virtual UEdGraphNode* PerformAction(
+		UEdGraph* ParentGraph,
+		UEdGraphPin* FromPin,
+		const FVector2D Location,
+		bool bSelectNewNode = true) override;
 };
 
 UCLASS()
