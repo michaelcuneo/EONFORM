@@ -3,16 +3,26 @@
 #include "EdGraph/EdGraphPin.h"
 #include "GaeaTerrainDatasetRegistry.h"
 #include "GaeaTerrainEvaluator.h"
+#include "GaeaTerrainNodeDescriptor.h"
 #include "GraphEditor.h"
 #include "Styling/AppStyle.h"
 #include "Widgets/Input/SButton.h"
+#include "Widgets/Input/SCheckBox.h"
+#include "Widgets/Input/SEditableTextBox.h"
+#include "Widgets/Input/SNumericEntryBox.h"
 #include "Widgets/Layout/SBorder.h"
+#include "Widgets/Layout/SSplitter.h"
 #include "Widgets/Text/STextBlock.h"
 
 void SGaeaTerrainGraphPanel::Construct(const FArguments& InArgs)
 {
 	OnEvaluated = InArgs._OnEvaluated;
 	BuildDefaultRecipeAndGraph();
+
+	FGraphEditorEvents GraphEvents;
+	GraphEvents.OnSelectionChanged = SGraphEditor::FOnSelectionChanged::CreateSP(
+		this,
+		&SGaeaTerrainGraphPanel::OnGraphSelectionChanged);
 
 	ChildSlot
 	[
@@ -46,10 +56,26 @@ void SGaeaTerrainGraphPanel::Construct(const FArguments& InArgs)
 			+ SVerticalBox::Slot()
 			.FillHeight(1.0f)
 			[
-				SAssignNew(GraphEditor, SGraphEditor)
-				.GraphToEdit(EditorGraph.Get())
-				.IsEditable(false)
-				.ShowGraphStateOverlay(false)
+				SNew(SSplitter)
+				+ SSplitter::Slot()
+				.Value(0.78f)
+				[
+					SAssignNew(GraphEditor, SGraphEditor)
+					.GraphToEdit(EditorGraph.Get())
+					.GraphEvents(GraphEvents)
+					.IsEditable(true)
+					.ShowGraphStateOverlay(false)
+				]
+				+ SSplitter::Slot()
+				.Value(0.22f)
+				[
+					SNew(SBorder)
+					.Padding(8.0f)
+					.BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
+					[
+						SAssignNew(ParameterPanel, SVerticalBox)
+					]
+				]
 			]
 
 			+ SVerticalBox::Slot()
@@ -62,51 +88,28 @@ void SGaeaTerrainGraphPanel::Construct(const FArguments& InArgs)
 			]
 		]
 	];
+
+	RebuildParameterPanel();
 }
 
 void SGaeaTerrainGraphPanel::BuildDefaultRecipeAndGraph()
 {
-	Recipe = FGaeaTerrainRecipe();
-
-	FGaeaTerrainNode SourceNode;
-	SourceNode.Id = FGuid(0x10101010, 0x20202020, 0x30303030, 0x40404040);
-	SourceNode.Type = GaeaTerrainNodeTypes::SourceDataset;
-
-	FGaeaTerrainNode ErosionNode;
-	ErosionNode.Id = FGuid(0x50505050, 0x60606060, 0x70707070, 0x80808080);
-	ErosionNode.Type = GaeaTerrainNodeTypes::HydraulicErosion;
-	ErosionNode.IntegerParameters.Add(TEXT("Iterations"), 24);
-	ErosionNode.NumericParameters.Add(TEXT("Rainfall"), 0.01);
-	ErosionNode.NumericParameters.Add(TEXT("FlowRate"), 0.55);
-	ErosionNode.NumericParameters.Add(TEXT("SedimentCapacity"), 0.7);
-	ErosionNode.NumericParameters.Add(TEXT("ErosionRate"), 0.18);
-	ErosionNode.NumericParameters.Add(TEXT("DepositionRate"), 0.12);
-	ErosionNode.NumericParameters.Add(TEXT("Evaporation"), 0.08);
-	ErosionNode.NumericParameters.Add(TEXT("MinimumSlope"), 0.01);
-
-	Recipe.Nodes.Add(SourceNode);
-	Recipe.Nodes.Add(ErosionNode);
-
-	FGaeaTerrainConnection Connection;
-	Connection.FromNode = SourceNode.Id;
-	Connection.FromOutput = TEXT("Terrain");
-	Connection.ToNode = ErosionNode.Id;
-	Connection.ToInput = TEXT("Terrain");
-	Recipe.Connections.Add(Connection);
-	Recipe.OutputNode = ErosionNode.Id;
-
 	EditorGraph.Reset(NewObject<UGaeaEditorGraph>(GetTransientPackage(), NAME_None, RF_Transient));
 	EditorGraph->Schema = UGaeaEditorGraphSchema::StaticClass();
 
 	UGaeaEditorGraphNode* SourceGraphNode = NewObject<UGaeaEditorGraphNode>(EditorGraph.Get());
-	SourceGraphNode->Initialize(SourceNode.Id, SourceNode.Type);
+	SourceGraphNode->Initialize(
+		FGuid(0x10101010, 0x20202020, 0x30303030, 0x40404040),
+		GaeaTerrainNodeTypes::SourceDataset);
 	SourceGraphNode->NodePosX = 0;
 	SourceGraphNode->NodePosY = 80;
 	EditorGraph->AddNode(SourceGraphNode, false, false);
 	SourceGraphNode->AllocateDefaultPins();
 
 	UGaeaEditorGraphNode* ErosionGraphNode = NewObject<UGaeaEditorGraphNode>(EditorGraph.Get());
-	ErosionGraphNode->Initialize(ErosionNode.Id, ErosionNode.Type);
+	ErosionGraphNode->Initialize(
+		FGuid(0x50505050, 0x60606060, 0x70707070, 0x80808080),
+		GaeaTerrainNodeTypes::HydraulicErosion);
 	ErosionGraphNode->NodePosX = 360;
 	ErosionGraphNode->NodePosY = 80;
 	EditorGraph->AddNode(ErosionGraphNode, false, false);
@@ -119,7 +122,245 @@ void SGaeaTerrainGraphPanel::BuildDefaultRecipeAndGraph()
 		OutputPin->MakeLinkTo(InputPin);
 	}
 
-	StatusText = FText::FromString(TEXT("Ready. Uses the latest LegacyTerrainGenerator dataset as the runtime graph source."));
+	StatusText = FText::FromString(TEXT("Ready. Right-click the graph to add nodes, then Evaluate Graph."));
+}
+
+bool SGaeaTerrainGraphPanel::BuildRecipeFromEditorGraph(
+	FGaeaTerrainRecipe& OutRecipe,
+	FString& OutError) const
+{
+	OutRecipe = FGaeaTerrainRecipe();
+	OutError.Reset();
+
+	if (!EditorGraph.IsValid())
+	{
+		OutError = TEXT("Editor graph is not available.");
+		return false;
+	}
+
+	TArray<UGaeaEditorGraphNode*> TerrainNodes;
+	for (UEdGraphNode* Node : EditorGraph->Nodes)
+	{
+		if (UGaeaEditorGraphNode* TerrainNode = Cast<UGaeaEditorGraphNode>(Node))
+		{
+			TerrainNodes.Add(TerrainNode);
+
+			FGaeaTerrainNode RecipeNode;
+			RecipeNode.Id = TerrainNode->RecipeNodeId;
+			RecipeNode.Type = TerrainNode->RecipeNodeType;
+			RecipeNode.NumericParameters = TerrainNode->NumericParameters;
+			RecipeNode.IntegerParameters = TerrainNode->IntegerParameters;
+			RecipeNode.BoolParameters = TerrainNode->BoolParameters;
+			RecipeNode.NameParameters = TerrainNode->NameParameters;
+			OutRecipe.Nodes.Add(MoveTemp(RecipeNode));
+		}
+	}
+
+	if (TerrainNodes.IsEmpty())
+	{
+		OutError = TEXT("The terrain graph contains no nodes.");
+		return false;
+	}
+
+	TSet<FGuid> NodesWithOutgoingConnections;
+	for (UGaeaEditorGraphNode* TerrainNode : TerrainNodes)
+	{
+		for (UEdGraphPin* Pin : TerrainNode->Pins)
+		{
+			if (!Pin || Pin->Direction != EGPD_Output)
+			{
+				continue;
+			}
+
+			for (UEdGraphPin* LinkedPin : Pin->LinkedTo)
+			{
+				UGaeaEditorGraphNode* ToNode = LinkedPin
+					? Cast<UGaeaEditorGraphNode>(LinkedPin->GetOwningNode())
+					: nullptr;
+				if (!ToNode)
+				{
+					continue;
+				}
+
+				FGaeaTerrainConnection Connection;
+				Connection.FromNode = TerrainNode->RecipeNodeId;
+				Connection.FromOutput = Pin->PinName;
+				Connection.ToNode = ToNode->RecipeNodeId;
+				Connection.ToInput = LinkedPin->PinName;
+				OutRecipe.Connections.Add(MoveTemp(Connection));
+				NodesWithOutgoingConnections.Add(TerrainNode->RecipeNodeId);
+			}
+		}
+	}
+
+	TArray<FGuid> TerminalNodes;
+	for (const UGaeaEditorGraphNode* TerrainNode : TerrainNodes)
+	{
+		if (!NodesWithOutgoingConnections.Contains(TerrainNode->RecipeNodeId))
+		{
+			TerminalNodes.Add(TerrainNode->RecipeNodeId);
+		}
+	}
+
+	if (TerminalNodes.Num() != 1)
+	{
+		OutError = FString::Printf(
+			TEXT("The terrain graph must have exactly one terminal output node; found %d."),
+			TerminalNodes.Num());
+		return false;
+	}
+
+	OutRecipe.OutputNode = TerminalNodes[0];
+	return OutRecipe.Validate(&OutError);
+}
+
+void SGaeaTerrainGraphPanel::OnGraphSelectionChanged(const TSet<UObject*>& NewSelection)
+{
+	SelectedNode.Reset();
+	if (NewSelection.Num() == 1)
+	{
+		for (UObject* Object : NewSelection)
+		{
+			if (UGaeaEditorGraphNode* Node = Cast<UGaeaEditorGraphNode>(Object))
+			{
+				SelectedNode = Node;
+			}
+		}
+	}
+	RebuildParameterPanel();
+}
+
+void SGaeaTerrainGraphPanel::RebuildParameterPanel()
+{
+	if (!ParameterPanel.IsValid())
+	{
+		return;
+	}
+
+	ParameterPanel->ClearChildren();
+	UGaeaEditorGraphNode* Node = SelectedNode.Get();
+	if (!Node)
+	{
+		ParameterPanel->AddSlot()
+		.AutoHeight()
+		[
+			SNew(STextBlock)
+			.Text(FText::FromString(TEXT("Select a graph node to edit its parameters.")))
+			.AutoWrapText(true)
+		];
+		return;
+	}
+
+	FGaeaTerrainNodeDescriptor Descriptor;
+	if (!FGaeaTerrainNodeDescriptorRegistry::Get(Node->RecipeNodeType, Descriptor))
+	{
+		return;
+	}
+
+	ParameterPanel->AddSlot()
+	.AutoHeight()
+	.Padding(0.0f, 0.0f, 0.0f, 8.0f)
+	[
+		SNew(STextBlock)
+		.Text(FText::FromString(Descriptor.DisplayName))
+	];
+
+	if (Descriptor.Parameters.IsEmpty())
+	{
+		ParameterPanel->AddSlot()
+		.AutoHeight()
+		[
+			SNew(STextBlock)
+			.Text(FText::FromString(TEXT("This node has no editable parameters.")))
+		];
+		return;
+	}
+
+	for (const FGaeaTerrainParameterDescriptor& Parameter : Descriptor.Parameters)
+	{
+		TWeakObjectPtr<UGaeaEditorGraphNode> WeakNode(Node);
+		const FName ParameterName = Parameter.Name;
+
+		ParameterPanel->AddSlot()
+		.AutoHeight()
+		.Padding(0.0f, 3.0f)
+		[
+			SNew(SVerticalBox)
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			[
+				SNew(STextBlock)
+				.Text(FText::FromString(Parameter.DisplayName))
+			]
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			[
+				Parameter.Type == EGaeaTerrainParameterType::Number
+				? StaticCastSharedRef<SWidget>(
+					SNew(SNumericEntryBox<double>)
+					.Value_Lambda([WeakNode, ParameterName]() -> TOptional<double>
+					{
+						if (const UGaeaEditorGraphNode* Current = WeakNode.Get())
+						{
+							if (const double* Value = Current->NumericParameters.Find(ParameterName)) return *Value;
+						}
+						return TOptional<double>();
+					})
+					.MinValue(Parameter.bHasMinimum ? TOptional<double>(Parameter.Minimum) : TOptional<double>())
+					.MaxValue(Parameter.bHasMaximum ? TOptional<double>(Parameter.Maximum) : TOptional<double>())
+					.OnValueCommitted_Lambda([WeakNode, ParameterName](double Value, ETextCommit::Type)
+					{
+						if (UGaeaEditorGraphNode* Current = WeakNode.Get()) Current->NumericParameters.Add(ParameterName, Value);
+					}))
+				: Parameter.Type == EGaeaTerrainParameterType::Integer
+				? StaticCastSharedRef<SWidget>(
+					SNew(SNumericEntryBox<int64>)
+					.Value_Lambda([WeakNode, ParameterName]() -> TOptional<int64>
+					{
+						if (const UGaeaEditorGraphNode* Current = WeakNode.Get())
+						{
+							if (const int64* Value = Current->IntegerParameters.Find(ParameterName)) return *Value;
+						}
+						return TOptional<int64>();
+					})
+					.MinValue(Parameter.bHasMinimum ? TOptional<int64>(static_cast<int64>(Parameter.Minimum)) : TOptional<int64>())
+					.MaxValue(Parameter.bHasMaximum ? TOptional<int64>(static_cast<int64>(Parameter.Maximum)) : TOptional<int64>())
+					.OnValueCommitted_Lambda([WeakNode, ParameterName](int64 Value, ETextCommit::Type)
+					{
+						if (UGaeaEditorGraphNode* Current = WeakNode.Get()) Current->IntegerParameters.Add(ParameterName, Value);
+					}))
+				: Parameter.Type == EGaeaTerrainParameterType::Boolean
+				? StaticCastSharedRef<SWidget>(
+					SNew(SCheckBox)
+					.IsChecked_Lambda([WeakNode, ParameterName]()
+					{
+						if (const UGaeaEditorGraphNode* Current = WeakNode.Get())
+						{
+							if (const bool* Value = Current->BoolParameters.Find(ParameterName)) return *Value ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+						}
+						return ECheckBoxState::Unchecked;
+					})
+					.OnCheckStateChanged_Lambda([WeakNode, ParameterName](ECheckBoxState State)
+					{
+						if (UGaeaEditorGraphNode* Current = WeakNode.Get()) Current->BoolParameters.Add(ParameterName, State == ECheckBoxState::Checked);
+					}))
+				: StaticCastSharedRef<SWidget>(
+					SNew(SEditableTextBox)
+					.Text_Lambda([WeakNode, ParameterName]()
+					{
+						if (const UGaeaEditorGraphNode* Current = WeakNode.Get())
+						{
+							if (const FName* Value = Current->NameParameters.Find(ParameterName)) return FText::FromName(*Value);
+						}
+						return FText::GetEmpty();
+					})
+					.OnTextCommitted_Lambda([WeakNode, ParameterName](const FText& Text, ETextCommit::Type)
+					{
+						if (UGaeaEditorGraphNode* Current = WeakNode.Get()) Current->NameParameters.Add(ParameterName, FName(*Text.ToString()));
+					}))
+			]
+		];
+	}
 }
 
 FReply SGaeaTerrainGraphPanel::EvaluateGraph()
@@ -128,6 +369,14 @@ FReply SGaeaTerrainGraphPanel::EvaluateGraph()
 	if (!FGaeaTerrainDatasetRegistry::Get(TEXT("LegacyTerrainGenerator"), SourceSnapshot))
 	{
 		StatusText = FText::FromString(TEXT("No LegacyTerrainGenerator dataset is available. Regenerate terrain first."));
+		return FReply::Handled();
+	}
+
+	FGaeaTerrainRecipe Recipe;
+	FString RecipeError;
+	if (!BuildRecipeFromEditorGraph(Recipe, RecipeError))
+	{
+		StatusText = FText::FromString(FString::Printf(TEXT("Graph is invalid: %s"), *RecipeError));
 		return FReply::Handled();
 	}
 
@@ -156,7 +405,7 @@ FReply SGaeaTerrainGraphPanel::EvaluateGraph()
 	}
 
 	StatusText = FText::FromString(FString::Printf(
-		TEXT("Evaluated recipe %08X -> revision %llu (%d fields)."),
+		TEXT("Evaluated authored recipe %08X -> revision %llu (%d fields)."),
 		RecipeHash,
 		static_cast<unsigned long long>(Revision),
 		FieldCount));
