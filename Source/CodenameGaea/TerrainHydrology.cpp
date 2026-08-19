@@ -248,7 +248,10 @@ void FTerrainHydrology::CarveRivers(
 
 	for (int32 Index = 0; Index < NumCells; ++Index)
 	{
-		if (bHasTopology && (*TopologyLandMask)[Index] == 0)
+		const bool bLand = bHasTopology
+			? (*TopologyLandMask)[Index] != 0
+			: HeightField.Data[Index] > 0.0f;
+		if (!bLand)
 		{
 			continue;
 		}
@@ -259,10 +262,8 @@ void FTerrainHydrology::CarveRivers(
 			continue;
 		}
 
-		HeightField.Data[Index] -= NormalizedDepth * FMath::Pow(Mask, Profile);
-		if (bHasTopology)
-		{
-			HeightField.Data[Index] = FMath::Max(HeightField.Data[Index], MinimumLandHeight);
-		}
+		HeightField.Data[Index] = FMath::Max(
+			HeightField.Data[Index] - NormalizedDepth * FMath::Pow(Mask, Profile),
+			MinimumLandHeight);
 	}
 }
