@@ -6,7 +6,7 @@
 
 namespace
 {
-	FGaeaScalarField MakeField(const FGaeaGridDomain& Domain, FName Name)
+	FGaeaScalarField MakeGeologyField(const FGaeaGridDomain& Domain, FName Name)
 	{
 		FGaeaFieldDescriptor Descriptor;
 		Descriptor.Name = Name;
@@ -54,9 +54,9 @@ bool FGaeaTerrainGeology::Build(
 	NoiseSettings.Lacunarity = 2.0f;
 	const FVector2D GeologyOffset = FGaeaTerrainNoise::MakeSeedOffset(Seed, 707);
 
-	FGaeaScalarField RockHardness = MakeField(Height.Domain, GaeaTerrainFieldNames::RockHardness);
-	FGaeaScalarField Weathering = MakeField(Height.Domain, GaeaTerrainFieldNames::Weathering);
-	FGaeaScalarField SoilDepth = MakeField(Height.Domain, GaeaTerrainFieldNames::SoilDepth);
+	FGaeaScalarField RockHardness = MakeGeologyField(Height.Domain, GaeaTerrainFieldNames::RockHardness);
+	FGaeaScalarField Weathering = MakeGeologyField(Height.Domain, GaeaTerrainFieldNames::Weathering);
+	FGaeaScalarField SoilDepth = MakeGeologyField(Height.Domain, GaeaTerrainFieldNames::SoilDepth);
 
 	for (int32 Y = 0; Y < Height.Domain.Dimensions.Y; ++Y)
 	{
