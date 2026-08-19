@@ -7,7 +7,7 @@
 #include "UObject/StrongObjectPtr.h"
 #include "Widgets/SCompoundWidget.h"
 
-using FGaeaGraphEditorEvents = SGraphEditor::FGraphEditorEvents;
+using FGraphEditorEvents = SGraphEditor::FGraphEditorEvents;
 
 class SVerticalBox;
 
