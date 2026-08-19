@@ -35,6 +35,27 @@ namespace
 		return Value;
 	}
 
+	const FGaeaScalarField* OptionalScalarInput(
+		const FGaeaTerrainNodeInputs& Inputs,
+		FName Name,
+		const FGaeaGridDomain& Domain,
+		FString& Error)
+	{
+		const FGaeaTerrainValue* Value = FindInput(Inputs, Name);
+		if (!Value) return nullptr;
+		if (Value->Type != EGaeaTerrainValueType::ScalarField || !Value->ScalarField.IsValid())
+		{
+			Error = FString::Printf(TEXT("Input '%s' must be a valid scalar field."), *Name.ToString());
+			return nullptr;
+		}
+		if (Value->ScalarField.Domain != Domain)
+		{
+			Error = FString::Printf(TEXT("Input '%s' must use the same domain as Height."), *Name.ToString());
+			return nullptr;
+		}
+		return &Value->ScalarField;
+	}
+
 	bool PublishTerrain(
 		FGaeaTerrainNodeEvaluation& Out,
 		FGaeaTerrainDataset&& Dataset,
@@ -352,7 +373,7 @@ namespace
 		FGaeaTerrainNodeEvaluation& Out,
 		FString& Error)
 	{
-		const FGaeaTerrainValue* Input = RequireTerrainInput(Inputs, TEXT("Terrain"), TEXT("HydraulicErosion"), Error);
+		const FGaeaTerrainValue* Input = RequireTerrainInput(Inputs, TEXT("Terrain"), TEXT("Erosion"), Error);
 		if (!Input) return false;
 
 		FGaeaTerrainDataset PreparedDataset = Input->TerrainDataset;
@@ -369,53 +390,32 @@ namespace
 		const FGaeaScalarField* Height = PreparedDataset.FindScalarField(GaeaTerrainFieldNames::Height);
 		if (!Height)
 		{
-			Error = TEXT("HydraulicErosion input dataset has no Height field.");
+			Error = TEXT("Erosion input dataset has no Height field.");
 			return false;
 		}
 
-		const FGaeaTerrainValue* MaskInput = FindInput(Inputs, TEXT("Mask"));
-		const FGaeaScalarField* DerivedErosionMask = PreparedDataset.FindScalarField(GaeaTerrainFieldNames::HydraulicErosion);
-		const FGaeaScalarField* ErosionMask = DerivedErosionMask;
-		FGaeaScalarField CombinedErosionMask;
-		if (MaskInput)
-		{
-			if (MaskInput->Type != EGaeaTerrainValueType::ScalarField || !MaskInput->ScalarField.IsValid())
-			{
-				Error = TEXT("HydraulicErosion Mask input must be a valid scalar field.");
-				return false;
-			}
-			if (MaskInput->ScalarField.Domain != Height->Domain)
-			{
-				Error = TEXT("HydraulicErosion Mask input must use the same domain as Height.");
-				return false;
-			}
-
-			CombinedErosionMask = MaskInput->ScalarField;
-			CombinedErosionMask.Descriptor.Name = GaeaTerrainFieldNames::HydraulicErosion;
-			if (DerivedErosionMask && DerivedErosionMask->IsValid() && DerivedErosionMask->Domain == Height->Domain)
-			{
-				for (int32 Index = 0; Index < CombinedErosionMask.Values.Num(); ++Index)
-				{
-					CombinedErosionMask.Values[Index] = FMath::Clamp(
-						CombinedErosionMask.Values[Index] * DerivedErosionMask->Values[Index],
-						0.0f,
-						1.0f);
-				}
-			}
-			ErosionMask = &CombinedErosionMask;
-		}
+		const bool bHasAreaInput = FindInput(Inputs, TEXT("Mask")) != nullptr;
+		const FGaeaScalarField* AreaMask = OptionalScalarInput(Inputs, TEXT("Mask"), Height->Domain, Error);
+		if (bHasAreaInput && !AreaMask) return false;
+		const bool bHasSedimentInput = FindInput(Inputs, TEXT("Sediment")) != nullptr;
+		const FGaeaScalarField* SedimentInput = OptionalScalarInput(Inputs, TEXT("Sediment"), Height->Domain, Error);
+		if (bHasSedimentInput && !SedimentInput) return false;
 
 		FGaeaHydraulicErosionSettings Settings;
 		Settings.Iterations = FMath::Clamp<int32>(static_cast<int32>(Node.GetInteger(TEXT("Iterations"), Settings.Iterations)), 1, 4096);
-		Settings.Strength = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Strength"), Settings.Strength)), 0.0f, 4.0f);
 		Settings.RockSoftness = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("RockSoftness"), Settings.RockSoftness)), 0.0f, 1.0f);
-		Settings.Rainfall = static_cast<float>(Node.GetNumber(TEXT("Rainfall"), Settings.Rainfall));
-		Settings.FlowRate = static_cast<float>(Node.GetNumber(TEXT("FlowRate"), Settings.FlowRate));
-		Settings.SedimentCapacity = static_cast<float>(Node.GetNumber(TEXT("SedimentCapacity"), Settings.SedimentCapacity));
-		Settings.ErosionRate = static_cast<float>(Node.GetNumber(TEXT("ErosionRate"), Settings.ErosionRate));
-		Settings.DepositionRate = static_cast<float>(Node.GetNumber(TEXT("DepositionRate"), Settings.DepositionRate));
-		Settings.Evaporation = static_cast<float>(Node.GetNumber(TEXT("Evaporation"), Settings.Evaporation));
-		Settings.MinimumSlope = static_cast<float>(Node.GetNumber(TEXT("MinimumSlope"), Settings.MinimumSlope));
+		Settings.Strength = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Strength"), Settings.Strength)), 0.0f, 4.0f);
+		Settings.Downcutting = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Downcutting"), Settings.Downcutting)), 0.0f, 2.0f);
+		Settings.Inhibition = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Inhibition"), Settings.Inhibition)), 0.0f, 1.0f);
+		Settings.BaseLevel = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("BaseLevel"), Settings.BaseLevel)), -1.0f, 1.0f);
+		Settings.FeatureScale = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("FeatureScale"), Settings.FeatureScale)), 0.25f, 8.0f);
+		Settings.Debris = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Debris"), Settings.Debris)), 0.0f, 1.0f);
+		Settings.Volume = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Volume"), Settings.Volume)), 0.0f, 4.0f);
+		Settings.SedimentRemoval = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("SedimentRemoval"), Settings.SedimentRemoval)), 0.0f, 1.0f);
+		Settings.SelectiveProcessing = Node.GetName(TEXT("SelectiveProcessing"), Settings.SelectiveProcessing);
+		Settings.Seed = static_cast<int32>(FMath::Clamp<int64>(Node.GetInteger(TEXT("Seed"), Settings.Seed), MIN_int32, MAX_int32));
+		Settings.bAggressiveMode = Node.GetBool(TEXT("AggressiveMode"), Settings.bAggressiveMode);
+		Settings.bDeterministic = Node.GetBool(TEXT("Deterministic"), Settings.bDeterministic);
 
 		FGaeaHydraulicErosionResult Result;
 		if (!FGaeaHydraulicErosion::Evaluate(
@@ -424,13 +424,15 @@ namespace
 			Settings,
 			Result,
 			PreparedDataset.FindScalarField(GaeaTerrainFieldNames::Rainfall),
-			ErosionMask,
+			PreparedDataset.FindScalarField(GaeaTerrainFieldNames::HydraulicErosion),
 			PreparedDataset.FindScalarField(GaeaTerrainFieldNames::Deposition),
 			PreparedDataset.FindScalarField(GaeaTerrainFieldNames::Evaporation),
 			PreparedDataset.FindScalarField(GaeaTerrainFieldNames::RockHardness),
-			PreparedDataset.FindScalarField(GaeaTerrainFieldNames::SoilDepth)))
+			PreparedDataset.FindScalarField(GaeaTerrainFieldNames::SoilDepth),
+			AreaMask,
+			SedimentInput))
 		{
-			Error = TEXT("Hydraulic erosion evaluation failed.");
+			Error = TEXT("Erosion evaluation failed.");
 			return false;
 		}
 
