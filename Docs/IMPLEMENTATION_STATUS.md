@@ -9,7 +9,7 @@ The protected baseline must remain unchanged.
 
 ## Verified checkpoints
 
-Compiled successfully in Unreal Engine 5.8 by the project owner:
+Compiled and exercised successfully in Unreal Engine 5.8 by the project owner:
 
 - commercial plugin/module boundary
 - `FGaeaGridDomain` / `FGaeaScalarField`
@@ -17,18 +17,17 @@ Compiled successfully in Unreal Engine 5.8 by the project owner:
 - semantic context/process/geology fields
 - `FGaeaTerrainDataset` and canonical field names
 - runtime `FGaeaTerrainDatasetRegistry`
-- first visible `Tools -> Codename Gaea` dockable dataset inspector
+- first visible `Tools -> Codename Gaea` dataset inspector
 - first-class hydraulic erosion Height/Wear/Deposits/Flow outputs
 - runtime-safe recipe/evaluator foundation
-- first visible professional graph UI with `Source Dataset -> Hydraulic Erosion`
+- first professional GraphEditor surface
+- editable graph authoring with node creation, rewiring, parameter editing, recipe reconstruction, and cycle prevention
 
-The following runtime graph automation tests have been run successfully by the project owner:
+The project owner has run these runtime graph automation tests successfully:
 
 - `CodenameGaea.Core.Graph.RecipeValidation`
 - `CodenameGaea.Core.Graph.SourceToHydraulicErosion`
 - `CodenameGaea.Core.Graph.CycleDetection`
-
-This establishes the runtime recipe/evaluator as a verified boundary beneath editor authoring.
 
 ## Runtime island requirement
 
@@ -38,7 +37,7 @@ The recipe/evaluator therefore remains runtime-safe and editor-independent. Orak
 
 ## Verified runtime graph foundation
 
-Hydraulic erosion is Core-owned and the legacy project API delegates to the same implementation. `FGaeaTerrainRecipe` remains plain runtime-safe data with stable node ids/types, typed parameter maps, and named connections. `FGaeaTerrainEvaluator` validates recipes, resolves dependencies, detects cycles, memoizes a graph run, invokes runtime node evaluators, and returns `FGaeaTerrainDataset`.
+Hydraulic erosion is Core-owned and the legacy project API delegates to the same implementation. `FGaeaTerrainEvaluator` consumes `FGaeaTerrainRecipe`, resolves dependencies, detects cycles, memoizes one graph run, invokes runtime node evaluators, and returns `FGaeaTerrainDataset`.
 
 The first proven runtime graph remains:
 
@@ -48,163 +47,120 @@ SourceDataset -> HydraulicErosion
 
 with Height, Wear, Deposits, and Flow outputs.
 
-## Verified first graph UI
+Runtime node descriptors provide the shared metadata contract for professional editor authoring and future constrained Orakai authoring.
 
-`CodenameGaeaEditor` uses Unreal's `GraphEditor` stack through editor-only types:
+## Verified editable graph authoring
 
-- `UGaeaEditorGraph`
-- `UGaeaEditorGraphNode`
-- `UGaeaEditorGraphSchema`
-- `SGaeaTerrainGraphPanel`
+`CodenameGaeaEditor` uses Unreal's native GraphEditor stack. The current workbench supports:
 
-The first visible graph renders and evaluates the runtime-backed:
+- descriptor-driven right-click node creation
+- normal terrain pin wiring/rewiring
+- one terrain connection per input
+- connection-time cycle rejection
+- stable recipe node ids
+- descriptor-backed Hydraulic Erosion parameter editing
+- multiple chained Hydraulic Erosion nodes
+- live editor graph -> runtime recipe reconstruction on evaluation
+- exactly-one-terminal-output validation
+- evaluated dataset publication to the existing field inspector
+
+The editor graph still performs no terrain simulation itself. Runtime evaluation remains authoritative.
+
+## Current checkpoint: saveable graph assets
+
+This checkpoint adds persistent Codename Gaea graph assets without introducing a second execution model.
+
+### Serializable runtime recipe
+
+`FGaeaTerrainNode`, `FGaeaTerrainConnection`, and `FGaeaTerrainRecipe` are now Unreal-reflected serializable structs in `CodenameGaeaCore`.
+
+The same recipe type is therefore suitable for:
+
+- editor asset persistence
+- cooked runtime assets
+- deterministic graph evaluation
+- future Orakai island recipe storage/validation
+
+`CodenameGaeaCore` now depends on `CoreUObject` only to support reflection/serialization; it remains editor-independent.
+
+### `UGaeaTerrainGraphAsset`
+
+`CodenameGaeaRuntime` now provides a `UDataAsset`-based graph asset containing:
+
+- the exact runtime `FGaeaTerrainRecipe`
+- editor node layout metadata keyed by stable recipe node id
+
+Editor positions are authoring metadata only. Runtime execution consumes the persisted recipe.
+
+### Workbench New / Open / Save
+
+The Codename Gaea graph toolbar now contains:
 
 ```text
-[Source Dataset] -> [Hydraulic Erosion]
+New   Open   Save   Evaluate Graph
 ```
 
-`FGaeaTerrainDatasetSnapshot` carries physical metadata including the real terrain `HeightScale`, so graph evaluation uses the same physical scale as the source actor rather than a hard-coded editor value.
+Behavior:
 
-## Current checkpoint: editable graph authoring
+- `New` uses Unreal AssetTools to create a real graph asset in the Content Browser, then initializes the default Source Dataset -> Hydraulic Erosion graph and saves it.
+- `Open` uses Unreal's modal Content Browser asset picker filtered to `UGaeaTerrainGraphAsset`, then reconstructs a fresh transient editor graph from the persisted recipe and layout.
+- `Save` serializes the current live nodes, typed parameters, connections, terminal output, and node positions back into the current asset.
+- `Save` on an unsaved graph acts as Save As and opens the normal Unreal asset creation dialog.
+- package saving uses Unreal's normal checkout/save path so source-control behavior remains conventional.
 
-This checkpoint turns the previously constrained visual graph into a real authoring surface while keeping the runtime recipe as the execution contract.
+Opening an asset rebuilds the native `SGraphEditor` around a new transient `UEdGraph`; the `.uasset` stores recipe/layout data rather than serializing editor widget objects.
 
-### Runtime node descriptors
+### Asset factory
 
-`CodenameGaeaCore` now provides runtime-safe node metadata through:
-
-- `EGaeaTerrainParameterType`
-- `FGaeaTerrainPortDescriptor`
-- `FGaeaTerrainParameterDescriptor`
-- `FGaeaTerrainNodeDescriptor`
-- `FGaeaTerrainNodeDescriptorRegistry`
-
-Built-in descriptors currently cover:
-
-```text
-Input / Source Dataset
-Simulate / Hydraulic Erosion
-```
-
-Descriptors provide stable node type ids, display/category/description metadata, typed input/output ports, parameter defaults, and numeric limits. The professional editor consumes the same metadata that constrained game-facing authoring can later use for policy/range enforcement.
-
-Hydraulic Erosion descriptor parameters:
-
-- Iterations
-- Rainfall
-- Flow Rate
-- Sediment Capacity
-- Erosion Rate
-- Deposition Rate
-- Evaporation
-- Minimum Slope
-
-### Right-click node creation
-
-`UGaeaEditorGraphSchema::GetGraphContextActions()` now builds the node palette from the runtime descriptor registry instead of hard-coded editor menu entries.
-
-`Source Dataset` remains a singular protected graph root and is not offered for additional creation. Hydraulic Erosion can be added from the graph context menu.
-
-New nodes receive a new stable recipe `FGuid`, descriptor-defined pins, and descriptor-defined parameter defaults.
-
-### Real connection editing
-
-Terrain pins can now be connected and rewired through the normal Unreal graph canvas.
-
-The schema currently enforces:
-
-- output-to-input direction only
-- matching terrain pin category
-- no self-connections
-- one connection per terrain input
-- replacement of an existing input connection
-- no connection that would create a dependency cycle
-
-The Core evaluator retains independent cycle detection as a second safety layer.
-
-### Editor graph -> runtime recipe synchronization
-
-The editor graph is now the authoring state for this transient workbench checkpoint.
-
-Every `Evaluate Graph` action reconstructs a fresh `FGaeaTerrainRecipe` from:
-
-- current editor nodes
-- current recipe node ids/types
-- current typed parameter values
-- current pin connections
-- current terminal graph topology
-
-The graph must have exactly one terminal output node. Disconnected branches therefore produce a clear invalid-graph error instead of being silently ignored.
-
-The reconstructed recipe is passed to the already-verified runtime `FGaeaTerrainEvaluator`. The editor graph itself still performs no terrain simulation.
-
-### Selected-node parameter panel
-
-Selecting a single terrain node now populates a parameter panel beside the graph.
-
-The panel is generated from descriptor metadata and currently supports:
-
-- floating-point parameters
-- integer parameters
-- boolean parameters
-- name parameters
-- declared min/max ranges
-
-Editing Hydraulic Erosion values changes the parameter maps that are copied into the runtime recipe on the next evaluation.
-
-### Source-node invariants
-
-The graph always starts with one `Source Dataset` node.
-
-For this checkpoint it:
-
-- cannot be deleted
-- cannot be duplicated
-- is omitted from the node-creation palette
-
-This prevents accidental multiple external roots until multi-source semantics are designed deliberately.
+`UGaeaTerrainGraphAssetFactory` creates graph assets through Unreal's normal asset creation system. The workbench drives it directly; a dedicated double-click asset editor is intentionally deferred until the persistence round-trip is proven.
 
 ## Automated coverage
 
-Existing Core graph tests remain in place.
-
-A new test is added:
+Existing Core graph tests remain in place, including:
 
 ```text
 CodenameGaea.Core.Graph.NodeDescriptors
 ```
 
-It verifies built-in descriptor availability, Source Dataset port shape, Hydraulic Erosion port shape, parameter count, and the Iterations parameter type/default/range.
+A new Runtime asset-model test is added:
+
+```text
+CodenameGaea.Runtime.GraphAsset.Model
+```
+
+It verifies that a graph asset owns a valid runtime recipe, stable node ids/parameters, and one updateable layout record per node.
 
 ## Validation required before next step
 
-This checkpoint changes UHT-generated editor node state, adds public Core descriptor types and implementations, and substantially changes GraphEditor interaction. Use a cold build rather than Live Coding.
+This checkpoint changes Core UHT/reflection state, adds a Runtime `UDataAsset`, adds an editor `UFactory`, and adds AssetTools/ContentBrowser integration. Use a cold build rather than Live Coding.
 
 1. Pull `agent/mesh-terrain-foundation`.
 2. Close Unreal Editor.
 3. Build `CodenameGaeaEditor` / Development Editor / Win64.
-4. Open Unreal and regenerate the current terrain actor.
-5. Open `Tools -> Codename Gaea`.
-6. Confirm the default `Source Dataset -> Hydraulic Erosion` graph still appears.
-7. Select Hydraulic Erosion and confirm all eight parameters appear in the right-side parameter panel.
-8. Change `Iterations` or `Rainfall`, click `Evaluate Graph`, and confirm evaluation succeeds and produces a different recipe hash when the value changes.
-9. Right-click empty graph space and add another `Hydraulic Erosion` node from the `Simulate` category.
-10. Rewire the graph into `Source Dataset -> Hydraulic Erosion -> Hydraulic Erosion` and evaluate successfully.
-11. Leave the new node disconnected and confirm evaluation reports that the graph has more than one terminal output rather than silently ignoring the branch.
-12. Try to wire a downstream node back into an upstream node and confirm the editor rejects the cycle.
-13. Run `CodenameGaea.Core.Graph.NodeDescriptors` if convenient.
-14. Confirm the field inspector still refreshes to `CodenameGaeaGraph` after successful evaluation.
-15. Confirm the existing terrain actor remains visually unchanged; graph evaluation still publishes data for inspection and does not yet replace the actor mesh.
+4. Open `Tools -> Codename Gaea`.
+5. Confirm the toolbar shows `New`, `Open`, `Save`, and `Evaluate Graph`.
+6. Edit the graph: add a second Hydraulic Erosion node, wire it, change parameters, and move the nodes to obvious positions.
+7. Press `Save`. For an unsaved graph, choose an asset name/path in the normal Unreal dialog.
+8. Confirm the graph asset appears in the Content Browser.
+9. Change the graph after saving, then press `Open` and choose the saved asset.
+10. Confirm node ids/topology, parameter values, and node positions return to the saved state.
+11. Evaluate the reopened graph and confirm the recipe hash/output are consistent with the saved graph.
+12. Close/reopen the Codename Gaea tool and use `Open` again to confirm persistence is independent of the transient editor canvas.
+13. Run `CodenameGaea.Runtime.GraphAsset.Model` if convenient.
+14. Confirm the existing terrain actor remains visually unchanged.
 
 ## Next implementation step
 
-After this editable-authoring checkpoint is verified, introduce persistence without changing the runtime execution model:
+Once asset persistence is verified, begin replacing the legacy monolithic terrain pipeline with additional descriptor-backed Core nodes.
 
-1. create a saveable Codename Gaea graph/recipe asset
-2. serialize runtime-safe recipe data plus editor-only node positions
-3. load/save the editor canvas from that asset
-4. add New/Open/Save workflow in the Codename Gaea workbench
-5. preserve stable recipe ids and deterministic hashes across editor sessions
-6. then begin migrating additional legacy terrain stages into descriptor-backed runtime nodes
+The next node migration should establish reusable foundational generation nodes before expanding breadth. Candidate sequence:
 
-The asset will store authoring data; `FGaeaTerrainRecipe`/`FGaeaTerrainEvaluator` remain the execution model for both the commercial plugin and constrained Orakai runtime island generation.
+1. base/noise terrain source node
+2. shaping/mountain node
+3. thermal erosion migration into Core
+4. context/derive node producing Elevation/Slope/Curvature/regional fields
+5. geology node
+6. hydrology node
+7. runtime Dynamic Mesh materialization node/orchestrator
+
+At that point a saved Codename Gaea asset can become the actual source of a complete generated island rather than a graph layered on top of the legacy actor dataset.
