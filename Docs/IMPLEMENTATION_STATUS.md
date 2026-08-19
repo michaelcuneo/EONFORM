@@ -36,6 +36,16 @@ Compiled successfully in Unreal Engine 5.8 by the project owner:
 - legacy `Resolution`, `WorldSize`, `Data`, `Index()`, and `At()` compatibility preserved
 - copy/move value semantics verified
 
+### Semantic terrain fields
+
+Compiled successfully in Unreal Engine 5.8 by the project owner:
+
+- context outputs backed by named `FGaeaScalarField` values
+- process-mask outputs backed by named `FGaeaScalarField` values
+- geology outputs backed by named `FGaeaScalarField` values
+- legacy array aliases preserved
+- no terrain formulas changed
+
 ## Runtime island requirement
 
 Orakai players will create their own islands in a packaged game and then play on them.
@@ -49,70 +59,61 @@ This is now a hard architecture requirement:
 - generated gameplay fields and generated geometry derive from the same terrain dataset/recipe
 - saved islands should prefer deterministic recipe/seed/parameters plus explicit edits over treating serialized final geometry as the only canonical representation
 
-See `Docs/ARCHITECTURE.md` for the full runtime/editor/backend split.
+Orakai will not expose unrestricted professional generation. A runtime generation policy/profile will constrain island extent, resolution, permitted operations, parameter ranges, simulation effort, and overall complexity before evaluation. See `Docs/ORAKAI_GENERATION_POLICY.md`.
 
-## Current checkpoint: semantic terrain fields
+## Current checkpoint: terrain dataset
 
-Context, process masks, and geology now produce first-class `FGaeaScalarField` outputs while retaining their original `TArray<float>` names as compatibility aliases.
+`CodenameGaeaCore` now contains `FGaeaTerrainDataset`, a generic named collection of terrain fields.
 
-### Context fields
+Current behavior:
 
-- `Elevation` — normalized
-- `SlopeDegrees` — degrees
-- `Concavity` — normalized
-- `Convexity` — normalized
-- `Mountain` — normalized
-- `Foothill` — normalized
-- `Plains` — normalized
+- owns scalar fields by value
+- accepts fields with different valid domains/resolutions
+- uses each field descriptor name as the stable lookup key
+- exposes const lookup for downstream consumers
+- supports field replacement/removal/reset
+- supports deterministic lexical field-name enumeration
+- supports world-space sampling by field name
+- rejects invalid or unnamed fields
 
-Each is backed by a correspondingly named `FGaeaScalarField` and shares the exact same value buffer with the legacy array alias.
+Canonical built-in field names now live in `GaeaTerrainFieldNames` rather than requiring consumers to repeat string literals.
 
-### Process-mask fields
+The current canonical set covers:
 
-- `Thermal`
-- `Rainfall`
-- `HydraulicErosion`
-- `Deposition`
-- `Evaporation`
+- Height
+- Elevation
+- SlopeDegrees
+- Concavity
+- Convexity
+- Mountain
+- Foothill
+- Plains
+- Thermal
+- Rainfall
+- HydraulicErosion
+- Deposition
+- Evaporation
+- RockHardness
+- Weathering
+- SoilDepth
 
-All are normalized scalar fields over the same domain as the heightfield.
-
-### Geology fields
-
-- `RockHardness`
-- `Weathering`
-- `SoilDepth`
-
-All are normalized scalar fields over the same domain as the heightfield.
-
-`FGaeaGridDomain` now has explicit equality operators so semantic field validation can verify exact domain identity rather than only matching buffer lengths.
-
-No context, process-mask, or geology formulas were changed in this migration.
+A temporary host-project `FTerrainDatasetBridge` packages the existing legacy generation outputs into an independent `FGaeaTerrainDataset`. This bridge exists only during migration; the final graph/evaluator will produce datasets directly inside the plugin.
 
 ## Automated coverage
 
-Core spatial tests cover:
+Core spatial tests cover domain geometry and scalar-field sampling.
 
-- domain validity
-- domain equality
-- guard-band storage dimensions
-- cell spacing
-- evaluation bounds
-- interior/storage world mapping
-- scalar-field validity
-- bilinear center sampling
-- explicit out-of-domain clamp behavior
+Dataset tests cover:
 
-Legacy/regression tests cover:
+- named insertion and lookup
+- multiple fields with different resolutions/domains
+- world-space sampling
+- lexical name enumeration
+- same-name replacement without field-count growth
+- removal/reset
+- missing-field failure behavior
 
-- legacy heightfield storage aliasing the new scalar field
-- heightfield copy/move value semantics
-- context fields validating against the heightfield domain
-- stable context field names/units
-- geology fields validating against the heightfield domain
-- stable geology field names/units
-- process-mask fields validating against the heightfield domain
-- compatibility arrays sharing the exact same field buffers
+Legacy/regression tests continue to cover heightfield compatibility and semantic context/geology/process fields.
 
 ## Validation required before next step
 
@@ -124,6 +125,12 @@ Legacy/regression tests cover:
 
 ## Next implementation step
 
-After this checkpoint is verified, introduce `FGaeaTerrainDataset`: a named typed collection that owns and exposes terrain fields independently of the legacy subsystem structs.
+Once this checkpoint is verified, build the first visible Codename Gaea editor surface in `CodenameGaeaEditor`:
 
-That dataset is the key seam for both upcoming visible editor inspection and Orakai runtime island generation. Once the dataset compiles, the next milestone is the first real Codename Gaea editor window/field inspector so the plugin becomes visibly inspectable inside UE rather than remaining infrastructure-only.
+- `Tools -> Codename Gaea`
+- dockable editor tab
+- real terrain-dataset field list
+- selected-field metadata/domain inspector
+- initial scalar-field visualization path
+
+The first editor milestone should consume the real `FGaeaTerrainDataset` model rather than mock data. After that visible checkpoint, erosion will be upgraded to expose first-class Height/Wear/Deposits/Flow outputs and the runtime-safe recipe/graph evaluator will begin replacing the legacy monolithic actor pipeline.
