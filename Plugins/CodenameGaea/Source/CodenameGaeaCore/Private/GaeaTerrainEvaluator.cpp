@@ -114,6 +114,40 @@ namespace
 		return FGaeaTerrainContext::Analyze(*Height, FMath::Max(Input.HeightScale, 1.0f), Out.Dataset, &Error);
 	}
 
+	bool EvaluateProcessMasksNode(
+		const FGaeaTerrainNode& Node,
+		const TMap<FName, const FGaeaTerrainNodeEvaluation*>& Inputs,
+		const FGaeaTerrainEvaluationContext&,
+		FGaeaTerrainNodeEvaluation& Out,
+		FString& Error)
+	{
+		const FGaeaTerrainNodeEvaluation* const* InputPtr = Inputs.Find(TEXT("Terrain"));
+		if (!InputPtr || !*InputPtr)
+		{
+			Error = TEXT("ProcessMasks requires a Terrain input.");
+			return false;
+		}
+
+		const FGaeaTerrainNodeEvaluation& Input = **InputPtr;
+		const FGaeaScalarField* Height = Input.Dataset.FindScalarField(GaeaTerrainFieldNames::Height);
+		if (!Height)
+		{
+			Error = TEXT("ProcessMasks input dataset has no Height field.");
+			return false;
+		}
+
+		FGaeaTerrainProcessMaskSettings Settings;
+		Settings.ThermalTalusAngleDegrees = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("ThermalTalusAngle"), Settings.ThermalTalusAngleDegrees)), 0.0f, 90.0f);
+		Settings.ThermalRegionality = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("ThermalRegionality"), Settings.ThermalRegionality)), 0.0f, 1.0f);
+		Settings.HydraulicRegionality = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("HydraulicRegionality"), Settings.HydraulicRegionality)), 0.0f, 1.0f);
+		Settings.RainfallHighlandBias = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("RainfallHighlandBias"), Settings.RainfallHighlandBias)), 0.0f, 1.0f);
+		Settings.EvaporationLowlandBias = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("EvaporationLowlandBias"), Settings.EvaporationLowlandBias)), 0.0f, 1.0f);
+
+		Out.Dataset = Input.Dataset;
+		Out.HeightScale = Input.HeightScale;
+		return FGaeaTerrainContext::BuildProcessMasks(*Height, Settings, Out.Dataset, &Error);
+	}
+
 	bool EvaluateHydraulicErosionNode(
 		const FGaeaTerrainNode& Node,
 		const TMap<FName, const FGaeaTerrainNodeEvaluation*>& Inputs,
@@ -192,6 +226,7 @@ void FGaeaTerrainNodeRegistry::RegisterBuiltIns()
 	if (!Registry.Contains(GaeaTerrainNodeTypes::SourceDataset)) Registry.Add(GaeaTerrainNodeTypes::SourceDataset, EvaluateSourceDataset);
 	if (!Registry.Contains(GaeaTerrainNodeTypes::ProceduralTerrain)) Registry.Add(GaeaTerrainNodeTypes::ProceduralTerrain, EvaluateProceduralTerrain);
 	if (!Registry.Contains(GaeaTerrainNodeTypes::TerrainContext)) Registry.Add(GaeaTerrainNodeTypes::TerrainContext, EvaluateTerrainContextNode);
+	if (!Registry.Contains(GaeaTerrainNodeTypes::ProcessMasks)) Registry.Add(GaeaTerrainNodeTypes::ProcessMasks, EvaluateProcessMasksNode);
 	if (!Registry.Contains(GaeaTerrainNodeTypes::HydraulicErosion)) Registry.Add(GaeaTerrainNodeTypes::HydraulicErosion, EvaluateHydraulicErosionNode);
 }
 
