@@ -232,18 +232,27 @@ void FTerrainHydrology::CarveRivers(
 	FTerrainHeightField& HeightField,
 	float HeightScale,
 	const FTerrainRiverSettings& Settings,
-	const TArray<float>& RiverMask)
+	const TArray<float>& RiverMask,
+	const TArray<uint8>* TopologyLandMask)
 {
 	if (!HeightField.IsValid() || RiverMask.Num() != HeightField.Data.Num() || HeightScale <= UE_SMALL_NUMBER)
 	{
 		return;
 	}
 
+	const int32 NumCells = HeightField.Data.Num();
+	const bool bHasTopology = TopologyLandMask && TopologyLandMask->Num() == NumCells;
 	const float NormalizedDepth = FMath::Max(Settings.Depth, 0.0f) / HeightScale;
+	const float MinimumLandHeight = FMath::Max(1.0f / HeightScale, 1.0e-6f);
 	const float Profile = FMath::Max(Settings.ChannelProfile, 0.1f);
 
-	for (int32 Index = 0; Index < HeightField.Data.Num(); ++Index)
+	for (int32 Index = 0; Index < NumCells; ++Index)
 	{
+		if (bHasTopology && (*TopologyLandMask)[Index] == 0)
+		{
+			continue;
+		}
+
 		const float Mask = FMath::Clamp(RiverMask[Index], 0.0f, 1.0f);
 		if (Mask <= UE_SMALL_NUMBER)
 		{
@@ -251,5 +260,9 @@ void FTerrainHydrology::CarveRivers(
 		}
 
 		HeightField.Data[Index] -= NormalizedDepth * FMath::Pow(Mask, Profile);
+		if (bHasTopology)
+		{
+			HeightField.Data[Index] = FMath::Max(HeightField.Data[Index], MinimumLandHeight);
+		}
 	}
 }
