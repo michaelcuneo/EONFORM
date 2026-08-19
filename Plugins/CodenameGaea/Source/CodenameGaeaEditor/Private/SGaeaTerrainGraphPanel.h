@@ -19,8 +19,6 @@ public:
 		SLATE_EVENT(FSimpleDelegate, OnEvaluated)
 	SLATE_END_ARGS()
 
-	SGaeaTerrainGraphPanel();
-
 	void Construct(const FArguments& InArgs);
 	virtual FReply OnPreviewKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent) override;
 
