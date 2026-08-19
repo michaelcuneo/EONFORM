@@ -1,7 +1,9 @@
 #include "GaeaTerrainEvaluator.h"
 
+#include "GaeaGridDomain.h"
 #include "GaeaHydraulicErosion.h"
 #include "GaeaTerrainFieldNames.h"
+#include "GaeaTerrainNoise.h"
 
 namespace
 {
@@ -21,13 +23,73 @@ namespace
 			return false;
 		}
 		Out.Dataset = Context.SourceDataset;
+		Out.HeightScale = FMath::Max(Context.HeightScale, 1.0f);
+		return true;
+	}
+
+	bool EvaluateProceduralTerrain(
+		const FGaeaTerrainNode& Node,
+		const TMap<FName, const FGaeaTerrainNodeEvaluation*>&,
+		const FGaeaTerrainEvaluationContext&,
+		FGaeaTerrainNodeEvaluation& Out,
+		FString& Error)
+	{
+		const int32 Resolution = FMath::Clamp<int32>(static_cast<int32>(Node.GetInteger(TEXT("Resolution"), 257)), 2, 1025);
+		const float WorldSize = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("WorldSize"), 100000.0)), 1.0f, 10000000.0f);
+		const float HeightScale = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("HeightScale"), 8000.0)), 1.0f, 1000000.0f);
+		const int32 Seed = static_cast<int32>(FMath::Clamp<int64>(Node.GetInteger(TEXT("Seed"), 1337), MIN_int32, MAX_int32));
+
+		FGaeaFractalNoiseSettings Settings;
+		Settings.Frequency = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Frequency"), Settings.Frequency)), 0.000001f, 1.0f);
+		Settings.Octaves = FMath::Clamp<int32>(static_cast<int32>(Node.GetInteger(TEXT("Octaves"), Settings.Octaves)), 1, 16);
+		Settings.Persistence = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Persistence"), Settings.Persistence)), 0.0f, 1.0f);
+		Settings.Lacunarity = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Lacunarity"), Settings.Lacunarity)), 1.0f, 8.0f);
+
+		const double HalfWorldSize = static_cast<double>(WorldSize) * 0.5;
+		const FGaeaGridDomain Domain = FGaeaGridDomain::Make(
+			FIntPoint(Resolution, Resolution),
+			FVector2d(-HalfWorldSize, -HalfWorldSize),
+			FVector2d(HalfWorldSize, HalfWorldSize));
+		if (!Domain.IsValid())
+		{
+			Error = TEXT("ProceduralTerrain produced an invalid grid domain.");
+			return false;
+		}
+
+		FGaeaFieldDescriptor Descriptor;
+		Descriptor.Name = GaeaTerrainFieldNames::Height;
+		Descriptor.Unit = EGaeaFieldUnit::Normalized;
+		Descriptor.Interpolation = EGaeaInterpolation::Bilinear;
+
+		FGaeaScalarField Height;
+		Height.Initialize(Domain, Descriptor);
+		const FVector2D SeedOffset = FGaeaTerrainNoise::MakeSeedOffset(Seed);
+		for (int32 Y = 0; Y < Resolution; ++Y)
+		{
+			for (int32 X = 0; X < Resolution; ++X)
+			{
+				const FVector2d World = Domain.InteriorSampleToWorld(X, Y);
+				Height.AtInterior(X, Y) = FGaeaTerrainNoise::SampleFractal(
+					FVector2D(static_cast<float>(World.X), static_cast<float>(World.Y)),
+					SeedOffset,
+					Settings);
+			}
+		}
+
+		Out.Dataset.Reset();
+		if (!Out.Dataset.SetScalarField(MoveTemp(Height)))
+		{
+			Error = TEXT("ProceduralTerrain could not publish its Height field.");
+			return false;
+		}
+		Out.HeightScale = HeightScale;
 		return true;
 	}
 
 	bool EvaluateHydraulicErosionNode(
 		const FGaeaTerrainNode& Node,
 		const TMap<FName, const FGaeaTerrainNodeEvaluation*>& Inputs,
-		const FGaeaTerrainEvaluationContext& Context,
+		const FGaeaTerrainEvaluationContext&,
 		FGaeaTerrainNodeEvaluation& Out,
 		FString& Error)
 	{
@@ -37,7 +99,8 @@ namespace
 			Error = TEXT("HydraulicErosion requires a Terrain input.");
 			return false;
 		}
-		const FGaeaTerrainDataset& InputDataset = (*InputPtr)->Dataset;
+		const FGaeaTerrainNodeEvaluation& Input = **InputPtr;
+		const FGaeaTerrainDataset& InputDataset = Input.Dataset;
 		const FGaeaScalarField* Height = InputDataset.FindScalarField(GaeaTerrainFieldNames::Height);
 		if (!Height)
 		{
@@ -58,7 +121,7 @@ namespace
 		FGaeaHydraulicErosionResult Result;
 		if (!FGaeaHydraulicErosion::Evaluate(
 			*Height,
-			Context.HeightScale,
+			FMath::Max(Input.HeightScale, 1.0f),
 			Settings,
 			Result,
 			InputDataset.FindScalarField(GaeaTerrainFieldNames::Rainfall),
@@ -77,6 +140,7 @@ namespace
 		Out.Dataset.SetScalarField(MoveTemp(Result.Wear));
 		Out.Dataset.SetScalarField(MoveTemp(Result.Deposits));
 		Out.Dataset.SetScalarField(MoveTemp(Result.Flow));
+		Out.HeightScale = Input.HeightScale;
 		return true;
 	}
 }
@@ -98,6 +162,7 @@ void FGaeaTerrainNodeRegistry::RegisterBuiltIns()
 {
 	FScopeLock Lock(&RegistryMutex);
 	if (!Registry.Contains(GaeaTerrainNodeTypes::SourceDataset)) Registry.Add(GaeaTerrainNodeTypes::SourceDataset, EvaluateSourceDataset);
+	if (!Registry.Contains(GaeaTerrainNodeTypes::ProceduralTerrain)) Registry.Add(GaeaTerrainNodeTypes::ProceduralTerrain, EvaluateProceduralTerrain);
 	if (!Registry.Contains(GaeaTerrainNodeTypes::HydraulicErosion)) Registry.Add(GaeaTerrainNodeTypes::HydraulicErosion, EvaluateHydraulicErosionNode);
 }
 
@@ -177,6 +242,7 @@ FGaeaTerrainEvaluationResult FGaeaTerrainEvaluator::Evaluate(
 		return Result;
 	}
 	Result.Dataset = Output->Dataset;
+	Result.HeightScale = Output->HeightScale;
 	Result.bSuccess = true;
 	return Result;
 }
