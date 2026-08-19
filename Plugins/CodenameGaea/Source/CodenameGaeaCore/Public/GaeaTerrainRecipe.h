@@ -11,6 +11,7 @@ namespace GaeaTerrainNodeTypes
 	CODENAMEGAEACORE_API extern const FName TerrainContext;
 	CODENAMEGAEACORE_API extern const FName Geology;
 	CODENAMEGAEACORE_API extern const FName ProcessMasks;
+	CODENAMEGAEACORE_API extern const FName ThermalErosion;
 	CODENAMEGAEACORE_API extern const FName HydraulicErosion;
 	CODENAMEGAEACORE_API extern const FName Slope;
 }
