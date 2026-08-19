@@ -210,7 +210,7 @@ void SGaeaTerrainGraphPanel::BuildDefaultRecipeAndGraph()
 	Recipe.OutputNode = ErosionNode.Id;
 
 	BuildEditorGraphFromRecipe(Recipe, nullptr);
-	StatusText = FText::FromString(TEXT("Unsaved procedural graph. Adjust parameters, Evaluate Graph, then Generate Dynamic Mesh."));
+	StatusText = FText::FromString(TEXT("Unsaved procedural graph. Connect the final terrain to Terrain Output, then Evaluate Graph."));
 }
 
 void SGaeaTerrainGraphPanel::BuildEditorGraphFromRecipe(
@@ -275,6 +275,25 @@ void SGaeaTerrainGraphPanel::BuildEditorGraphFromRecipe(
 		}
 	}
 
+	UGaeaEditorGraphNode* TerrainOutputNode = NewObject<UGaeaEditorGraphNode>(EditorGraph.Get());
+	TerrainOutputNode->Initialize(
+		FGuid(0x90909090, 0xA0A0A0A0, 0xB0B0B0B0, 0xC0C0C0C0),
+		GaeaEditorNodeTypes::TerrainOutput);
+	TerrainOutputNode->NodePosX = DefaultIndex * 360;
+	TerrainOutputNode->NodePosY = 80;
+	EditorGraph->AddNode(TerrainOutputNode, false, false);
+	TerrainOutputNode->AllocateDefaultPins();
+
+	if (UGaeaEditorGraphNode* const* RecipeOutputNode = NodeMap.Find(Recipe.OutputNode))
+	{
+		UEdGraphPin* SourcePin = (*RecipeOutputNode)->FindPin(TEXT("Terrain"), EGPD_Output);
+		UEdGraphPin* OutputInputPin = TerrainOutputNode->FindPin(TEXT("Terrain"), EGPD_Input);
+		if (SourcePin && OutputInputPin)
+		{
+			SourcePin->MakeLinkTo(OutputInputPin);
+		}
+	}
+
 	if (GraphHost.IsValid())
 	{
 		GraphHost->SetContent(CreateGraphEditorWidget());
@@ -297,10 +316,22 @@ bool SGaeaTerrainGraphPanel::BuildRecipeFromEditorGraph(
 	}
 
 	TArray<UGaeaEditorGraphNode*> TerrainNodes;
+	UGaeaEditorGraphNode* TerrainOutputNode = nullptr;
 	for (UEdGraphNode* Node : EditorGraph->Nodes)
 	{
 		if (UGaeaEditorGraphNode* TerrainNode = Cast<UGaeaEditorGraphNode>(Node))
 		{
+			if (TerrainNode->RecipeNodeType == GaeaEditorNodeTypes::TerrainOutput)
+			{
+				if (TerrainOutputNode)
+				{
+					OutError = TEXT("The terrain graph contains more than one Terrain Output node.");
+					return false;
+				}
+				TerrainOutputNode = TerrainNode;
+				continue;
+			}
+
 			TerrainNodes.Add(TerrainNode);
 
 			FGaeaTerrainNode RecipeNode;
@@ -316,9 +347,29 @@ bool SGaeaTerrainGraphPanel::BuildRecipeFromEditorGraph(
 
 	if (TerrainNodes.IsEmpty())
 	{
-		OutError = TEXT("The terrain graph contains no nodes.");
+		OutError = TEXT("The terrain graph contains no terrain nodes.");
 		return false;
 	}
+	if (!TerrainOutputNode)
+	{
+		OutError = TEXT("The terrain graph has no Terrain Output node.");
+		return false;
+	}
+
+	UEdGraphPin* TerrainOutputInput = TerrainOutputNode->FindPin(TEXT("Terrain"), EGPD_Input);
+	if (!TerrainOutputInput || TerrainOutputInput->LinkedTo.Num() != 1)
+	{
+		OutError = TEXT("Terrain Output must have exactly one Terrain connection.");
+		return false;
+	}
+
+	UGaeaEditorGraphNode* OutputSourceNode = Cast<UGaeaEditorGraphNode>(TerrainOutputInput->LinkedTo[0]->GetOwningNode());
+	if (!OutputSourceNode || OutputSourceNode->RecipeNodeType == GaeaEditorNodeTypes::TerrainOutput)
+	{
+		OutError = TEXT("Terrain Output is not connected to a valid terrain node.");
+		return false;
+	}
+	OutRecipe.OutputNode = OutputSourceNode->RecipeNodeId;
 
 	TSet<FGuid> NodesWithOutgoingConnections;
 	for (UGaeaEditorGraphNode* TerrainNode : TerrainNodes)
@@ -340,35 +391,37 @@ bool SGaeaTerrainGraphPanel::BuildRecipeFromEditorGraph(
 					continue;
 				}
 
+				NodesWithOutgoingConnections.Add(TerrainNode->RecipeNodeId);
+				if (ToNode->RecipeNodeType == GaeaEditorNodeTypes::TerrainOutput)
+				{
+					continue;
+				}
+
 				FGaeaTerrainConnection Connection;
 				Connection.FromNode = TerrainNode->RecipeNodeId;
 				Connection.FromOutput = Pin->PinName;
 				Connection.ToNode = ToNode->RecipeNodeId;
 				Connection.ToInput = LinkedPin->PinName;
 				OutRecipe.Connections.Add(MoveTemp(Connection));
-				NodesWithOutgoingConnections.Add(TerrainNode->RecipeNodeId);
 			}
 		}
 	}
 
-	TArray<FGuid> TerminalNodes;
 	for (const UGaeaEditorGraphNode* TerrainNode : TerrainNodes)
 	{
+		if (TerrainNode->RecipeNodeId == OutRecipe.OutputNode)
+		{
+			continue;
+		}
 		if (!NodesWithOutgoingConnections.Contains(TerrainNode->RecipeNodeId))
 		{
-			TerminalNodes.Add(TerrainNode->RecipeNodeId);
+			OutError = FString::Printf(
+				TEXT("Node '%s' is not connected to Terrain Output."),
+				*TerrainNode->GetNodeTitle(ENodeTitleType::ListView).ToString());
+			return false;
 		}
 	}
 
-	if (TerminalNodes.Num() != 1)
-	{
-		OutError = FString::Printf(
-			TEXT("The terrain graph must have exactly one terminal output node; found %d."),
-			TerminalNodes.Num());
-		return false;
-	}
-
-	OutRecipe.OutputNode = TerminalNodes[0];
 	return OutRecipe.Validate(&OutError);
 }
 
@@ -390,6 +443,10 @@ bool SGaeaTerrainGraphPanel::WriteEditorGraphToAsset(
 	{
 		if (const UGaeaEditorGraphNode* TerrainNode = Cast<UGaeaEditorGraphNode>(Node))
 		{
+			if (TerrainNode->RecipeNodeType == GaeaEditorNodeTypes::TerrainOutput)
+			{
+				continue;
+			}
 			Asset.SetLayout(
 				TerrainNode->RecipeNodeId,
 				FVector2D(static_cast<double>(TerrainNode->NodePosX), static_cast<double>(TerrainNode->NodePosY)));
@@ -559,6 +616,25 @@ void SGaeaTerrainGraphPanel::RebuildParameterPanel()
 		[
 			SNew(STextBlock)
 			.Text(FText::FromString(TEXT("Select a graph node to edit its parameters.")))
+			.AutoWrapText(true)
+		];
+		return;
+	}
+
+	if (Node->RecipeNodeType == GaeaEditorNodeTypes::TerrainOutput)
+	{
+		ParameterPanel->AddSlot()
+		.AutoHeight()
+		.Padding(0.0f, 0.0f, 0.0f, 8.0f)
+		[
+			SNew(STextBlock)
+			.Text(FText::FromString(TEXT("Terrain Output")))
+		];
+		ParameterPanel->AddSlot()
+		.AutoHeight()
+		[
+			SNew(STextBlock)
+			.Text(FText::FromString(TEXT("Connect the terrain you want to evaluate and materialize to this node.")))
 			.AutoWrapText(true)
 		];
 		return;
