@@ -69,10 +69,10 @@ namespace
 		}
 	}
 
-	void BuildTerrainSuitability(
+	void BuildReliefSurface(
 		const FTerrainHeightField& HeightField,
 		const FTerrainLandmassSettings& Settings,
-		TArray<float>& OutSuitability)
+		TArray<float>& OutReliefSurface)
 	{
 		const int32 Resolution = HeightField.Resolution;
 		const float CellSize = HeightField.WorldSize / static_cast<float>(Resolution - 1);
@@ -87,56 +87,30 @@ namespace
 		BoxBlur(HeightField.Data, Resolution, Radius, SmoothA);
 		BoxBlur(SmoothA, Resolution, Radius, SmoothB);
 
-		const float DetailBlend = FMath::Lerp(0.06f, 0.24f, FMath::Clamp(Settings.CoastIrregularity, 0.0f, 1.0f));
-		OutSuitability.SetNumUninitialized(HeightField.Data.Num());
+		const float DetailBlend = FMath::Lerp(
+			0.06f,
+			0.24f,
+			FMath::Clamp(Settings.CoastIrregularity, 0.0f, 1.0f));
 
-		float BaseMin = LargeDistance;
-		float BaseMax = -LargeDistance;
+		OutReliefSurface.SetNumUninitialized(HeightField.Data.Num());
 		for (int32 Index = 0; Index < HeightField.Data.Num(); ++Index)
 		{
-			const float Value = FMath::Lerp(SmoothB[Index], HeightField.Data[Index], DetailBlend);
-			OutSuitability[Index] = Value;
-			BaseMin = FMath::Min(BaseMin, Value);
-			BaseMax = FMath::Max(BaseMax, Value);
-		}
-
-		if (Settings.bIsland || Settings.bArchipelago)
-		{
-			const float Span = FMath::Max(BaseMax - BaseMin, 0.001f);
-			const int32 GuardCells = FMath::Clamp(
-				FMath::RoundToInt(static_cast<float>(Resolution - 1) * 0.025f),
-				2,
-				FMath::Max(2, Resolution / 16));
-			const float GuardStrength = Span * 1.25f;
-
-			for (int32 Y = 0; Y < Resolution; ++Y)
-			{
-				for (int32 X = 0; X < Resolution; ++X)
-				{
-					const int32 DistanceToEdge = FMath::Min(
-						FMath::Min(X, Resolution - 1 - X),
-						FMath::Min(Y, Resolution - 1 - Y));
-					if (DistanceToEdge >= GuardCells)
-					{
-						continue;
-					}
-
-					const float EdgeT = 1.0f - static_cast<float>(DistanceToEdge) / static_cast<float>(GuardCells);
-					const float EdgeWeight = SmoothStep01(EdgeT);
-					OutSuitability[Y * Resolution + X] -= EdgeWeight * GuardStrength;
-				}
-			}
+			OutReliefSurface[Index] = FMath::Lerp(
+				SmoothB[Index],
+				HeightField.Data[Index],
+				DetailBlend);
 		}
 	}
 
-	void SelectInteriorComponents(
-		const TArray<float>& Suitability,
+	void SelectComponentsAtThreshold(
+		const TArray<float>& ReliefSurface,
 		int32 Resolution,
 		float Threshold,
+		bool bReserveExteriorOcean,
 		bool bSingleIsland,
 		TArray<uint8>& OutLand)
 	{
-		const int32 NumCells = Suitability.Num();
+		const int32 NumCells = ReliefSurface.Num();
 		OutLand.SetNumZeroed(NumCells);
 		if (Resolution < 2 || NumCells != Resolution * Resolution)
 		{
@@ -145,17 +119,31 @@ namespace
 
 		TArray<uint8> Candidate;
 		Candidate.SetNumZeroed(NumCells);
-		for (int32 Index = 0; Index < NumCells; ++Index)
+		for (int32 Y = 0; Y < Resolution; ++Y)
 		{
-			Candidate[Index] = Suitability[Index] >= Threshold ? 1 : 0;
+			for (int32 X = 0; X < Resolution; ++X)
+			{
+				const int32 Index = Y * Resolution + X;
+				const bool bDomainBoundary = X == 0 || X == Resolution - 1 || Y == 0 || Y == Resolution - 1;
+				Candidate[Index] = ReliefSurface[Index] >= Threshold
+					&& !(bReserveExteriorOcean && bDomainBoundary)
+					? 1
+					: 0;
+			}
+		}
+
+		if (!bReserveExteriorOcean)
+		{
+			OutLand = MoveTemp(Candidate);
+			return;
 		}
 
 		TArray<uint8> Visited;
 		Visited.SetNumZeroed(NumCells);
 		TArray<int32> Queue;
 		TArray<int32> Component;
-		TArray<int32> LargestInterior;
-		Queue.Reserve(NumCells);
+		TArray<int32> LargestComponent;
+		Queue.Reserve(FMath::Min(NumCells, 262144));
 
 		for (int32 Start = 0; Start < NumCells; ++Start)
 		{
@@ -168,7 +156,6 @@ namespace
 			Component.Reset();
 			Queue.Add(Start);
 			Visited[Start] = 1;
-			bool bTouchesBoundary = false;
 			int32 Head = 0;
 
 			while (Head < Queue.Num())
@@ -177,7 +164,6 @@ namespace
 				Component.Add(Index);
 				const int32 X = Index % Resolution;
 				const int32 Y = Index / Resolution;
-				bTouchesBoundary |= X == 0 || X == Resolution - 1 || Y == 0 || Y == Resolution - 1;
 
 				for (int32 OY = -1; OY <= 1; ++OY)
 				{
@@ -190,7 +176,7 @@ namespace
 
 						const int32 NX = X + OX;
 						const int32 NY = Y + OY;
-						if (NX < 0 || NX >= Resolution || NY < 0 || NY >= Resolution)
+						if (NX <= 0 || NX >= Resolution - 1 || NY <= 0 || NY >= Resolution - 1)
 						{
 							continue;
 						}
@@ -205,16 +191,11 @@ namespace
 				}
 			}
 
-			if (bTouchesBoundary)
-			{
-				continue;
-			}
-
 			if (bSingleIsland)
 			{
-				if (Component.Num() > LargestInterior.Num())
+				if (Component.Num() > LargestComponent.Num())
 				{
-					LargestInterior = Component;
+					LargestComponent = Component;
 				}
 			}
 			else
@@ -228,7 +209,7 @@ namespace
 
 		if (bSingleIsland)
 		{
-			for (const int32 Index : LargestInterior)
+			for (const int32 Index : LargestComponent)
 			{
 				OutLand[Index] = 1;
 			}
@@ -239,11 +220,11 @@ namespace
 		const FTerrainHeightField& HeightField,
 		const FTerrainLandmassSettings& Settings,
 		TArray<uint8>& OutLand,
-		TArray<float>& OutSuitability,
+		TArray<float>& OutReliefSurface,
 		float& OutThreshold)
 	{
-		BuildTerrainSuitability(HeightField, Settings, OutSuitability);
-		if (OutSuitability.IsEmpty())
+		BuildReliefSurface(HeightField, Settings, OutReliefSurface);
+		if (OutReliefSurface.IsEmpty())
 		{
 			OutLand.Reset();
 			OutThreshold = 0.0f;
@@ -252,54 +233,71 @@ namespace
 
 		float MinValue = LargeDistance;
 		float MaxValue = -LargeDistance;
-		for (const float Value : OutSuitability)
+		for (const float Value : OutReliefSurface)
 		{
 			MinValue = FMath::Min(MinValue, Value);
 			MaxValue = FMath::Max(MaxValue, Value);
 		}
 
-		const int32 TargetCells = FMath::RoundToInt(
-			FMath::Clamp(Settings.LandCoverage, 0.05f, 0.90f) * static_cast<float>(OutSuitability.Num()));
+		const bool bReserveExteriorOcean = Settings.bIsland || Settings.bArchipelago;
 		const bool bSingleIsland = Settings.bIsland && !Settings.bArchipelago;
-		const bool bInteriorOnly = Settings.bIsland || Settings.bArchipelago;
+		const int32 TargetCells = FMath::RoundToInt(
+			FMath::Clamp(Settings.LandCoverage, 0.05f, 0.90f)
+			* static_cast<float>(OutReliefSurface.Num()));
 
+		float Low = MinValue;
+		float High = MaxValue;
 		int32 BestDifference = MAX_int32;
-		float BestThreshold = (MinValue + MaxValue) * 0.5f;
+		float BestThreshold = (Low + High) * 0.5f;
 		TArray<uint8> BestMask;
 
-		constexpr int32 ThresholdSamples = 160;
-		for (int32 Sample = 0; Sample < ThresholdSamples; ++Sample)
+		constexpr int32 SearchIterations = 24;
+		for (int32 Iteration = 0; Iteration < SearchIterations; ++Iteration)
 		{
-			const float T = static_cast<float>(Sample) / static_cast<float>(ThresholdSamples - 1);
-			const float Threshold = FMath::Lerp(MaxValue, MinValue, T);
+			const float Threshold = (Low + High) * 0.5f;
 			TArray<uint8> Candidate;
+			SelectComponentsAtThreshold(
+				OutReliefSurface,
+				HeightField.Resolution,
+				Threshold,
+				bReserveExteriorOcean,
+				bSingleIsland,
+				Candidate);
 
-			if (bInteriorOnly)
+			const int32 Count = CountLandCells(Candidate);
+			if (Count > 0)
 			{
-				SelectInteriorComponents(OutSuitability, HeightField.Resolution, Threshold, bSingleIsland, Candidate);
-			}
-			else
-			{
-				Candidate.SetNumZeroed(OutSuitability.Num());
-				for (int32 Index = 0; Index < OutSuitability.Num(); ++Index)
+				const int32 Difference = FMath::Abs(Count - TargetCells);
+				if (Difference < BestDifference)
 				{
-					Candidate[Index] = OutSuitability[Index] >= Threshold ? 1 : 0;
+					BestDifference = Difference;
+					BestThreshold = Threshold;
+					BestMask = MoveTemp(Candidate);
 				}
 			}
 
-			const int32 Count = CountLandCells(Candidate);
-			if (Count <= 0)
+			// Lower threshold means more cells can become land. With the domain boundary
+			// explicitly reserved as ocean, component size is monotonic enough for a
+			// bounded binary search and does not need hundreds of full-grid scans.
+			if (Count < TargetCells)
 			{
-				continue;
+				High = Threshold;
 			}
+			else
+			{
+				Low = Threshold;
+			}
+		}
 
-			const int32 Difference = FMath::Abs(Count - TargetCells);
-			if (Difference < BestDifference)
-			{
-				BestDifference = Difference;
-				BestThreshold = Threshold;
-				BestMask = MoveTemp(Candidate);
-			}
+		if (BestMask.IsEmpty())
+		{
+			SelectComponentsAtThreshold(
+				OutReliefSurface,
+				HeightField.Resolution,
+				BestThreshold,
+				bReserveExteriorOcean,
+				bSingleIsland,
+				BestMask);
 		}
 
 		OutThreshold = BestThreshold;
@@ -308,7 +306,7 @@ namespace
 
 	void BuildSubcellCoastDistance(
 		const TArray<uint8>& Land,
-		const TArray<float>& Suitability,
+		const TArray<float>& ReliefSurface,
 		float Threshold,
 		int32 Resolution,
 		float CellSize,
@@ -316,7 +314,7 @@ namespace
 	{
 		const int32 NumCells = Land.Num();
 		OutDistance.Init(LargeDistance, NumCells);
-		if (Resolution < 2 || NumCells != Resolution * Resolution || Suitability.Num() != NumCells)
+		if (Resolution < 2 || NumCells != Resolution * Resolution || ReliefSurface.Num() != NumCells)
 		{
 			return;
 		}
@@ -327,7 +325,7 @@ namespace
 			{
 				const int32 Index = Y * Resolution + X;
 				const bool bLand = Land[Index] != 0;
-				const float CenterMagnitude = FMath::Max(FMath::Abs(Suitability[Index] - Threshold), UE_SMALL_NUMBER);
+				const float CenterMagnitude = FMath::Max(FMath::Abs(ReliefSurface[Index] - Threshold), UE_SMALL_NUMBER);
 
 				for (int32 OY = -1; OY <= 1; ++OY)
 				{
@@ -351,7 +349,7 @@ namespace
 							continue;
 						}
 
-						const float NeighborMagnitude = FMath::Max(FMath::Abs(Suitability[Neighbor] - Threshold), UE_SMALL_NUMBER);
+						const float NeighborMagnitude = FMath::Max(FMath::Abs(ReliefSurface[Neighbor] - Threshold), UE_SMALL_NUMBER);
 						const float EdgeLength = CellSize * ((OX != 0 && OY != 0) ? DiagonalDistance : 1.0f);
 						const float Fraction = CenterMagnitude / (CenterMagnitude + NeighborMagnitude);
 						OutDistance[Index] = FMath::Min(OutDistance[Index], EdgeLength * FMath::Clamp(Fraction, 0.05f, 0.95f));
@@ -435,6 +433,7 @@ void FTerrainLandmass::Build(
 	const int32 NumCells = HeightField.Data.Num();
 	OutMaps.BaseElevationCm.SetNumZeroed(NumCells);
 	OutMaps.LandInfluence.Init(1.0f, NumCells);
+	OutMaps.TopologyLandMask.SetNumZeroed(NumCells);
 	OutMaps.LandMask.SetNumZeroed(NumCells);
 	OutMaps.OceanMask.SetNumZeroed(NumCells);
 	OutMaps.CoastMask.SetNumZeroed(NumCells);
@@ -461,14 +460,20 @@ void FTerrainLandmass::RefreshSeaLevelClassification(
 	const int32 Resolution = HeightField.Resolution;
 	const int32 NumCells = HeightField.Data.Num();
 	const float CellSize = HeightField.WorldSize / static_cast<float>(Resolution - 1);
+	const float MinimumSignedHeight = FMath::Max(1.0f / HeightScale, 1.0e-6f);
 
 	if (!InOutMaps.bCompositionApplied)
 	{
 		const TArray<float> OriginalTerrain = HeightField.Data;
 		TArray<uint8> GeneratedLand;
-		TArray<float> Suitability;
+		TArray<float> ReliefSurface;
 		float SeaLevelThreshold = 0.0f;
-		BuildTerrainDerivedLandMask(HeightField, Settings, GeneratedLand, Suitability, SeaLevelThreshold);
+		BuildTerrainDerivedLandMask(
+			HeightField,
+			Settings,
+			GeneratedLand,
+			ReliefSurface,
+			SeaLevelThreshold);
 		InOutMaps.SourceSeaLevelThreshold = SeaLevelThreshold;
 
 		if (GeneratedLand.Num() != NumCells || CountLandCells(GeneratedLand) <= 0)
@@ -476,40 +481,36 @@ void FTerrainLandmass::RefreshSeaLevelClassification(
 			return;
 		}
 
+		InOutMaps.TopologyLandMask = GeneratedLand;
+
 		TArray<float> CoastDistance;
 		BuildSubcellCoastDistance(
 			GeneratedLand,
-			Suitability,
+			ReliefSurface,
 			SeaLevelThreshold,
 			Resolution,
 			CellSize,
 			CoastDistance);
 
 		const float ShoreDetailFadeWidth = CellSize * 5.0f;
-		const float MinimumSignedHeight = 0.0001f;
 		const float CoastVisualWidth = CellSize * 3.0f;
 
 		for (int32 Index = 0; Index < NumCells; ++Index)
 		{
 			const bool bLand = GeneratedLand[Index] != 0;
 			const float Distance = CoastDistance[Index];
-			const float LowFrequency = Suitability[Index] - SeaLevelThreshold;
-			const float Residual = OriginalTerrain[Index] - Suitability[Index];
+			const float BroadRelief = ReliefSurface[Index] - SeaLevelThreshold;
+			const float Residual = OriginalTerrain[Index] - ReliefSurface[Index];
 			const float DetailFade = SmoothStep01(Distance / ShoreDetailFadeWidth);
 
-			float SignedHeight = (bLand ? FMath::Abs(LowFrequency) : -FMath::Abs(LowFrequency))
-				+ Residual * FMath::Lerp(0.18f, 1.0f, DetailFade);
+			// Topology chooses only the sign. Physical relief comes from the terrain-derived
+			// broad surface plus the original residual detail. Boundary closure never enters
+			// this magnitude calculation, so it cannot stamp circles or squares into relief.
+			float ReliefMagnitude = FMath::Abs(BroadRelief)
+				+ Residual * FMath::Lerp(0.18f, 1.0f, DetailFade) * (bLand ? 1.0f : -1.0f);
+			ReliefMagnitude = FMath::Max(FMath::Abs(ReliefMagnitude), MinimumSignedHeight);
 
-			if (bLand && SignedHeight <= 0.0f)
-			{
-				SignedHeight = FMath::Max(FMath::Abs(LowFrequency) * 0.35f, MinimumSignedHeight);
-			}
-			else if (!bLand && SignedHeight >= 0.0f)
-			{
-				SignedHeight = -FMath::Max(FMath::Abs(LowFrequency) * 0.35f, MinimumSignedHeight);
-			}
-
-			HeightField.Data[Index] = SignedHeight;
+			HeightField.Data[Index] = bLand ? ReliefMagnitude : -ReliefMagnitude;
 			InOutMaps.SignedCoastDistanceCm[Index] = bLand ? Distance : -Distance;
 			InOutMaps.CoastMask[Index] = 1.0f - SmoothStep01(Distance / CoastVisualWidth);
 		}
@@ -518,20 +519,13 @@ void FTerrainLandmass::RefreshSeaLevelClassification(
 	}
 	else if (Settings.bIsland || Settings.bArchipelago)
 	{
-		// SignedCoastDistanceCm is the persistent topology established by the initial
-		// composition. Land-only processes may reshape relief, but until an explicit
-		// marine/coastal evolution solver exists they must not turn an island into a
-		// continent or fill the exterior ocean. Keep a one-centimetre sign separation
-		// around sea level while preserving all relief away from the crossing itself.
-		const float MinimumSignedHeight = FMath::Max(1.0f / HeightScale, 1.0e-6f);
 		for (int32 Index = 0; Index < NumCells; ++Index)
 		{
-			const float TopologyDistance = InOutMaps.SignedCoastDistanceCm[Index];
-			if (TopologyDistance > 0.0f)
+			if (InOutMaps.TopologyLandMask[Index] != 0)
 			{
 				HeightField.Data[Index] = FMath::Max(HeightField.Data[Index], MinimumSignedHeight);
 			}
-			else if (TopologyDistance < 0.0f)
+			else
 			{
 				HeightField.Data[Index] = FMath::Min(HeightField.Data[Index], -MinimumSignedHeight);
 			}
@@ -541,12 +535,14 @@ void FTerrainLandmass::RefreshSeaLevelClassification(
 	const float CoastBandCm = FMath::Max(HeightScale * 0.015f, 50.0f);
 	for (int32 Index = 0; Index < NumCells; ++Index)
 	{
+		const bool bTopologyLand = (Settings.bIsland || Settings.bArchipelago)
+			? InOutMaps.TopologyLandMask[Index] != 0
+			: HeightField.Data[Index] > 0.0f;
 		const float HeightCm = HeightField.Data[Index] * HeightScale;
-		const bool bLand = HeightCm > 0.0f;
-		const float DepthCm = bLand ? 0.0f : -HeightCm;
+		const float DepthCm = bTopologyLand ? 0.0f : FMath::Max(-HeightCm, 0.0f);
 
-		InOutMaps.LandMask[Index] = bLand ? 1.0f : 0.0f;
-		InOutMaps.OceanMask[Index] = bLand ? 0.0f : 1.0f;
+		InOutMaps.LandMask[Index] = bTopologyLand ? 1.0f : 0.0f;
+		InOutMaps.OceanMask[Index] = bTopologyLand ? 0.0f : 1.0f;
 		InOutMaps.BathymetryDepthCm[Index] = DepthCm;
 
 		const float TopologyCoast = 1.0f - SmoothStep01(
@@ -554,7 +550,7 @@ void FTerrainLandmass::RefreshSeaLevelClassification(
 		const float SeaLevelProximity = 1.0f - SmoothStep01(FMath::Abs(HeightCm) / CoastBandCm);
 		InOutMaps.CoastMask[Index] = FMath::Max(TopologyCoast, SeaLevelProximity);
 
-		if (bLand)
+		if (bTopologyLand)
 		{
 			InOutMaps.ShelfMask[Index] = 0.0f;
 			InOutMaps.ContinentalSlopeMask[Index] = 0.0f;
