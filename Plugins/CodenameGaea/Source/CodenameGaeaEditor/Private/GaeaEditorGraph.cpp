@@ -107,7 +107,11 @@ void UGaeaEditorGraphNode::AllocateDefaultPins()
 	FCreatePinParams PinParams;
 	if (RecipeNodeType == GaeaEditorNodeTypes::TerrainOutput)
 	{
-		CreatePin(EGPD_Input, TerrainPinCategory, TerrainPinName, PinParams);
+		UEdGraphPin* Pin = CreatePin(EGPD_Input, TerrainPinCategory, TerrainPinName, PinParams);
+		if (Pin)
+		{
+			Pin->PinFriendlyName = FText::FromString(TEXT("In"));
+		}
 		return;
 	}
 
@@ -119,11 +123,19 @@ void UGaeaEditorGraphNode::AllocateDefaultPins()
 
 	for (const FGaeaTerrainPortDescriptor& Input : Descriptor.Inputs)
 	{
-		CreatePin(EGPD_Input, TerrainPinCategory, Input.Name, PinParams);
+		UEdGraphPin* Pin = CreatePin(EGPD_Input, TerrainPinCategory, Input.Name, PinParams);
+		if (Pin)
+		{
+			Pin->PinFriendlyName = FText::FromString(TEXT("In"));
+		}
 	}
 	for (const FGaeaTerrainPortDescriptor& Output : Descriptor.Outputs)
 	{
-		CreatePin(EGPD_Output, TerrainPinCategory, Output.Name, PinParams);
+		UEdGraphPin* Pin = CreatePin(EGPD_Output, TerrainPinCategory, Output.Name, PinParams);
+		if (Pin)
+		{
+			Pin->PinFriendlyName = FText::FromString(TEXT("Out"));
+		}
 	}
 }
 
