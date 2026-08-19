@@ -56,7 +56,10 @@ void FGaeaTerrainDataset::Reset()
 void FGaeaTerrainDataset::GetScalarFieldNames(TArray<FName>& OutNames) const
 {
 	ScalarFields.GetKeys(OutNames);
-	OutNames.Sort(FNameLexicalLess());
+	OutNames.Sort([](const FName& A, const FName& B)
+	{
+		return A.LexicalLess(B);
+	});
 }
 
 bool FGaeaTerrainDataset::SampleScalar(
