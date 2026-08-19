@@ -2,24 +2,17 @@
 
 #include "GaeaHydraulicErosion.h"
 #include "GaeaTerrainFieldNames.h"
+#include "GaeaThermalErosion.h"
 
 namespace
 {
-	float MaskValue(const TArray<float>* Mask, int32 Index, int32 ExpectedNum)
+	FGaeaThermalErosionSettings ToCoreSettings(const FTerrainThermalErosionSettings& Settings)
 	{
-		if (!Mask || Mask->Num() != ExpectedNum)
-		{
-			return 1.0f;
-		}
-		return FMath::Clamp((*Mask)[Index], 0.0f, 1.0f);
-	}
-
-	float HardnessResistance(const TArray<float>* RockHardness, int32 Index, int32 ExpectedNum)
-	{
-		const float Hardness = RockHardness && RockHardness->Num() == ExpectedNum
-			? FMath::Clamp((*RockHardness)[Index], 0.0f, 1.0f)
-			: 0.5f;
-		return FMath::Lerp(1.0f, 0.18f, Hardness);
+		FGaeaThermalErosionSettings Core;
+		Core.Iterations = Settings.Iterations;
+		Core.TalusAngleDegrees = Settings.TalusAngleDegrees;
+		Core.Strength = Settings.Strength;
+		return Core;
 	}
 
 	FGaeaHydraulicErosionSettings ToCoreSettings(const FTerrainHydraulicErosionSettings& Settings)
@@ -44,65 +37,12 @@ void FTerrainErosion::ApplyThermal(
 	const TArray<float>* ProcessMask,
 	const TArray<float>* RockHardness)
 {
-	if (!HeightField.IsValid() || Settings.Iterations <= 0 || Settings.Strength <= 0.0f || HeightScale <= UE_SMALL_NUMBER)
-	{
-		return;
-	}
-
-	const int32 Resolution = HeightField.Resolution;
-	const int32 NumCells = HeightField.Data.Num();
-	const float CellSize = HeightField.WorldSize / static_cast<float>(Resolution - 1);
-	const float TalusHeight = FMath::Tan(FMath::DegreesToRadians(Settings.TalusAngleDegrees)) * CellSize / HeightScale;
-	const float SafeStrength = FMath::Clamp(Settings.Strength, 0.0f, 1.0f);
-
-	TArray<float> Delta;
-	Delta.SetNumZeroed(NumCells);
-
-	static const FIntPoint Neighbors[] = {
-		FIntPoint(-1, 0), FIntPoint(1, 0),
-		FIntPoint(0, -1), FIntPoint(0, 1),
-		FIntPoint(-1, -1), FIntPoint(1, -1),
-		FIntPoint(-1, 1), FIntPoint(1, 1)
-	};
-
-	for (int32 Iteration = 0; Iteration < Settings.Iterations; ++Iteration)
-	{
-		FMemory::Memzero(Delta.GetData(), Delta.Num() * sizeof(float));
-		for (int32 Y = 1; Y < Resolution - 1; ++Y)
-		{
-			for (int32 X = 1; X < Resolution - 1; ++X)
-			{
-				const int32 CenterIndex = HeightField.Index(X, Y);
-				const float LocalMask = MaskValue(ProcessMask, CenterIndex, NumCells);
-				if (LocalMask <= UE_SMALL_NUMBER) continue;
-
-				const float CenterHeight = HeightField.Data[CenterIndex];
-				float TotalExcess = 0.0f;
-				float ExcessByNeighbor[UE_ARRAY_COUNT(Neighbors)] = {};
-				for (int32 NeighborIndex = 0; NeighborIndex < UE_ARRAY_COUNT(Neighbors); ++NeighborIndex)
-				{
-					const FIntPoint Offset = Neighbors[NeighborIndex];
-					const float NeighborHeight = HeightField.At(X + Offset.X, Y + Offset.Y);
-					const float DistanceScale = (Offset.X != 0 && Offset.Y != 0) ? UE_SQRT_2 : 1.0f;
-					const float Excess = CenterHeight - NeighborHeight - TalusHeight * DistanceScale;
-					if (Excess > 0.0f) { ExcessByNeighbor[NeighborIndex] = Excess; TotalExcess += Excess; }
-				}
-				if (TotalExcess <= UE_SMALL_NUMBER) continue;
-
-				const float Resistance = HardnessResistance(RockHardness, CenterIndex, NumCells);
-				const float MaterialToMove = TotalExcess * 0.5f * SafeStrength * LocalMask * Resistance;
-				Delta[CenterIndex] -= MaterialToMove;
-				for (int32 NeighborIndex = 0; NeighborIndex < UE_ARRAY_COUNT(Neighbors); ++NeighborIndex)
-				{
-					const float Excess = ExcessByNeighbor[NeighborIndex];
-					if (Excess <= 0.0f) continue;
-					const FIntPoint Offset = Neighbors[NeighborIndex];
-					Delta[HeightField.Index(X + Offset.X, Y + Offset.Y)] += MaterialToMove * (Excess / TotalExcess);
-				}
-			}
-		}
-		for (int32 Index = 0; Index < NumCells; ++Index) HeightField.Data[Index] += Delta[Index];
-	}
+	FGaeaThermalErosion::ApplyInPlaceWithArrays(
+		HeightField.GetGaeaField(),
+		HeightScale,
+		ToCoreSettings(Settings),
+		ProcessMask,
+		RockHardness);
 }
 
 void FTerrainErosion::ApplyHydraulic(
