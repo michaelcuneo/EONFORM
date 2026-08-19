@@ -8,6 +8,7 @@
 #include "UObject/StrongObjectPtr.h"
 #include "Widgets/SCompoundWidget.h"
 
+class FUICommandList;
 class SBox;
 class SVerticalBox;
 
@@ -18,7 +19,10 @@ public:
 		SLATE_EVENT(FSimpleDelegate, OnEvaluated)
 	SLATE_END_ARGS()
 
+	SGaeaTerrainGraphPanel();
+
 	void Construct(const FArguments& InArgs);
+	virtual FReply OnPreviewKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent) override;
 
 private:
 	void BuildDefaultRecipeAndGraph();
@@ -31,6 +35,8 @@ private:
 	bool SaveCurrentAsset(bool bPromptForCheckout);
 	UGaeaTerrainGraphAsset* CreateAssetFromCurrentGraph();
 
+	void DeleteSelectedNodes();
+	bool CanDeleteSelectedNodes() const;
 	void OnGraphSelectionChanged(const TSet<UObject*>& NewSelection);
 	void RebuildParameterPanel();
 
@@ -43,6 +49,7 @@ private:
 
 	TStrongObjectPtr<UGaeaEditorGraph> EditorGraph;
 	TStrongObjectPtr<UGaeaTerrainGraphAsset> CurrentAsset;
+	TSharedPtr<FUICommandList> GraphCommands;
 	TSharedPtr<SGraphEditor> GraphEditor;
 	TSharedPtr<SBox> GraphHost;
 	TSharedPtr<SVerticalBox> ParameterPanel;
