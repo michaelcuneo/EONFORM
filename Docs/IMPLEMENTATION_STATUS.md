@@ -46,11 +46,23 @@ Compiled successfully in Unreal Engine 5.8 by the project owner:
 - legacy array aliases preserved
 - no terrain formulas changed
 
+### Terrain dataset
+
+Compiled successfully in Unreal Engine 5.8 by the project owner using a cold build after the module-boundary change:
+
+- `FGaeaTerrainDataset`
+- canonical `GaeaTerrainFieldNames`
+- mixed-resolution field support
+- deterministic field lookup/enumeration/sampling
+- temporary legacy `FTerrainDatasetBridge`
+
+The Live Coding linker failure observed at this checkpoint was caused by rebuilding the host patch against newly-added Core DLL symbols. A cold UE build succeeded, confirming the Core/Runtime module boundary is valid.
+
 ## Runtime island requirement
 
 Orakai players will create their own islands in a packaged game and then play on them.
 
-This is now a hard architecture requirement:
+This is a hard architecture requirement:
 
 - graph/recipe evaluation must be runtime-safe
 - terrain recipes and deterministic evaluation cannot depend on editor-only graph objects
@@ -61,43 +73,51 @@ This is now a hard architecture requirement:
 
 Orakai will not expose unrestricted professional generation. A runtime generation policy/profile will constrain island extent, resolution, permitted operations, parameter ranges, simulation effort, and overall complexity before evaluation. See `Docs/ORAKAI_GENERATION_POLICY.md`.
 
-## Current checkpoint: terrain dataset
+## Current checkpoint: first visible editor surface
 
-`CodenameGaeaCore` now contains `FGaeaTerrainDataset`, a generic named collection of terrain fields.
+The first inspectable Codename Gaea editor workflow is now implemented.
 
-Current behavior:
+### Runtime dataset handoff
 
-- owns scalar fields by value
-- accepts fields with different valid domains/resolutions
-- uses each field descriptor name as the stable lookup key
-- exposes const lookup for downstream consumers
-- supports field replacement/removal/reset
-- supports deterministic lexical field-name enumeration
-- supports world-space sampling by field name
-- rejects invalid or unnamed fields
+`CodenameGaeaRuntime` now contains `FGaeaTerrainDatasetRegistry`.
 
-Canonical built-in field names now live in `GaeaTerrainFieldNames` rather than requiring consumers to repeat string literals.
+It provides a runtime-safe, producer-agnostic handoff between terrain generation and downstream consumers:
 
-The current canonical set covers:
+- publish by source id
+- monotonically increasing revision numbers
+- latest-dataset lookup
+- source-specific lookup/removal
+- copied immutable snapshots for consumers
+- no dependency on the host project's terrain actor
 
-- Height
-- Elevation
-- SlopeDegrees
-- Concavity
-- Convexity
-- Mountain
-- Foothill
-- Plains
-- Thermal
-- Rainfall
-- HydraulicErosion
-- Deposition
-- Evaporation
-- RockHardness
-- Weathering
-- SoilDepth
+The current legacy pipeline temporarily publishes its latest Height/Context/Process dataset under `LegacyTerrainGenerator`. This publication is a migration seam only; the future graph evaluator will publish datasets directly from plugin code.
 
-A temporary host-project `FTerrainDatasetBridge` packages the existing legacy generation outputs into an independent `FGaeaTerrainDataset`. This bridge exists only during migration; the final graph/evaluator will produce datasets directly inside the plugin.
+### Editor tab
+
+`CodenameGaeaEditor` now registers:
+
+```text
+Tools -> Codename Gaea
+```
+
+The command opens a dockable Nomad tab containing the initial terrain dataset inspector.
+
+The inspector currently provides:
+
+- latest source id and revision
+- scalar-field count
+- deterministic field list
+- selected field name
+- semantic unit
+- interpolation mode
+- field resolution
+- guard-band count
+- world-space bounds
+- cell size
+- 32 x 32 grayscale scalar preview sampled from the real generated field
+- Refresh button for newly generated/rebuilt terrain
+
+The editor module consumes only `CodenameGaeaRuntime`/`CodenameGaeaCore`; it does not depend on `ATerrainGeneratorActor` or other host-project classes.
 
 ## Automated coverage
 
@@ -117,20 +137,27 @@ Legacy/regression tests continue to cover heightfield compatibility and semantic
 
 ## Validation required before next step
 
+This checkpoint changes module dependencies and adds new Runtime/Editor source files, so use a cold build rather than Live Coding.
+
 1. Pull `agent/mesh-terrain-foundation`.
-2. Build `CodenameGaeaEditor` / Development Editor / Win64 in UE 5.8.
-3. Run automation tests matching `CodenameGaea.Core` and `CodenameGaea.Legacy` if convenient.
-4. Confirm existing terrain generation remains visually unchanged.
-5. Do not proceed if compilation, tests, or terrain behavior regress.
+2. Close Unreal Editor.
+3. Build `CodenameGaeaEditor` / Development Editor / Win64 in UE 5.8.
+4. Open the editor.
+5. Generate/regenerate the current terrain actor so a dataset is published.
+6. Open `Tools -> Codename Gaea`.
+7. Press Refresh if the tab was open before generation.
+8. Confirm the field list and grayscale previews update when selecting Height/Elevation/Slope/etc.
+9. Confirm existing terrain generation remains visually unchanged.
 
 ## Next implementation step
 
-Once this checkpoint is verified, build the first visible Codename Gaea editor surface in `CodenameGaeaEditor`:
+Once the visible inspector checkpoint is verified, the next core change is erosion multi-output data:
 
-- `Tools -> Codename Gaea`
-- dockable editor tab
-- real terrain-dataset field list
-- selected-field metadata/domain inspector
-- initial scalar-field visualization path
+```text
+Height
+Wear
+Deposits
+Flow
+```
 
-The first editor milestone should consume the real `FGaeaTerrainDataset` model rather than mock data. After that visible checkpoint, erosion will be upgraded to expose first-class Height/Wear/Deposits/Flow outputs and the runtime-safe recipe/graph evaluator will begin replacing the legacy monolithic actor pipeline.
+Those outputs will become first-class scalar fields instead of transient internal arrays. The visible inspector will then immediately let us inspect the new erosion products before the runtime-safe recipe/graph evaluator and professional node graph are introduced.
