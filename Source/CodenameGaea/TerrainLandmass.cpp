@@ -1,5 +1,7 @@
 #include "TerrainLandmass.h"
 
+DEFINE_LOG_CATEGORY_STATIC(LogTerrainLandmass, Log, All);
+
 namespace
 {
 	constexpr float DiagonalDistance = 1.41421356237f;
@@ -191,82 +193,6 @@ namespace
 		return Count;
 	}
 
-	void FillEnclosedOceanHoles(TArray<uint8>& Land, int32 Resolution)
-	{
-		const int32 NumCells = Land.Num();
-		if (Resolution < 3 || NumCells != Resolution * Resolution)
-		{
-			return;
-		}
-
-		TArray<uint8> ExteriorOcean;
-		ExteriorOcean.SetNumZeroed(NumCells);
-		TArray<int32> Queue;
-		Queue.Reserve(FMath::Min(NumCells, 262144));
-
-		auto AddExterior = [&](int32 Index)
-		{
-			if (Land[Index] == 0 && ExteriorOcean[Index] == 0)
-			{
-				ExteriorOcean[Index] = 1;
-				Queue.Add(Index);
-			}
-		};
-
-		for (int32 X = 0; X < Resolution; ++X)
-		{
-			AddExterior(X);
-			AddExterior((Resolution - 1) * Resolution + X);
-		}
-		for (int32 Y = 1; Y < Resolution - 1; ++Y)
-		{
-			AddExterior(Y * Resolution);
-			AddExterior(Y * Resolution + Resolution - 1);
-		}
-
-		int32 Head = 0;
-		while (Head < Queue.Num())
-		{
-			const int32 Index = Queue[Head++];
-			const int32 X = Index % Resolution;
-			const int32 Y = Index / Resolution;
-
-			static const FIntPoint Cardinal[] = {
-				FIntPoint(-1, 0), FIntPoint(1, 0),
-				FIntPoint(0, -1), FIntPoint(0, 1)
-			};
-
-			for (const FIntPoint& Offset : Cardinal)
-			{
-				const int32 NX = X + Offset.X;
-				const int32 NY = Y + Offset.Y;
-				if (NX < 0 || NX >= Resolution || NY < 0 || NY >= Resolution)
-				{
-					continue;
-				}
-
-				const int32 Neighbor = NY * Resolution + NX;
-				if (Land[Neighbor] == 0 && ExteriorOcean[Neighbor] == 0)
-				{
-					ExteriorOcean[Neighbor] = 1;
-					Queue.Add(Neighbor);
-				}
-			}
-		}
-
-		for (int32 Y = 1; Y < Resolution - 1; ++Y)
-		{
-			for (int32 X = 1; X < Resolution - 1; ++X)
-			{
-				const int32 Index = Y * Resolution + X;
-				if (Land[Index] == 0 && ExteriorOcean[Index] == 0)
-				{
-					Land[Index] = 1;
-				}
-			}
-		}
-	}
-
 	float ComputeCoastDatum(
 		const TArray<uint8>& Land,
 		const TArray<float>& ReliefSurface,
@@ -436,7 +362,10 @@ namespace
 			}
 		}
 
-		FillEnclosedOceanHoles(OutLand, Resolution);
+		// Do not fill unselected ocean after growth. The growth loop already produces
+		// one connected landmass with an exact target cell budget. Reclassifying every
+		// ocean region that cannot reach the one-cell raster boundary as land can turn a
+		// 50% island into nearly 100% land, leaving only a one-cell underwater rim.
 		OutCoastDatum = ComputeCoastDatum(OutLand, ReliefSurface, Resolution);
 	}
 
@@ -655,10 +584,6 @@ namespace
 			ProfileDepthCm = FMath::Lerp(ShelfDepthCm, BasinDepthCm, SlopeT);
 		}
 
-		// The offshore profile supplies the large-scale shelf/slope/basin structure.
-		// The terrain that existed before sea-level composition supplies the local
-		// submarine morphology, so the seabed is related to the land rather than a
-		// disconnected random-noise surface.
 		const float OffshoreT = SmoothStep01(
 			Distance / FMath::Max(ShelfWidthCm * 0.65f, CellSize * 4.0f));
 		const float DeepWaterT = SmoothStep01(
@@ -681,8 +606,6 @@ namespace
 		DepthCm -= NaturalShoalingCm * DeepWaterT;
 		DepthCm += ResidualReliefCm * OffshoreT * 0.65f;
 
-		// Keep the exact coast as the zero crossing while preventing offshore terrain
-		// peaks from punching above sea level and creating accidental new islands.
 		const float MinimumDepthCm = FMath::Max(1.0f, ShelfDepthCm * 0.0025f);
 		return FMath::Max(DepthCm, MinimumDepthCm);
 	}
@@ -780,6 +703,33 @@ void FTerrainLandmass::RefreshSeaLevelClassification(
 		if (LandCount <= 0)
 		{
 			return;
+		}
+
+		const int32 OceanCount = NumCells - LandCount;
+		const float ActualCoverage = static_cast<float>(LandCount) / static_cast<float>(NumCells);
+		UE_LOG(
+			LogTerrainLandmass,
+			Display,
+			TEXT("Signed DEM topology: land=%d (%.2f%%), ocean=%d (%.2f%%), requested land=%.2f%%"),
+			LandCount,
+			ActualCoverage * 100.0f,
+			OceanCount,
+			(1.0f - ActualCoverage) * 100.0f,
+			Settings.LandCoverage * 100.0f);
+
+		if ((Settings.bIsland || Settings.bArchipelago) && OceanCount <= 0)
+		{
+			UE_LOG(LogTerrainLandmass, Error, TEXT("Island topology contains no ocean cells; refusing signed-DEM composition."));
+			return;
+		}
+
+		if (Settings.bIsland && !Settings.bArchipelago
+			&& FMath::Abs(ActualCoverage - FMath::Clamp(Settings.LandCoverage, 0.05f, 0.90f)) > 0.02f)
+		{
+			UE_LOG(
+				LogTerrainLandmass,
+				Error,
+				TEXT("Island topology coverage drifted from requested coverage by more than 2%%. This indicates a topology regression."));
 		}
 
 		InOutMaps.TopologyLandMask = GeneratedLand;
