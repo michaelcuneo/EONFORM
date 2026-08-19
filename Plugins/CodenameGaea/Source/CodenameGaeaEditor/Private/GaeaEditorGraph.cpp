@@ -132,7 +132,7 @@ FText UGaeaEditorGraphNode::GetTooltipText() const
 
 bool UGaeaEditorGraphNode::CanUserDeleteNode() const
 {
-	return RecipeNodeType != GaeaTerrainNodeTypes::SourceDataset;
+	return true;
 }
 
 void UGaeaEditorGraphNode::PrepareForCopying()
