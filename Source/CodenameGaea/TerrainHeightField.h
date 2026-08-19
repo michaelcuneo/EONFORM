@@ -5,15 +5,81 @@
 
 struct FTerrainHeightField
 {
+private:
+	FGaeaScalarField GaeaField;
+
+public:
 	int32 Resolution = 0;
 	float WorldSize = 0.0f;
-	TArray<float> Data;
+
+	// Legacy compatibility alias. The authoritative storage is GaeaField.Values.
+	TArray<float>& Data;
+
+	FTerrainHeightField()
+		: Data(GaeaField.Values)
+	{
+	}
+
+	FTerrainHeightField(const FTerrainHeightField& Other)
+		: GaeaField(Other.GaeaField)
+		, Resolution(Other.Resolution)
+		, WorldSize(Other.WorldSize)
+		, Data(GaeaField.Values)
+	{
+	}
+
+	FTerrainHeightField(FTerrainHeightField&& Other) noexcept
+		: GaeaField(MoveTemp(Other.GaeaField))
+		, Resolution(Other.Resolution)
+		, WorldSize(Other.WorldSize)
+		, Data(GaeaField.Values)
+	{
+		Other.Resolution = 0;
+		Other.WorldSize = 0.0f;
+	}
+
+	FTerrainHeightField& operator=(const FTerrainHeightField& Other)
+	{
+		if (this != &Other)
+		{
+			GaeaField = Other.GaeaField;
+			Resolution = Other.Resolution;
+			WorldSize = Other.WorldSize;
+		}
+		return *this;
+	}
+
+	FTerrainHeightField& operator=(FTerrainHeightField&& Other) noexcept
+	{
+		if (this != &Other)
+		{
+			GaeaField = MoveTemp(Other.GaeaField);
+			Resolution = Other.Resolution;
+			WorldSize = Other.WorldSize;
+
+			Other.Resolution = 0;
+			Other.WorldSize = 0.0f;
+		}
+		return *this;
+	}
 
 	void Initialize(int32 InResolution, float InWorldSize)
 	{
 		Resolution = FMath::Max(2, InResolution);
 		WorldSize = FMath::Max(1.0f, InWorldSize);
-		Data.SetNumZeroed(Resolution * Resolution);
+
+		const double HalfWorldSize = static_cast<double>(WorldSize) * 0.5;
+		const FGaeaGridDomain Domain = FGaeaGridDomain::Make(
+			FIntPoint(Resolution, Resolution),
+			FVector2d(-HalfWorldSize, -HalfWorldSize),
+			FVector2d(HalfWorldSize, HalfWorldSize));
+
+		FGaeaFieldDescriptor Descriptor;
+		Descriptor.Name = TEXT("Height");
+		Descriptor.Unit = EGaeaFieldUnit::Normalized;
+		Descriptor.Interpolation = EGaeaInterpolation::Bilinear;
+
+		GaeaField.Initialize(Domain, Descriptor);
 	}
 
 	FORCEINLINE int32 Index(int32 X, int32 Y) const
@@ -23,48 +89,57 @@ struct FTerrainHeightField
 
 	FORCEINLINE float& At(int32 X, int32 Y)
 	{
-		return Data[Index(X, Y)];
+		return GaeaField.AtInterior(X, Y);
 	}
 
 	FORCEINLINE const float& At(int32 X, int32 Y) const
 	{
-		return Data[Index(X, Y)];
+		return GaeaField.AtInterior(X, Y);
 	}
 
 	bool IsValid() const
 	{
-		return Resolution >= 2 && Data.Num() == Resolution * Resolution;
-	}
-
-	FGaeaGridDomain GetGaeaDomain() const
-	{
-		if (!IsValid())
+		if (Resolution < 2 || WorldSize < 1.0f || !GaeaField.IsValid())
 		{
-			return FGaeaGridDomain();
+			return false;
 		}
 
-		const double HalfWorldSize = static_cast<double>(WorldSize) * 0.5;
-		return FGaeaGridDomain::Make(
-			FIntPoint(Resolution, Resolution),
-			FVector2d(-HalfWorldSize, -HalfWorldSize),
-			FVector2d(HalfWorldSize, HalfWorldSize));
+		const FGaeaGridDomain& Domain = GaeaField.Domain;
+		if (Domain.Dimensions != FIntPoint(Resolution, Resolution) || Domain.BorderSamples != 0)
+		{
+			return false;
+		}
+
+		const FVector2d Extent = Domain.WorldMax - Domain.WorldMin;
+		return Data.Num() == Resolution * Resolution
+			&& FMath::IsNearlyEqual(Extent.X, static_cast<double>(WorldSize))
+			&& FMath::IsNearlyEqual(Extent.Y, static_cast<double>(WorldSize));
+	}
+
+	const FGaeaGridDomain& GetGaeaDomain() const
+	{
+		return GaeaField.Domain;
+	}
+
+	FGaeaScalarField& GetGaeaField()
+	{
+		return GaeaField;
+	}
+
+	const FGaeaScalarField& GetGaeaField() const
+	{
+		return GaeaField;
 	}
 
 	FGaeaScalarField ToGaeaScalarField(FName FieldName = TEXT("Height")) const
 	{
-		FGaeaScalarField Field;
-		if (!IsValid())
+		FGaeaScalarField Field = GaeaField;
+		if (!Field.IsValid())
 		{
-			return Field;
+			return FGaeaScalarField();
 		}
 
-		FGaeaFieldDescriptor Descriptor;
-		Descriptor.Name = FieldName;
-		Descriptor.Unit = EGaeaFieldUnit::Normalized;
-		Descriptor.Interpolation = EGaeaInterpolation::Bilinear;
-
-		Field.Initialize(GetGaeaDomain(), Descriptor);
-		Field.Values = Data;
+		Field.Descriptor.Name = FieldName;
 		return Field;
 	}
 };
