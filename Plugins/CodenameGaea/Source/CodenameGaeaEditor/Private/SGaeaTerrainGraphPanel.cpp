@@ -4,7 +4,6 @@
 #include "GaeaTerrainDatasetRegistry.h"
 #include "GaeaTerrainEvaluator.h"
 #include "GaeaTerrainNodeDescriptor.h"
-#include "GraphEditor.h"
 #include "Styling/AppStyle.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SCheckBox.h"
@@ -12,6 +11,7 @@
 #include "Widgets/Input/SNumericEntryBox.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SSplitter.h"
+#include "Widgets/SNullWidget.h"
 #include "Widgets/Text/STextBlock.h"
 
 void SGaeaTerrainGraphPanel::Construct(const FArguments& InArgs)
@@ -19,7 +19,7 @@ void SGaeaTerrainGraphPanel::Construct(const FArguments& InArgs)
 	OnEvaluated = InArgs._OnEvaluated;
 	BuildDefaultRecipeAndGraph();
 
-	FGraphEditorEvents GraphEvents;
+	SGraphEditor::FGraphEditorEvents GraphEvents;
 	GraphEvents.OnSelectionChanged = SGraphEditor::FOnSelectionChanged::CreateSP(
 		this,
 		&SGaeaTerrainGraphPanel::OnGraphSelectionChanged);
@@ -280,6 +280,87 @@ void SGaeaTerrainGraphPanel::RebuildParameterPanel()
 	{
 		TWeakObjectPtr<UGaeaEditorGraphNode> WeakNode(Node);
 		const FName ParameterName = Parameter.Name;
+		TSharedRef<SWidget> ValueWidget = SNullWidget::NullWidget;
+
+		switch (Parameter.Type)
+		{
+		case EGaeaTerrainParameterType::Number:
+			ValueWidget = SNew(SNumericEntryBox<double>)
+				.Value_Lambda([WeakNode, ParameterName]() -> TOptional<double>
+				{
+					if (const UGaeaEditorGraphNode* Current = WeakNode.Get())
+					{
+						if (const double* Value = Current->NumericParameters.Find(ParameterName)) return *Value;
+					}
+					return TOptional<double>();
+				})
+				.MinValue(Parameter.bHasMinimum ? TOptional<double>(Parameter.Minimum) : TOptional<double>())
+				.MaxValue(Parameter.bHasMaximum ? TOptional<double>(Parameter.Maximum) : TOptional<double>())
+				.OnValueCommitted_Lambda([WeakNode, ParameterName](double Value, ETextCommit::Type)
+				{
+					if (UGaeaEditorGraphNode* Current = WeakNode.Get()) Current->NumericParameters.Add(ParameterName, Value);
+				});
+			break;
+
+		case EGaeaTerrainParameterType::Integer:
+			ValueWidget = SNew(SNumericEntryBox<int64>)
+				.Value_Lambda([WeakNode, ParameterName]() -> TOptional<int64>
+				{
+					if (const UGaeaEditorGraphNode* Current = WeakNode.Get())
+					{
+						if (const int64* Value = Current->IntegerParameters.Find(ParameterName)) return *Value;
+					}
+					return TOptional<int64>();
+				})
+				.MinValue(Parameter.bHasMinimum ? TOptional<int64>(static_cast<int64>(Parameter.Minimum)) : TOptional<int64>())
+				.MaxValue(Parameter.bHasMaximum ? TOptional<int64>(static_cast<int64>(Parameter.Maximum)) : TOptional<int64>())
+				.OnValueCommitted_Lambda([WeakNode, ParameterName](int64 Value, ETextCommit::Type)
+				{
+					if (UGaeaEditorGraphNode* Current = WeakNode.Get()) Current->IntegerParameters.Add(ParameterName, Value);
+				});
+			break;
+
+		case EGaeaTerrainParameterType::Boolean:
+			ValueWidget = SNew(SCheckBox)
+				.IsChecked_Lambda([WeakNode, ParameterName]()
+				{
+					if (const UGaeaEditorGraphNode* Current = WeakNode.Get())
+					{
+						if (const bool* Value = Current->BoolParameters.Find(ParameterName))
+						{
+							return *Value ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+						}
+					}
+					return ECheckBoxState::Unchecked;
+				})
+				.OnCheckStateChanged_Lambda([WeakNode, ParameterName](ECheckBoxState State)
+				{
+					if (UGaeaEditorGraphNode* Current = WeakNode.Get())
+					{
+						Current->BoolParameters.Add(ParameterName, State == ECheckBoxState::Checked);
+					}
+				});
+			break;
+
+		case EGaeaTerrainParameterType::Name:
+			ValueWidget = SNew(SEditableTextBox)
+				.Text_Lambda([WeakNode, ParameterName]()
+				{
+					if (const UGaeaEditorGraphNode* Current = WeakNode.Get())
+					{
+						if (const FName* Value = Current->NameParameters.Find(ParameterName)) return FText::FromName(*Value);
+					}
+					return FText::GetEmpty();
+				})
+				.OnTextCommitted_Lambda([WeakNode, ParameterName](const FText& Text, ETextCommit::Type)
+				{
+					if (UGaeaEditorGraphNode* Current = WeakNode.Get())
+					{
+						Current->NameParameters.Add(ParameterName, FName(*Text.ToString()));
+					}
+				});
+			break;
+		}
 
 		ParameterPanel->AddSlot()
 		.AutoHeight()
@@ -295,69 +376,7 @@ void SGaeaTerrainGraphPanel::RebuildParameterPanel()
 			+ SVerticalBox::Slot()
 			.AutoHeight()
 			[
-				Parameter.Type == EGaeaTerrainParameterType::Number
-				? StaticCastSharedRef<SWidget>(
-					SNew(SNumericEntryBox<double>)
-					.Value_Lambda([WeakNode, ParameterName]() -> TOptional<double>
-					{
-						if (const UGaeaEditorGraphNode* Current = WeakNode.Get())
-						{
-							if (const double* Value = Current->NumericParameters.Find(ParameterName)) return *Value;
-						}
-						return TOptional<double>();
-					})
-					.MinValue(Parameter.bHasMinimum ? TOptional<double>(Parameter.Minimum) : TOptional<double>())
-					.MaxValue(Parameter.bHasMaximum ? TOptional<double>(Parameter.Maximum) : TOptional<double>())
-					.OnValueCommitted_Lambda([WeakNode, ParameterName](double Value, ETextCommit::Type)
-					{
-						if (UGaeaEditorGraphNode* Current = WeakNode.Get()) Current->NumericParameters.Add(ParameterName, Value);
-					}))
-				: Parameter.Type == EGaeaTerrainParameterType::Integer
-				? StaticCastSharedRef<SWidget>(
-					SNew(SNumericEntryBox<int64>)
-					.Value_Lambda([WeakNode, ParameterName]() -> TOptional<int64>
-					{
-						if (const UGaeaEditorGraphNode* Current = WeakNode.Get())
-						{
-							if (const int64* Value = Current->IntegerParameters.Find(ParameterName)) return *Value;
-						}
-						return TOptional<int64>();
-					})
-					.MinValue(Parameter.bHasMinimum ? TOptional<int64>(static_cast<int64>(Parameter.Minimum)) : TOptional<int64>())
-					.MaxValue(Parameter.bHasMaximum ? TOptional<int64>(static_cast<int64>(Parameter.Maximum)) : TOptional<int64>())
-					.OnValueCommitted_Lambda([WeakNode, ParameterName](int64 Value, ETextCommit::Type)
-					{
-						if (UGaeaEditorGraphNode* Current = WeakNode.Get()) Current->IntegerParameters.Add(ParameterName, Value);
-					}))
-				: Parameter.Type == EGaeaTerrainParameterType::Boolean
-				? StaticCastSharedRef<SWidget>(
-					SNew(SCheckBox)
-					.IsChecked_Lambda([WeakNode, ParameterName]()
-					{
-						if (const UGaeaEditorGraphNode* Current = WeakNode.Get())
-						{
-							if (const bool* Value = Current->BoolParameters.Find(ParameterName)) return *Value ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
-						}
-						return ECheckBoxState::Unchecked;
-					})
-					.OnCheckStateChanged_Lambda([WeakNode, ParameterName](ECheckBoxState State)
-					{
-						if (UGaeaEditorGraphNode* Current = WeakNode.Get()) Current->BoolParameters.Add(ParameterName, State == ECheckBoxState::Checked);
-					}))
-				: StaticCastSharedRef<SWidget>(
-					SNew(SEditableTextBox)
-					.Text_Lambda([WeakNode, ParameterName]()
-					{
-						if (const UGaeaEditorGraphNode* Current = WeakNode.Get())
-						{
-							if (const FName* Value = Current->NameParameters.Find(ParameterName)) return FText::FromName(*Value);
-						}
-						return FText::GetEmpty();
-					})
-					.OnTextCommitted_Lambda([WeakNode, ParameterName](const FText& Text, ETextCommit::Type)
-					{
-						if (UGaeaEditorGraphNode* Current = WeakNode.Get()) Current->NameParameters.Add(ParameterName, FName(*Text.ToString()));
-					}))
+				ValueWidget
 			]
 		];
 	}
