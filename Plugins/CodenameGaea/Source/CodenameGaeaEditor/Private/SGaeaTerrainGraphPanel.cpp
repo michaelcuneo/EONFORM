@@ -35,6 +35,34 @@ namespace
 			Factory,
 			TEXT("CodenameGaea")));
 	}
+
+	void ApplyDescriptorDefaults(FGaeaTerrainNode& Node)
+	{
+		FGaeaTerrainNodeDescriptor Descriptor;
+		if (!FGaeaTerrainNodeDescriptorRegistry::Get(Node.Type, Descriptor))
+		{
+			return;
+		}
+
+		for (const FGaeaTerrainParameterDescriptor& Parameter : Descriptor.Parameters)
+		{
+			switch (Parameter.Type)
+			{
+			case EGaeaTerrainParameterType::Number:
+				Node.NumericParameters.Add(Parameter.Name, Parameter.DefaultNumber);
+				break;
+			case EGaeaTerrainParameterType::Integer:
+				Node.IntegerParameters.Add(Parameter.Name, Parameter.DefaultInteger);
+				break;
+			case EGaeaTerrainParameterType::Boolean:
+				Node.BoolParameters.Add(Parameter.Name, Parameter.DefaultBoolean);
+				break;
+			case EGaeaTerrainParameterType::Name:
+				Node.NameParameters.Add(Parameter.Name, Parameter.DefaultName);
+				break;
+			}
+		}
+	}
 }
 
 void SGaeaTerrainGraphPanel::Construct(const FArguments& InArgs)
@@ -162,34 +190,13 @@ void SGaeaTerrainGraphPanel::BuildDefaultRecipeAndGraph()
 
 	FGaeaTerrainNode SourceNode;
 	SourceNode.Id = FGuid(0x10101010, 0x20202020, 0x30303030, 0x40404040);
-	SourceNode.Type = GaeaTerrainNodeTypes::SourceDataset;
+	SourceNode.Type = GaeaTerrainNodeTypes::ProceduralTerrain;
+	ApplyDescriptorDefaults(SourceNode);
 
 	FGaeaTerrainNode ErosionNode;
 	ErosionNode.Id = FGuid(0x50505050, 0x60606060, 0x70707070, 0x80808080);
 	ErosionNode.Type = GaeaTerrainNodeTypes::HydraulicErosion;
-
-	FGaeaTerrainNodeDescriptor ErosionDescriptor;
-	if (FGaeaTerrainNodeDescriptorRegistry::Get(ErosionNode.Type, ErosionDescriptor))
-	{
-		for (const FGaeaTerrainParameterDescriptor& Parameter : ErosionDescriptor.Parameters)
-		{
-			switch (Parameter.Type)
-			{
-			case EGaeaTerrainParameterType::Number:
-				ErosionNode.NumericParameters.Add(Parameter.Name, Parameter.DefaultNumber);
-				break;
-			case EGaeaTerrainParameterType::Integer:
-				ErosionNode.IntegerParameters.Add(Parameter.Name, Parameter.DefaultInteger);
-				break;
-			case EGaeaTerrainParameterType::Boolean:
-				ErosionNode.BoolParameters.Add(Parameter.Name, Parameter.DefaultBoolean);
-				break;
-			case EGaeaTerrainParameterType::Name:
-				ErosionNode.NameParameters.Add(Parameter.Name, Parameter.DefaultName);
-				break;
-			}
-		}
-	}
+	ApplyDescriptorDefaults(ErosionNode);
 
 	Recipe.Nodes.Add(SourceNode);
 	Recipe.Nodes.Add(ErosionNode);
@@ -203,7 +210,7 @@ void SGaeaTerrainGraphPanel::BuildDefaultRecipeAndGraph()
 	Recipe.OutputNode = ErosionNode.Id;
 
 	BuildEditorGraphFromRecipe(Recipe, nullptr);
-	StatusText = FText::FromString(TEXT("Unsaved graph. Right-click the canvas to add nodes, then Save when ready."));
+	StatusText = FText::FromString(TEXT("Unsaved procedural graph. Adjust parameters, Evaluate Graph, then Generate Dynamic Mesh."));
 }
 
 void SGaeaTerrainGraphPanel::BuildEditorGraphFromRecipe(
@@ -690,13 +697,6 @@ void SGaeaTerrainGraphPanel::RebuildParameterPanel()
 
 FReply SGaeaTerrainGraphPanel::EvaluateGraph()
 {
-	FGaeaTerrainDatasetSnapshot SourceSnapshot;
-	if (!FGaeaTerrainDatasetRegistry::Get(TEXT("LegacyTerrainGenerator"), SourceSnapshot))
-	{
-		StatusText = FText::FromString(TEXT("No LegacyTerrainGenerator dataset is available. Regenerate terrain first."));
-		return FReply::Handled();
-	}
-
 	FGaeaTerrainRecipe Recipe;
 	FString RecipeError;
 	if (!BuildRecipeFromEditorGraph(Recipe, RecipeError))
@@ -705,9 +705,23 @@ FReply SGaeaTerrainGraphPanel::EvaluateGraph()
 		return FReply::Handled();
 	}
 
+	const bool bUsesExternalSource = Recipe.Nodes.ContainsByPredicate([](const FGaeaTerrainNode& Node)
+	{
+		return Node.Type == GaeaTerrainNodeTypes::SourceDataset;
+	});
+
 	FGaeaTerrainEvaluationContext Context;
-	Context.SourceDataset = SourceSnapshot.Dataset;
-	Context.HeightScale = SourceSnapshot.Metadata.HeightScale;
+	if (bUsesExternalSource)
+	{
+		FGaeaTerrainDatasetSnapshot SourceSnapshot;
+		if (!FGaeaTerrainDatasetRegistry::Get(TEXT("LegacyTerrainGenerator"), SourceSnapshot) || !SourceSnapshot.IsValid())
+		{
+			StatusText = FText::FromString(TEXT("This graph uses Source Dataset, but no LegacyTerrainGenerator dataset is available."));
+			return FReply::Handled();
+		}
+		Context.SourceDataset = SourceSnapshot.Dataset;
+		Context.HeightScale = SourceSnapshot.Metadata.HeightScale;
+	}
 
 	FGaeaTerrainEvaluationResult Result = FGaeaTerrainEvaluator::Evaluate(Recipe, Context);
 	if (!Result.bSuccess)
@@ -718,10 +732,13 @@ FReply SGaeaTerrainGraphPanel::EvaluateGraph()
 
 	const int32 FieldCount = Result.Dataset.NumScalarFields();
 	const uint32 RecipeHash = Result.RecipeHash;
+	FGaeaTerrainDatasetMetadata Metadata;
+	Metadata.HeightScale = Result.HeightScale;
+
 	const uint64 Revision = FGaeaTerrainDatasetRegistry::Publish(
 		TEXT("CodenameGaeaGraph"),
 		MoveTemp(Result.Dataset),
-		SourceSnapshot.Metadata);
+		Metadata);
 
 	if (Revision == 0)
 	{
@@ -730,10 +747,11 @@ FReply SGaeaTerrainGraphPanel::EvaluateGraph()
 	}
 
 	StatusText = FText::FromString(FString::Printf(
-		TEXT("Evaluated authored recipe %08X -> revision %llu (%d fields)."),
+		TEXT("Evaluated authored recipe %08X -> revision %llu (%d fields, height scale %.1f)."),
 		RecipeHash,
 		static_cast<unsigned long long>(Revision),
-		FieldCount));
+		FieldCount,
+		Metadata.HeightScale));
 
 	OnEvaluated.ExecuteIfBound();
 	return FReply::Handled();
