@@ -7,8 +7,6 @@
 #include "UObject/StrongObjectPtr.h"
 #include "Widgets/SCompoundWidget.h"
 
-using FGraphEditorEvents = SGraphEditor::FGraphEditorEvents;
-
 class SVerticalBox;
 
 class SGaeaTerrainGraphPanel : public SCompoundWidget
