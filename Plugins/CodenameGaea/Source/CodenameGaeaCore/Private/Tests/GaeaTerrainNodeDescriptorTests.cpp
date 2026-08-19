@@ -20,6 +20,7 @@ bool FGaeaTerrainNodeDescriptorRegistryTest::RunTest(const FString& Parameters)
 	if (Source.Outputs.Num() == 1)
 	{
 		TestEqual(TEXT("Source output name"), Source.Outputs[0].Name, FName(TEXT("Terrain")));
+		TestEqual(TEXT("Source output type"), Source.Outputs[0].DataType, FName(TEXT("Terrain")));
 	}
 
 	FGaeaTerrainNodeDescriptor Procedural;
@@ -34,9 +35,26 @@ bool FGaeaTerrainNodeDescriptorRegistryTest::RunTest(const FString& Parameters)
 	TestTrue(
 		TEXT("HydraulicErosion descriptor exists"),
 		FGaeaTerrainNodeDescriptorRegistry::Get(GaeaTerrainNodeTypes::HydraulicErosion, Erosion));
-	TestEqual(TEXT("Erosion has one input"), Erosion.Inputs.Num(), 1);
-	TestEqual(TEXT("Erosion has one output"), Erosion.Outputs.Num(), 1);
+	TestEqual(TEXT("Erosion has terrain and mask inputs"), Erosion.Inputs.Num(), 2);
+	TestEqual(TEXT("Erosion has four outputs"), Erosion.Outputs.Num(), 4);
 	TestEqual(TEXT("Erosion parameter count"), Erosion.Parameters.Num(), 9);
+
+	if (Erosion.Inputs.Num() == 2)
+	{
+		TestEqual(TEXT("Erosion primary input name"), Erosion.Inputs[0].Name, FName(TEXT("Terrain")));
+		TestEqual(TEXT("Erosion primary input type"), Erosion.Inputs[0].DataType, FName(TEXT("Terrain")));
+		TestEqual(TEXT("Erosion mask input name"), Erosion.Inputs[1].Name, FName(TEXT("Mask")));
+		TestEqual(TEXT("Erosion mask input type"), Erosion.Inputs[1].DataType, FName(TEXT("ScalarField")));
+	}
+	if (Erosion.Outputs.Num() == 4)
+	{
+		TestEqual(TEXT("Erosion terrain output name"), Erosion.Outputs[0].Name, FName(TEXT("Terrain")));
+		TestEqual(TEXT("Erosion terrain output type"), Erosion.Outputs[0].DataType, FName(TEXT("Terrain")));
+		TestEqual(TEXT("Erosion wear output"), Erosion.Outputs[1].Name, FName(TEXT("Wear")));
+		TestEqual(TEXT("Erosion deposits output"), Erosion.Outputs[2].Name, FName(TEXT("Deposits")));
+		TestEqual(TEXT("Erosion flow output"), Erosion.Outputs[3].Name, FName(TEXT("Flow")));
+		TestEqual(TEXT("Erosion flow output type"), Erosion.Outputs[3].DataType, FName(TEXT("ScalarField")));
+	}
 
 	const FGaeaTerrainParameterDescriptor* Duration = Erosion.Parameters.FindByPredicate(
 		[](const FGaeaTerrainParameterDescriptor& Parameter)
