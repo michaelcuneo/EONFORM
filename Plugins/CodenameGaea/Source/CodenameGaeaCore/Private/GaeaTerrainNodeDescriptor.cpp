@@ -77,8 +77,27 @@ void FGaeaTerrainNodeDescriptorRegistry::RegisterBuiltIns()
 		Source.Type = GaeaTerrainNodeTypes::SourceDataset;
 		Source.DisplayName = TEXT("Source Dataset");
 		Source.Category = TEXT("Input");
-		Source.Description = TEXT("Uses the supplied terrain dataset as a graph source.");
+		Source.Description = TEXT("Uses a terrain dataset supplied by the evaluation context.");
 		Source.Outputs.Add(TerrainPort(TEXT("Terrain")));
+		DescriptorRegistry.Add(Source.Type, MoveTemp(Source));
+	}
+
+	if (!DescriptorRegistry.Contains(GaeaTerrainNodeTypes::ProceduralTerrain))
+	{
+		FGaeaTerrainNodeDescriptor Source;
+		Source.Type = GaeaTerrainNodeTypes::ProceduralTerrain;
+		Source.DisplayName = TEXT("Procedural Terrain");
+		Source.Category = TEXT("Generate");
+		Source.Description = TEXT("Generates a deterministic normalized fractal heightfield without an external actor or dataset.");
+		Source.Outputs.Add(TerrainPort(TEXT("Terrain")));
+		Source.Parameters.Add(IntegerParameter(TEXT("Resolution"), TEXT("Resolution"), 257, 2, 1025));
+		Source.Parameters.Add(NumberParameter(TEXT("WorldSize"), TEXT("World Size (cm)"), 100000.0, 1.0, 10000000.0));
+		Source.Parameters.Add(NumberParameter(TEXT("HeightScale"), TEXT("Height Scale (cm)"), 8000.0, 1.0, 1000000.0));
+		Source.Parameters.Add(IntegerParameter(TEXT("Seed"), TEXT("Seed"), 1337, -2147483647, 2147483647));
+		Source.Parameters.Add(NumberParameter(TEXT("Frequency"), TEXT("Frequency"), 0.00055, 0.000001, 1.0));
+		Source.Parameters.Add(IntegerParameter(TEXT("Octaves"), TEXT("Octaves"), 6, 1, 16));
+		Source.Parameters.Add(NumberParameter(TEXT("Persistence"), TEXT("Persistence"), 0.5, 0.0, 1.0));
+		Source.Parameters.Add(NumberParameter(TEXT("Lacunarity"), TEXT("Lacunarity"), 2.0, 1.0, 8.0));
 		DescriptorRegistry.Add(Source.Type, MoveTemp(Source));
 	}
 
