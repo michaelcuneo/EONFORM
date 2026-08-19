@@ -132,3 +132,94 @@ bool FGaeaTerrainContext::Analyze(
 	if (OutError) OutError->Reset();
 	return true;
 }
+
+bool FGaeaTerrainContext::BuildProcessMasks(
+	const FGaeaScalarField& Height,
+	const FGaeaTerrainProcessMaskSettings& Settings,
+	FGaeaTerrainDataset& InOutDataset,
+	FString* OutError)
+{
+	auto Fail = [OutError](const TCHAR* Message)
+	{
+		if (OutError) *OutError = Message;
+		return false;
+	};
+
+	if (!Height.IsValid()) return Fail(TEXT("Process Masks requires a valid Height field."));
+
+	const FGaeaScalarField* Elevation = InOutDataset.FindScalarField(GaeaTerrainFieldNames::Elevation);
+	const FGaeaScalarField* Slope = InOutDataset.FindScalarField(GaeaTerrainFieldNames::SlopeDegrees);
+	const FGaeaScalarField* Concavity = InOutDataset.FindScalarField(GaeaTerrainFieldNames::Concavity);
+	const FGaeaScalarField* Convexity = InOutDataset.FindScalarField(GaeaTerrainFieldNames::Convexity);
+	const FGaeaScalarField* Mountain = InOutDataset.FindScalarField(GaeaTerrainFieldNames::Mountain);
+	const FGaeaScalarField* Foothill = InOutDataset.FindScalarField(GaeaTerrainFieldNames::Foothill);
+	const FGaeaScalarField* Plains = InOutDataset.FindScalarField(GaeaTerrainFieldNames::Plains);
+
+	const FGaeaScalarField* Required[] = { Elevation, Slope, Concavity, Convexity, Mountain, Foothill, Plains };
+	for (const FGaeaScalarField* Field : Required)
+	{
+		if (!Field || !Field->IsValid() || Field->Domain != Height.Domain)
+		{
+			return Fail(TEXT("Process Masks requires Terrain Context fields on the same domain as Height."));
+		}
+	}
+
+	const float ThermalRegionality = FMath::Clamp(Settings.ThermalRegionality, 0.0f, 1.0f);
+	const float HydraulicRegionality = FMath::Clamp(Settings.HydraulicRegionality, 0.0f, 1.0f);
+	const float RainfallHighlandBias = FMath::Clamp(Settings.RainfallHighlandBias, 0.0f, 1.0f);
+	const float EvaporationLowlandBias = FMath::Clamp(Settings.EvaporationLowlandBias, 0.0f, 1.0f);
+	const float TalusAngle = FMath::Clamp(Settings.ThermalTalusAngleDegrees, 0.0f, 90.0f);
+
+	FGaeaScalarField Thermal = MakeField(Height.Domain, GaeaTerrainFieldNames::Thermal);
+	FGaeaScalarField Rainfall = MakeField(Height.Domain, GaeaTerrainFieldNames::Rainfall);
+	FGaeaScalarField Hydraulic = MakeField(Height.Domain, GaeaTerrainFieldNames::HydraulicErosion);
+	FGaeaScalarField Deposition = MakeField(Height.Domain, GaeaTerrainFieldNames::Deposition);
+	FGaeaScalarField Evaporation = MakeField(Height.Domain, GaeaTerrainFieldNames::Evaporation);
+
+	for (int32 Y = 0; Y < Height.Domain.Dimensions.Y; ++Y)
+	{
+		for (int32 X = 0; X < Height.Domain.Dimensions.X; ++X)
+		{
+			const float SlopeValue = Slope->AtInterior(X, Y);
+			const float ElevationValue = Elevation->AtInterior(X, Y);
+			const float MountainValue = Mountain->AtInterior(X, Y);
+			const float FoothillValue = Foothill->AtInterior(X, Y);
+			const float PlainsValue = Plains->AtInterior(X, Y);
+			const float ConcavityValue = Concavity->AtInterior(X, Y);
+			const float ConvexityValue = Convexity->AtInterior(X, Y);
+
+			const float AboveTalus = SmoothStep01((SlopeValue - TalusAngle + 4.0f) / 12.0f);
+			const float Highland = FMath::Clamp(MountainValue + FoothillValue * 0.65f, 0.0f, 1.0f);
+			const float ThermalNatural = AboveTalus * FMath::Clamp(Highland + ConvexityValue * 0.35f, 0.0f, 1.0f);
+			Thermal.AtInterior(X, Y) = FMath::Lerp(1.0f, ThermalNatural, ThermalRegionality);
+
+			const float Orographic = FMath::Clamp(ElevationValue * RainfallHighlandBias + Highland * 0.55f + FoothillValue * 0.15f, 0.0f, 1.0f);
+			const float RainNatural = FMath::Clamp(0.18f + Orographic, 0.0f, 1.0f);
+			Rainfall.AtInterior(X, Y) = FMath::Lerp(1.0f, RainNatural, HydraulicRegionality);
+
+			const float SlopeErosion = SmoothStep01((SlopeValue - 4.0f) / 26.0f);
+			const float ErosionNatural = FMath::Clamp(SlopeErosion * (0.35f + Highland * 0.65f) * (1.0f - ConcavityValue * 0.45f), 0.0f, 1.0f);
+			Hydraulic.AtInterior(X, Y) = FMath::Lerp(1.0f, ErosionNatural, HydraulicRegionality);
+
+			const float LowSlope = 1.0f - SmoothStep01(SlopeValue / 12.0f);
+			const float DepositionNatural = FMath::Clamp(LowSlope * (0.35f + ConcavityValue * 0.65f) * (0.45f + PlainsValue * 0.55f), 0.0f, 1.0f);
+			Deposition.AtInterior(X, Y) = FMath::Lerp(1.0f, DepositionNatural, HydraulicRegionality);
+
+			const float Lowland = 1.0f - ElevationValue;
+			const float EvaporationNatural = FMath::Clamp(0.25f + Lowland * EvaporationLowlandBias + PlainsValue * 0.25f - ConcavityValue * 0.25f, 0.0f, 1.0f);
+			Evaporation.AtInterior(X, Y) = FMath::Lerp(1.0f, EvaporationNatural, HydraulicRegionality);
+		}
+	}
+
+	if (!InOutDataset.SetScalarField(MoveTemp(Thermal))
+		|| !InOutDataset.SetScalarField(MoveTemp(Rainfall))
+		|| !InOutDataset.SetScalarField(MoveTemp(Hydraulic))
+		|| !InOutDataset.SetScalarField(MoveTemp(Deposition))
+		|| !InOutDataset.SetScalarField(MoveTemp(Evaporation)))
+	{
+		return Fail(TEXT("Process Masks could not publish its derived fields."));
+	}
+
+	if (OutError) OutError->Reset();
+	return true;
+}
