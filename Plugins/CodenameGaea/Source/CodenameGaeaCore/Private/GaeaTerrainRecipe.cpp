@@ -6,6 +6,7 @@ namespace GaeaTerrainNodeTypes
 	const FName ProceduralTerrain(TEXT("ProceduralTerrain"));
 	const FName TerrainShape(TEXT("TerrainShape"));
 	const FName TerrainContext(TEXT("TerrainContext"));
+	const FName Geology(TEXT("Geology"));
 	const FName ProcessMasks(TEXT("ProcessMasks"));
 	const FName HydraulicErosion(TEXT("HydraulicErosion"));
 }
