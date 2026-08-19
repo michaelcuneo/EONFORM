@@ -7,7 +7,9 @@
 #include "UObject/StrongObjectPtr.h"
 #include "Widgets/SCompoundWidget.h"
 
+class SBox;
 class SVerticalBox;
+class UGaeaTerrainGraphAsset;
 
 class SGaeaTerrainGraphPanel : public SCompoundWidget
 {
@@ -20,15 +22,29 @@ public:
 
 private:
 	void BuildDefaultRecipeAndGraph();
+	void BuildEditorGraphFromRecipe(const FGaeaTerrainRecipe& Recipe, const UGaeaTerrainGraphAsset* Asset = nullptr);
+	TSharedRef<SWidget> CreateGraphEditorWidget();
+
 	bool BuildRecipeFromEditorGraph(FGaeaTerrainRecipe& OutRecipe, FString& OutError) const;
+	bool WriteEditorGraphToAsset(UGaeaTerrainGraphAsset& Asset, FString& OutError) const;
+	void LoadAsset(UGaeaTerrainGraphAsset& Asset);
+	bool SaveCurrentAsset(bool bPromptForCheckout);
+	UGaeaTerrainGraphAsset* CreateAssetFromCurrentGraph();
+
 	void OnGraphSelectionChanged(const TSet<UObject*>& NewSelection);
 	void RebuildParameterPanel();
 
+	FReply NewGraphAsset();
+	FReply OpenGraphAsset();
+	FReply SaveGraphAsset();
 	FReply EvaluateGraph();
+	FText GetAssetText() const;
 	FText GetStatusText() const;
 
 	TStrongObjectPtr<UGaeaEditorGraph> EditorGraph;
+	TStrongObjectPtr<UGaeaTerrainGraphAsset> CurrentAsset;
 	TSharedPtr<SGraphEditor> GraphEditor;
+	TSharedPtr<SBox> GraphHost;
 	TSharedPtr<SVerticalBox> ParameterPanel;
 	TWeakObjectPtr<UGaeaEditorGraphNode> SelectedNode;
 	FSimpleDelegate OnEvaluated;
