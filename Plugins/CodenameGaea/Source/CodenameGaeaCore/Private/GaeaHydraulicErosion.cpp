@@ -13,12 +13,13 @@ namespace
 		return FMath::Clamp((*Mask)[Index], 0.0f, 1.0f);
 	}
 
-	float HardnessResistance(const TArray<float>* RockHardness, int32 Index, int32 ExpectedNum)
+	float HardnessResistance(const TArray<float>* RockHardness, int32 Index, int32 ExpectedNum, float RockSoftness)
 	{
 		const float Hardness = RockHardness && RockHardness->Num() == ExpectedNum
 			? FMath::Clamp((*RockHardness)[Index], 0.0f, 1.0f)
 			: 0.5f;
-		return FMath::Lerp(1.0f, 0.18f, Hardness);
+		const float EffectiveHardness = Hardness * (1.0f - FMath::Clamp(RockSoftness, 0.0f, 1.0f));
+		return FMath::Lerp(1.0f, 0.18f, EffectiveHardness);
 	}
 
 	const TArray<float>* ValuesIfCompatible(const FGaeaScalarField* Field, const FGaeaGridDomain& Domain)
@@ -80,10 +81,11 @@ bool FGaeaHydraulicErosion::ApplyInPlace(
 	const float Rainfall = FMath::Max(Settings.Rainfall, 0.0f);
 	const float FlowRate = FMath::Clamp(Settings.FlowRate, 0.0f, 1.0f);
 	const float CapacityFactor = FMath::Max(Settings.SedimentCapacity, 0.0f);
-	const float ErosionRate = FMath::Clamp(Settings.ErosionRate, 0.0f, 1.0f);
+	const float ErosionRate = FMath::Clamp(Settings.ErosionRate * FMath::Max(Settings.Strength, 0.0f), 0.0f, 4.0f);
 	const float DepositionRate = FMath::Clamp(Settings.DepositionRate, 0.0f, 1.0f);
 	const float Evaporation = FMath::Clamp(Settings.Evaporation, 0.0f, 1.0f);
 	const float MinimumSlope = FMath::Max(Settings.MinimumSlope, 0.0f);
+	const float RockSoftness = FMath::Clamp(Settings.RockSoftness, 0.0f, 1.0f);
 
 	TArray<float> Water, Sediment, NextWater, NextSediment, Flow, Wear, Deposits;
 	Water.SetNumZeroed(NumCells); Sediment.SetNumZeroed(NumCells);
@@ -184,7 +186,7 @@ bool FGaeaHydraulicErosion::ApplyInPlace(
 				}
 				else if (Sediment[I] < Capacity)
 				{
-					const float Resistance = HardnessResistance(RockHardness, I, NumCells);
+					const float Resistance = HardnessResistance(RockHardness, I, NumCells, RockSoftness);
 					const float LocalErosion = ErosionRate * MaskValue(ErosionMask, I, NumCells) * Resistance;
 					const float Erode = FMath::Min((Capacity - Sediment[I]) * LocalErosion, 0.02f);
 					HeightField.Values[I] -= Erode; Sediment[I] += Erode; Wear[I] += Erode;
