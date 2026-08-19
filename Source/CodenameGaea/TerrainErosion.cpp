@@ -1,5 +1,7 @@
 #include "TerrainErosion.h"
 
+#include "GaeaTerrainFieldNames.h"
+
 namespace
 {
 	float MaskValue(const TArray<float>* Mask, int32 Index, int32 ExpectedNum)
@@ -17,6 +19,26 @@ namespace
 			? FMath::Clamp((*RockHardness)[Index], 0.0f, 1.0f)
 			: 0.5f;
 		return FMath::Lerp(1.0f, 0.18f, Hardness);
+	}
+
+	FGaeaScalarField MakeField(
+		const FGaeaGridDomain& Domain,
+		FName Name,
+		EGaeaFieldUnit Unit,
+		TArray<float>&& Values)
+	{
+		FGaeaFieldDescriptor Descriptor;
+		Descriptor.Name = Name;
+		Descriptor.Unit = Unit;
+		Descriptor.Interpolation = EGaeaInterpolation::Bilinear;
+
+		FGaeaScalarField Field;
+		Field.Initialize(Domain, Descriptor);
+		if (Values.Num() == Field.Values.Num())
+		{
+			Field.Values = MoveTemp(Values);
+		}
+		return Field;
 	}
 }
 
@@ -123,14 +145,15 @@ void FTerrainErosion::ApplyHydraulic(
 	const TArray<float>* DepositionMask,
 	const TArray<float>* EvaporationMask,
 	const TArray<float>* RockHardness,
-	const TArray<float>* SoilDepth)
+	const TArray<float>* SoilDepth,
+	TArray<float>* OutWear,
+	TArray<float>* OutDeposits)
 {
 	if (!HeightField.IsValid() || Settings.Iterations <= 0 || HeightScale <= UE_SMALL_NUMBER)
 	{
-		if (OutFlowAccumulation)
-		{
-			OutFlowAccumulation->Reset();
-		}
+		if (OutFlowAccumulation) OutFlowAccumulation->Reset();
+		if (OutWear) OutWear->Reset();
+		if (OutDeposits) OutDeposits->Reset();
 		return;
 	}
 
@@ -152,12 +175,16 @@ void FTerrainErosion::ApplyHydraulic(
 	TArray<float> NextWater;
 	TArray<float> NextSediment;
 	TArray<float> FlowAccumulation;
+	TArray<float> WearAccumulation;
+	TArray<float> DepositAccumulation;
 
 	Water.SetNumZeroed(NumCells);
 	Sediment.SetNumZeroed(NumCells);
 	NextWater.SetNumZeroed(NumCells);
 	NextSediment.SetNumZeroed(NumCells);
 	FlowAccumulation.SetNumZeroed(NumCells);
+	WearAccumulation.SetNumZeroed(NumCells);
+	DepositAccumulation.SetNumZeroed(NumCells);
 
 	static const FIntPoint Neighbors[] = {
 		FIntPoint(-1, 0), FIntPoint(1, 0),
@@ -276,6 +303,7 @@ void FTerrainErosion::ApplyHydraulic(
 					const float Deposit = (Sediment[Index] - Capacity) * LocalDeposition;
 					HeightField.Data[Index] += Deposit;
 					Sediment[Index] -= Deposit;
+					DepositAccumulation[Index] += Deposit;
 				}
 				else if (Sediment[Index] < Capacity)
 				{
@@ -284,6 +312,7 @@ void FTerrainErosion::ApplyHydraulic(
 					const float Erode = FMath::Min((Capacity - Sediment[Index]) * LocalErosion, 0.02f);
 					HeightField.Data[Index] -= Erode;
 					Sediment[Index] += Erode;
+					WearAccumulation[Index] += Erode;
 				}
 			}
 		}
@@ -295,8 +324,61 @@ void FTerrainErosion::ApplyHydraulic(
 		}
 	}
 
+	if (OutWear)
+	{
+		*OutWear = MoveTemp(WearAccumulation);
+	}
+	if (OutDeposits)
+	{
+		*OutDeposits = MoveTemp(DepositAccumulation);
+	}
 	if (OutFlowAccumulation)
 	{
 		*OutFlowAccumulation = MoveTemp(FlowAccumulation);
 	}
+}
+
+bool FTerrainErosion::EvaluateHydraulic(
+	const FTerrainHeightField& InputHeightField,
+	float HeightScale,
+	const FTerrainHydraulicErosionSettings& Settings,
+	FTerrainHydraulicErosionResult& OutResult,
+	const TArray<float>* RainfallMask,
+	const TArray<float>* ErosionMask,
+	const TArray<float>* DepositionMask,
+	const TArray<float>* EvaporationMask,
+	const TArray<float>* RockHardness,
+	const TArray<float>* SoilDepth)
+{
+	OutResult = FTerrainHydraulicErosionResult{};
+	if (!InputHeightField.IsValid() || Settings.Iterations <= 0 || HeightScale <= UE_SMALL_NUMBER)
+	{
+		return false;
+	}
+
+	FTerrainHeightField WorkingHeight = InputHeightField;
+	TArray<float> Flow;
+	TArray<float> Wear;
+	TArray<float> Deposits;
+
+	ApplyHydraulic(
+		WorkingHeight,
+		HeightScale,
+		Settings,
+		&Flow,
+		RainfallMask,
+		ErosionMask,
+		DepositionMask,
+		EvaporationMask,
+		RockHardness,
+		SoilDepth,
+		&Wear,
+		&Deposits);
+
+	const FGaeaGridDomain& Domain = WorkingHeight.GetGaeaDomain();
+	OutResult.Height = WorkingHeight.ToGaeaScalarField(GaeaTerrainFieldNames::Height);
+	OutResult.Wear = MakeField(Domain, GaeaTerrainFieldNames::Wear, EGaeaFieldUnit::Normalized, MoveTemp(Wear));
+	OutResult.Deposits = MakeField(Domain, GaeaTerrainFieldNames::Deposits, EGaeaFieldUnit::Normalized, MoveTemp(Deposits));
+	OutResult.Flow = MakeField(Domain, GaeaTerrainFieldNames::Flow, EGaeaFieldUnit::Unitless, MoveTemp(Flow));
+	return OutResult.IsValid();
 }
