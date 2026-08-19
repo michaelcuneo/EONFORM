@@ -49,5 +49,6 @@ public:
 		FTerrainHeightField& HeightField,
 		float HeightScale,
 		const FTerrainRiverSettings& Settings,
-		const TArray<float>& RiverMask);
+		const TArray<float>& RiverMask,
+		const TArray<uint8>* TopologyLandMask = nullptr);
 };
