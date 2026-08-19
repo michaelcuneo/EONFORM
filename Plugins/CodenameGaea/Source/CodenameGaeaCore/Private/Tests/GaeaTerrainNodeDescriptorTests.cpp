@@ -103,6 +103,23 @@ bool FGaeaTerrainNodeDescriptorRegistryTest::RunTest(const FString& Parameters)
 	TestNotNull(TEXT("Aggressive Mode parameter exists"), Erosion.Parameters.FindByPredicate([](const FGaeaTerrainParameterDescriptor& P) { return P.Name == FName(TEXT("AggressiveMode")); }));
 	TestNotNull(TEXT("Deterministic parameter exists"), Erosion.Parameters.FindByPredicate([](const FGaeaTerrainParameterDescriptor& P) { return P.Name == FName(TEXT("Deterministic")); }));
 
+	FGaeaTerrainNodeDescriptor Curvature;
+	TestTrue(
+		TEXT("Curvature descriptor exists"),
+		FGaeaTerrainNodeDescriptorRegistry::Get(GaeaTerrainNodeTypes::Curvature, Curvature));
+	TestEqual(TEXT("Curvature display name"), Curvature.DisplayName, FString(TEXT("Curvature")));
+	TestEqual(TEXT("Curvature category"), Curvature.Category, FString(TEXT("Data")));
+	TestEqual(TEXT("Curvature has one input"), Curvature.Inputs.Num(), 1);
+	TestEqual(TEXT("Curvature has two outputs"), Curvature.Outputs.Num(), 2);
+	TestEqual(TEXT("Curvature has no parameters"), Curvature.Parameters.Num(), 0);
+	if (Curvature.Outputs.Num() == 2)
+	{
+		TestEqual(TEXT("Curvature concavity output"), Curvature.Outputs[0].Name, FName(TEXT("Concavity")));
+		TestEqual(TEXT("Curvature convexity output"), Curvature.Outputs[1].Name, FName(TEXT("Convexity")));
+		TestEqual(TEXT("Curvature concavity output type"), Curvature.Outputs[0].DataType, FName(TEXT("ScalarField")));
+		TestEqual(TEXT("Curvature convexity output type"), Curvature.Outputs[1].DataType, FName(TEXT("ScalarField")));
+	}
+
 	FGaeaTerrainNodeDescriptor Context;
 	TestTrue(TEXT("TerrainContext descriptor exists"),
 		FGaeaTerrainNodeDescriptorRegistry::Get(GaeaTerrainNodeTypes::TerrainContext, Context));
