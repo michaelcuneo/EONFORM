@@ -75,8 +75,16 @@ bool FGaeaTerrainRecipe::Validate(FString* OutError) const
 	};
 
 	if (Version <= 0) return Fail(TEXT("Recipe version must be positive."));
+
+	if (Nodes.IsEmpty())
+	{
+		if (OutputNode.IsValid()) return Fail(TEXT("Empty recipe must not reference an output node."));
+		if (!Connections.IsEmpty()) return Fail(TEXT("Empty recipe must not contain connections."));
+		if (OutError) OutError->Reset();
+		return true;
+	}
+
 	if (!OutputNode.IsValid()) return Fail(TEXT("Recipe has no valid output node."));
-	if (Nodes.IsEmpty()) return Fail(TEXT("Recipe contains no nodes."));
 
 	TSet<FGuid> NodeIds;
 	for (const FGaeaTerrainNode& Node : Nodes)
