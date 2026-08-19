@@ -27,39 +27,74 @@ Compiled successfully in Unreal Engine 5.8 by the project owner:
 - `FGaeaScalarField`
 - field metadata for units/interpolation
 - guard-band-aware storage and sampling
-- one-way legacy `FTerrainHeightField` conversion seam
 
-## Current checkpoint: heightfield storage migration
+### Heightfield storage migration
 
-`FTerrainHeightField` is now backed internally by `FGaeaScalarField`.
+Compiled successfully in Unreal Engine 5.8 by the project owner:
 
-The existing public compatibility surface is deliberately preserved:
+- `FTerrainHeightField` backed internally by `FGaeaScalarField`
+- legacy `Resolution`, `WorldSize`, `Data`, `Index()`, and `At()` compatibility preserved
+- copy/move value semantics verified
 
-- `Resolution`
-- `WorldSize`
-- `Data`
-- `Index()`
-- `At()`
-- `Initialize()`
-- `IsValid()`
+## Runtime island requirement
 
-`Data` is a reference alias bound to the authoritative `FGaeaScalarField::Values` storage. Existing terrain algorithms can therefore continue accessing `HeightField.Data` without behavior changes while new code can consume the shared field/domain model directly.
+Orakai players will create their own islands in a packaged game and then play on them.
 
-Explicit copy/move constructors and assignments preserve value semantics and ensure copied heightfields never accidentally share the same backing buffer.
+This is now a hard architecture requirement:
 
-New direct accessors:
+- graph/recipe evaluation must be runtime-safe
+- terrain recipes and deterministic evaluation cannot depend on editor-only graph objects
+- Mesh Terrain remains an editor authoring/output backend, not the only materialization path
+- the first runtime materialization backend will use Unreal runtime Dynamic Mesh APIs
+- generated gameplay fields and generated geometry derive from the same terrain dataset/recipe
+- saved islands should prefer deterministic recipe/seed/parameters plus explicit edits over treating serialized final geometry as the only canonical representation
 
-- `GetGaeaDomain()`
-- `GetGaeaField()`
-- `ToGaeaScalarField()`
+See `Docs/ARCHITECTURE.md` for the full runtime/editor/backend split.
 
-Legacy height values remain normalized and the centered world domain remains `[-WorldSize/2, +WorldSize/2]` in both axes.
+## Current checkpoint: semantic terrain fields
+
+Context, process masks, and geology now produce first-class `FGaeaScalarField` outputs while retaining their original `TArray<float>` names as compatibility aliases.
+
+### Context fields
+
+- `Elevation` — normalized
+- `SlopeDegrees` — degrees
+- `Concavity` — normalized
+- `Convexity` — normalized
+- `Mountain` — normalized
+- `Foothill` — normalized
+- `Plains` — normalized
+
+Each is backed by a correspondingly named `FGaeaScalarField` and shares the exact same value buffer with the legacy array alias.
+
+### Process-mask fields
+
+- `Thermal`
+- `Rainfall`
+- `HydraulicErosion`
+- `Deposition`
+- `Evaporation`
+
+All are normalized scalar fields over the same domain as the heightfield.
+
+### Geology fields
+
+- `RockHardness`
+- `Weathering`
+- `SoilDepth`
+
+All are normalized scalar fields over the same domain as the heightfield.
+
+`FGaeaGridDomain` now has explicit equality operators so semantic field validation can verify exact domain identity rather than only matching buffer lengths.
+
+No context, process-mask, or geology formulas were changed in this migration.
 
 ## Automated coverage
 
 Core spatial tests cover:
 
 - domain validity
+- domain equality
 - guard-band storage dimensions
 - cell spacing
 - evaluation bounds
@@ -68,12 +103,16 @@ Core spatial tests cover:
 - bilinear center sampling
 - explicit out-of-domain clamp behavior
 
-Legacy heightfield regression tests now cover:
+Legacy/regression tests cover:
 
-- legacy `Data` writes and new scalar-field access sharing identical storage
-- `At()` writes and legacy `Data` sharing identical storage
-- copy construction preserving values without buffer aliasing
-- move construction preserving values
+- legacy heightfield storage aliasing the new scalar field
+- heightfield copy/move value semantics
+- context fields validating against the heightfield domain
+- stable context field names/units
+- geology fields validating against the heightfield domain
+- stable geology field names/units
+- process-mask fields validating against the heightfield domain
+- compatibility arrays sharing the exact same field buffers
 
 ## Validation required before next step
 
@@ -81,10 +120,10 @@ Legacy heightfield regression tests now cover:
 2. Build `CodenameGaeaEditor` / Development Editor / Win64 in UE 5.8.
 3. Run automation tests matching `CodenameGaea.Core` and `CodenameGaea.Legacy` if convenient.
 4. Confirm existing terrain generation remains visually unchanged.
-5. Do not proceed if this storage migration fails compilation or changes terrain behavior.
+5. Do not proceed if compilation, tests, or terrain behavior regress.
 
 ## Next implementation step
 
-After this checkpoint is verified, migrate context and geology outputs from subsystem-specific anonymous `TArray<float>` collections into first-class named scalar fields while keeping their current public structs available as compatibility facades.
+After this checkpoint is verified, introduce `FGaeaTerrainDataset`: a named typed collection that owns and exposes terrain fields independently of the legacy subsystem structs.
 
-Erosion semantics and graph execution remain unchanged until those field migrations are stable.
+That dataset is the key seam for both upcoming visible editor inspection and Orakai runtime island generation. Once the dataset compiles, the next milestone is the first real Codename Gaea editor window/field inspector so the plugin becomes visibly inspectable inside UE rather than remaining infrastructure-only.
