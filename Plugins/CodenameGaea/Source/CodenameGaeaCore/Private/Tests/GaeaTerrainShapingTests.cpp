@@ -6,11 +6,11 @@
 
 namespace
 {
-	FGaeaTerrainNode MakeProceduralNode()
+	FGaeaTerrainNode MakePerlinNode()
 	{
 		FGaeaTerrainNode Node;
 		Node.Id = FGuid(101, 102, 103, 104);
-		Node.Type = GaeaTerrainNodeTypes::ProceduralTerrain;
+		Node.Type = GaeaTerrainNodeTypes::PerlinNoise;
 		Node.IntegerParameters.Add(TEXT("Resolution"), 33);
 		Node.IntegerParameters.Add(TEXT("Seed"), 77);
 		Node.NumericParameters.Add(TEXT("WorldSize"), 3200.0);
@@ -35,7 +35,7 @@ namespace
 	FGaeaTerrainRecipe MakeShapeRecipe(bool bAddContext)
 	{
 		FGaeaTerrainRecipe Recipe;
-		const FGaeaTerrainNode Source = MakeProceduralNode();
+		const FGaeaTerrainNode Source = MakePerlinNode();
 		const FGaeaTerrainNode Shape = MakeShapeNode();
 		Recipe.Nodes.Add(Source);
 		Recipe.Nodes.Add(Shape);
@@ -70,7 +70,7 @@ namespace
 	FGaeaTerrainRecipe MakeSourceOnlyRecipe()
 	{
 		FGaeaTerrainRecipe Recipe;
-		const FGaeaTerrainNode Source = MakeProceduralNode();
+		const FGaeaTerrainNode Source = MakePerlinNode();
 		Recipe.Nodes.Add(Source);
 		Recipe.OutputNode = Source.Id;
 		return Recipe;
@@ -79,7 +79,7 @@ namespace
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FGaeaTerrainShapeGraphTest,
-	"CodenameGaea.Core.Graph.ProceduralTerrainShape",
+	"CodenameGaea.Core.Graph.PerlinNoiseShape",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 bool FGaeaTerrainShapeGraphTest::RunTest(const FString& Parameters)
@@ -88,7 +88,7 @@ bool FGaeaTerrainShapeGraphTest::RunTest(const FString& Parameters)
 	const FGaeaTerrainEvaluationResult SourceResult = FGaeaTerrainEvaluator::Evaluate(MakeSourceOnlyRecipe(), EmptyContext);
 	const FGaeaTerrainEvaluationResult ShapeResult = FGaeaTerrainEvaluator::Evaluate(MakeShapeRecipe(false), EmptyContext);
 
-	TestTrue(TEXT("Procedural source evaluates"), SourceResult.bSuccess);
+	TestTrue(TEXT("Perlin source evaluates"), SourceResult.bSuccess);
 	TestTrue(TEXT("Terrain Shape evaluates"), ShapeResult.bSuccess);
 	if (!SourceResult.bSuccess || !ShapeResult.bSuccess)
 	{
