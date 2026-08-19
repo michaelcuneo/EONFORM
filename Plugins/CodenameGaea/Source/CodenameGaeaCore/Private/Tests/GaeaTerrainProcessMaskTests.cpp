@@ -7,7 +7,7 @@
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FGaeaTerrainProcessMasksPipelineTest,
-	"CodenameGaea.Core.Graph.ProceduralTerrainContextProcessMasksHydraulic",
+	"CodenameGaea.Core.Graph.PerlinNoiseContextProcessMasksHydraulic",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 bool FGaeaTerrainProcessMasksPipelineTest::RunTest(const FString& Parameters)
@@ -16,7 +16,7 @@ bool FGaeaTerrainProcessMasksPipelineTest::RunTest(const FString& Parameters)
 
 	FGaeaTerrainNode Source;
 	Source.Id = FGuid(31, 32, 33, 34);
-	Source.Type = GaeaTerrainNodeTypes::ProceduralTerrain;
+	Source.Type = GaeaTerrainNodeTypes::PerlinNoise;
 	Source.IntegerParameters.Add(TEXT("Resolution"), 17);
 	Source.IntegerParameters.Add(TEXT("Seed"), 84);
 	Source.NumericParameters.Add(TEXT("WorldSize"), 1600.0);
