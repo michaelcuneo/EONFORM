@@ -10,9 +10,12 @@ namespace
 	uint64 NextRevision = 1;
 	FName LatestSourceId = NAME_None;
 
-	uint64 PublishInternal(FName SourceId, FGaeaTerrainDataset&& Dataset)
+	uint64 PublishInternal(
+		FName SourceId,
+		FGaeaTerrainDataset&& Dataset,
+		const FGaeaTerrainDatasetMetadata& Metadata)
 	{
-		if (SourceId.IsNone() || Dataset.IsEmpty())
+		if (SourceId.IsNone() || Dataset.IsEmpty() || Metadata.HeightScale <= UE_SMALL_NUMBER)
 		{
 			return 0;
 		}
@@ -22,6 +25,7 @@ namespace
 		FGaeaTerrainDatasetSnapshot Snapshot;
 		Snapshot.SourceId = SourceId;
 		Snapshot.Revision = NextRevision++;
+		Snapshot.Metadata = Metadata;
 		Snapshot.Dataset = MoveTemp(Dataset);
 
 		const uint64 Revision = Snapshot.Revision;
@@ -31,15 +35,21 @@ namespace
 	}
 }
 
-uint64 FGaeaTerrainDatasetRegistry::Publish(FName SourceId, const FGaeaTerrainDataset& Dataset)
+uint64 FGaeaTerrainDatasetRegistry::Publish(
+	FName SourceId,
+	const FGaeaTerrainDataset& Dataset,
+	const FGaeaTerrainDatasetMetadata& Metadata)
 {
 	FGaeaTerrainDataset Copy = Dataset;
-	return PublishInternal(SourceId, MoveTemp(Copy));
+	return PublishInternal(SourceId, MoveTemp(Copy), Metadata);
 }
 
-uint64 FGaeaTerrainDatasetRegistry::Publish(FName SourceId, FGaeaTerrainDataset&& Dataset)
+uint64 FGaeaTerrainDatasetRegistry::Publish(
+	FName SourceId,
+	FGaeaTerrainDataset&& Dataset,
+	const FGaeaTerrainDatasetMetadata& Metadata)
 {
-	return PublishInternal(SourceId, MoveTemp(Dataset));
+	return PublishInternal(SourceId, MoveTemp(Dataset), Metadata);
 }
 
 bool FGaeaTerrainDatasetRegistry::Get(FName SourceId, FGaeaTerrainDatasetSnapshot& OutSnapshot)
