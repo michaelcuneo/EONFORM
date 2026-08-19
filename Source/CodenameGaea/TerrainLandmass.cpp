@@ -4,6 +4,13 @@ namespace
 {
 	constexpr float DiagonalDistance = 1.41421356237f;
 	constexpr float LargeDistance = 1.0e30f;
+	constexpr float GrowthCompactnessBias = 0.30f;
+
+	struct FIslandFrontierNode
+	{
+		int32 Index = INDEX_NONE;
+		float Score = -LargeDistance;
+	};
 
 	float SmoothStep01(float Value)
 	{
@@ -11,14 +18,71 @@ namespace
 		return T * T * (3.0f - 2.0f * T);
 	}
 
-	int32 CountLandCells(const TArray<uint8>& Land)
+	bool HasHigherPriority(const FIslandFrontierNode& A, const FIslandFrontierNode& B)
 	{
-		int32 Count = 0;
-		for (const uint8 Value : Land)
+		if (!FMath::IsNearlyEqual(A.Score, B.Score, 1.0e-7f))
 		{
-			Count += Value != 0 ? 1 : 0;
+			return A.Score > B.Score;
 		}
-		return Count;
+		return A.Index < B.Index;
+	}
+
+	void HeapPush(TArray<FIslandFrontierNode>& Heap, const FIslandFrontierNode& Node)
+	{
+		int32 Child = Heap.Add(Node);
+		while (Child > 0)
+		{
+			const int32 Parent = (Child - 1) / 2;
+			if (HasHigherPriority(Heap[Parent], Heap[Child]))
+			{
+				break;
+			}
+			Swap(Heap[Parent], Heap[Child]);
+			Child = Parent;
+		}
+	}
+
+	bool HeapPop(TArray<FIslandFrontierNode>& Heap, FIslandFrontierNode& OutNode)
+	{
+		if (Heap.IsEmpty())
+		{
+			return false;
+		}
+
+		OutNode = Heap[0];
+		const FIslandFrontierNode Last = Heap.Pop(EAllowShrinking::No);
+		if (Heap.IsEmpty())
+		{
+			return true;
+		}
+
+		Heap[0] = Last;
+		int32 Parent = 0;
+		while (true)
+		{
+			const int32 Left = Parent * 2 + 1;
+			if (Left >= Heap.Num())
+			{
+				break;
+			}
+
+			const int32 Right = Left + 1;
+			int32 BestChild = Left;
+			if (Right < Heap.Num() && HasHigherPriority(Heap[Right], Heap[Left]))
+			{
+				BestChild = Right;
+			}
+
+			if (HasHigherPriority(Heap[Parent], Heap[BestChild]))
+			{
+				break;
+			}
+
+			Swap(Heap[Parent], Heap[BestChild]);
+			Parent = BestChild;
+		}
+
+		return true;
 	}
 
 	void BoxBlur(const TArray<float>& Input, int32 Resolution, int32 Radius, TArray<float>& Output)
@@ -102,116 +166,346 @@ namespace
 		}
 	}
 
-	void SelectComponentsAtThreshold(
-		const TArray<float>& ReliefSurface,
-		int32 Resolution,
-		float Threshold,
-		bool bReserveExteriorOcean,
-		bool bSingleIsland,
-		TArray<uint8>& OutLand)
+	int32 CountLandNeighbors(const TArray<uint8>& Land, int32 Resolution, int32 X, int32 Y)
 	{
-		const int32 NumCells = ReliefSurface.Num();
-		OutLand.SetNumZeroed(NumCells);
-		if (Resolution < 2 || NumCells != Resolution * Resolution)
+		int32 Count = 0;
+		for (int32 OY = -1; OY <= 1; ++OY)
+		{
+			for (int32 OX = -1; OX <= 1; ++OX)
+			{
+				if (OX == 0 && OY == 0)
+				{
+					continue;
+				}
+
+				const int32 NX = X + OX;
+				const int32 NY = Y + OY;
+				if (NX < 0 || NX >= Resolution || NY < 0 || NY >= Resolution)
+				{
+					continue;
+				}
+
+				Count += Land[NY * Resolution + NX] != 0 ? 1 : 0;
+			}
+		}
+		return Count;
+	}
+
+	void FillEnclosedOceanHoles(TArray<uint8>& Land, int32 Resolution)
+	{
+		const int32 NumCells = Land.Num();
+		if (Resolution < 3 || NumCells != Resolution * Resolution)
 		{
 			return;
 		}
 
-		TArray<uint8> Candidate;
-		Candidate.SetNumZeroed(NumCells);
+		TArray<uint8> ExteriorOcean;
+		ExteriorOcean.SetNumZeroed(NumCells);
+		TArray<int32> Queue;
+		Queue.Reserve(FMath::Min(NumCells, 262144));
+
+		auto AddExterior = [&](int32 Index)
+		{
+			if (Land[Index] == 0 && ExteriorOcean[Index] == 0)
+			{
+				ExteriorOcean[Index] = 1;
+				Queue.Add(Index);
+			}
+		};
+
+		for (int32 X = 0; X < Resolution; ++X)
+		{
+			AddExterior(X);
+			AddExterior((Resolution - 1) * Resolution + X);
+		}
+		for (int32 Y = 1; Y < Resolution - 1; ++Y)
+		{
+			AddExterior(Y * Resolution);
+			AddExterior(Y * Resolution + Resolution - 1);
+		}
+
+		int32 Head = 0;
+		while (Head < Queue.Num())
+		{
+			const int32 Index = Queue[Head++];
+			const int32 X = Index % Resolution;
+			const int32 Y = Index / Resolution;
+
+			static const FIntPoint Cardinal[] = {
+				FIntPoint(-1, 0), FIntPoint(1, 0),
+				FIntPoint(0, -1), FIntPoint(0, 1)
+			};
+
+			for (const FIntPoint& Offset : Cardinal)
+			{
+				const int32 NX = X + Offset.X;
+				const int32 NY = Y + Offset.Y;
+				if (NX < 0 || NX >= Resolution || NY < 0 || NY >= Resolution)
+				{
+					continue;
+				}
+
+				const int32 Neighbor = NY * Resolution + NX;
+				if (Land[Neighbor] == 0 && ExteriorOcean[Neighbor] == 0)
+				{
+					ExteriorOcean[Neighbor] = 1;
+					Queue.Add(Neighbor);
+				}
+			}
+		}
+
+		for (int32 Y = 1; Y < Resolution - 1; ++Y)
+		{
+			for (int32 X = 1; X < Resolution - 1; ++X)
+			{
+				const int32 Index = Y * Resolution + X;
+				if (Land[Index] == 0 && ExteriorOcean[Index] == 0)
+				{
+					Land[Index] = 1;
+				}
+			}
+		}
+	}
+
+	float ComputeCoastDatum(
+		const TArray<uint8>& Land,
+		const TArray<float>& ReliefSurface,
+		int32 Resolution)
+	{
+		TArray<float> Crossings;
+		Crossings.Reserve(FMath::Max(Resolution * 8, 64));
+
 		for (int32 Y = 0; Y < Resolution; ++Y)
 		{
 			for (int32 X = 0; X < Resolution; ++X)
 			{
 				const int32 Index = Y * Resolution + X;
-				const bool bDomainBoundary = X == 0 || X == Resolution - 1 || Y == 0 || Y == Resolution - 1;
-				Candidate[Index] = ReliefSurface[Index] >= Threshold
-					&& !(bReserveExteriorOcean && bDomainBoundary)
-					? 1
-					: 0;
+				if (X + 1 < Resolution)
+				{
+					const int32 Right = Index + 1;
+					if ((Land[Index] != 0) != (Land[Right] != 0))
+					{
+						Crossings.Add((ReliefSurface[Index] + ReliefSurface[Right]) * 0.5f);
+					}
+				}
+				if (Y + 1 < Resolution)
+				{
+					const int32 Down = Index + Resolution;
+					if ((Land[Index] != 0) != (Land[Down] != 0))
+					{
+						Crossings.Add((ReliefSurface[Index] + ReliefSurface[Down]) * 0.5f);
+					}
+				}
 			}
 		}
 
-		if (!bReserveExteriorOcean)
+		if (Crossings.IsEmpty())
 		{
-			OutLand = MoveTemp(Candidate);
+			return 0.0f;
+		}
+
+		Crossings.Sort();
+		return Crossings[Crossings.Num() / 2];
+	}
+
+	void GrowSingleIsland(
+		const TArray<float>& ReliefSurface,
+		int32 Resolution,
+		float LandCoverage,
+		TArray<uint8>& OutLand,
+		float& OutCoastDatum)
+	{
+		const int32 NumCells = ReliefSurface.Num();
+		OutLand.SetNumZeroed(NumCells);
+		OutCoastDatum = 0.0f;
+		if (Resolution < 3 || NumCells != Resolution * Resolution)
+		{
 			return;
 		}
 
-		TArray<uint8> Visited;
-		Visited.SetNumZeroed(NumCells);
-		TArray<int32> Queue;
-		TArray<int32> Component;
-		TArray<int32> LargestComponent;
-		Queue.Reserve(FMath::Min(NumCells, 262144));
-
-		for (int32 Start = 0; Start < NumCells; ++Start)
+		float MinRelief = LargeDistance;
+		float MaxRelief = -LargeDistance;
+		for (int32 Y = 1; Y < Resolution - 1; ++Y)
 		{
-			if (Candidate[Start] == 0 || Visited[Start] != 0)
+			for (int32 X = 1; X < Resolution - 1; ++X)
+			{
+				const float Value = ReliefSurface[Y * Resolution + X];
+				MinRelief = FMath::Min(MinRelief, Value);
+				MaxRelief = FMath::Max(MaxRelief, Value);
+			}
+		}
+		const float ReliefSpan = FMath::Max(MaxRelief - MinRelief, 0.001f);
+
+		const int32 SeedMargin = FMath::Clamp(
+			FMath::RoundToInt(static_cast<float>(Resolution - 1) * 0.14f),
+			2,
+			FMath::Max(2, Resolution / 4));
+		int32 SeedIndex = INDEX_NONE;
+		float SeedRelief = -LargeDistance;
+
+		for (int32 Y = SeedMargin; Y < Resolution - SeedMargin; ++Y)
+		{
+			for (int32 X = SeedMargin; X < Resolution - SeedMargin; ++X)
+			{
+				const int32 Index = Y * Resolution + X;
+				if (ReliefSurface[Index] > SeedRelief)
+				{
+					SeedRelief = ReliefSurface[Index];
+					SeedIndex = Index;
+				}
+			}
+		}
+
+		if (SeedIndex == INDEX_NONE)
+		{
+			return;
+		}
+
+		const int32 MaxLandCells = (Resolution - 2) * (Resolution - 2);
+		const int32 TargetCells = FMath::Clamp(
+			FMath::RoundToInt(
+				FMath::Clamp(LandCoverage, 0.05f, 0.90f)
+				* static_cast<float>(NumCells)),
+			1,
+			MaxLandCells);
+
+		TArray<float> BestScore;
+		BestScore.Init(-LargeDistance, NumCells);
+		TArray<uint8> Finalized;
+		Finalized.SetNumZeroed(NumCells);
+		TArray<FIslandFrontierNode> Heap;
+		Heap.Reserve(FMath::Min(TargetCells / 4 + 1024, 262144));
+
+		auto TerrainScore = [&](int32 Index)
+		{
+			return FMath::Clamp((ReliefSurface[Index] - MinRelief) / ReliefSpan, 0.0f, 1.0f);
+		};
+
+		BestScore[SeedIndex] = TerrainScore(SeedIndex);
+		HeapPush(Heap, { SeedIndex, BestScore[SeedIndex] });
+
+		int32 LandCount = 0;
+		FIslandFrontierNode Node;
+		while (LandCount < TargetCells && HeapPop(Heap, Node))
+		{
+			if (Node.Index == INDEX_NONE || Finalized[Node.Index] != 0)
+			{
+				continue;
+			}
+			if (Node.Score + 1.0e-6f < BestScore[Node.Index])
 			{
 				continue;
 			}
 
-			Queue.Reset();
-			Component.Reset();
-			Queue.Add(Start);
-			Visited[Start] = 1;
-			int32 Head = 0;
+			Finalized[Node.Index] = 1;
+			OutLand[Node.Index] = 1;
+			++LandCount;
 
-			while (Head < Queue.Num())
+			const int32 X = Node.Index % Resolution;
+			const int32 Y = Node.Index / Resolution;
+			for (int32 OY = -1; OY <= 1; ++OY)
 			{
-				const int32 Index = Queue[Head++];
-				Component.Add(Index);
-				const int32 X = Index % Resolution;
-				const int32 Y = Index / Resolution;
-
-				for (int32 OY = -1; OY <= 1; ++OY)
+				for (int32 OX = -1; OX <= 1; ++OX)
 				{
-					for (int32 OX = -1; OX <= 1; ++OX)
+					if (OX == 0 && OY == 0)
 					{
-						if (OX == 0 && OY == 0)
-						{
-							continue;
-						}
-
-						const int32 NX = X + OX;
-						const int32 NY = Y + OY;
-						if (NX <= 0 || NX >= Resolution - 1 || NY <= 0 || NY >= Resolution - 1)
-						{
-							continue;
-						}
-
-						const int32 Neighbor = NY * Resolution + NX;
-						if (Candidate[Neighbor] != 0 && Visited[Neighbor] == 0)
-						{
-							Visited[Neighbor] = 1;
-							Queue.Add(Neighbor);
-						}
+						continue;
 					}
-				}
-			}
 
-			if (bSingleIsland)
-			{
-				if (Component.Num() > LargestComponent.Num())
-				{
-					LargestComponent = Component;
-				}
-			}
-			else
-			{
-				for (const int32 Index : Component)
-				{
-					OutLand[Index] = 1;
+					const int32 NX = X + OX;
+					const int32 NY = Y + OY;
+					if (NX <= 0 || NX >= Resolution - 1 || NY <= 0 || NY >= Resolution - 1)
+					{
+						continue;
+					}
+
+					const int32 Neighbor = NY * Resolution + NX;
+					if (Finalized[Neighbor] != 0)
+					{
+						continue;
+					}
+
+					const float Support = static_cast<float>(CountLandNeighbors(OutLand, Resolution, NX, NY)) / 8.0f;
+					const float CandidateScore = TerrainScore(Neighbor) + Support * GrowthCompactnessBias;
+					if (CandidateScore > BestScore[Neighbor] + 1.0e-6f)
+					{
+						BestScore[Neighbor] = CandidateScore;
+						HeapPush(Heap, { Neighbor, CandidateScore });
+					}
 				}
 			}
 		}
 
-		if (bSingleIsland)
+		// Lakes belong to the drainage/lake system, not to the base coastline selector.
+		// Fill enclosed topology holes so Island mode produces one coherent landmass.
+		FillEnclosedOceanHoles(OutLand, Resolution);
+		OutCoastDatum = ComputeCoastDatum(OutLand, ReliefSurface, Resolution);
+	}
+
+	void BuildThresholdLandMask(
+		const TArray<float>& ReliefSurface,
+		int32 Resolution,
+		float LandCoverage,
+		bool bReserveExteriorOcean,
+		TArray<uint8>& OutLand,
+		float& OutThreshold)
+	{
+		const int32 NumCells = ReliefSurface.Num();
+		OutLand.SetNumZeroed(NumCells);
+		OutThreshold = 0.0f;
+		if (Resolution < 2 || NumCells != Resolution * Resolution)
 		{
-			for (const int32 Index : LargestComponent)
+			return;
+		}
+
+		float MinValue = LargeDistance;
+		float MaxValue = -LargeDistance;
+		for (const float Value : ReliefSurface)
+		{
+			MinValue = FMath::Min(MinValue, Value);
+			MaxValue = FMath::Max(MaxValue, Value);
+		}
+
+		const int32 TargetCells = FMath::RoundToInt(
+			FMath::Clamp(LandCoverage, 0.05f, 0.90f) * static_cast<float>(NumCells));
+		float Low = MinValue;
+		float High = MaxValue;
+
+		constexpr int32 SearchIterations = 24;
+		for (int32 Iteration = 0; Iteration < SearchIterations; ++Iteration)
+		{
+			const float Threshold = (Low + High) * 0.5f;
+			int32 Count = 0;
+			for (int32 Y = 0; Y < Resolution; ++Y)
 			{
-				OutLand[Index] = 1;
+				for (int32 X = 0; X < Resolution; ++X)
+				{
+					const bool bBoundary = X == 0 || X == Resolution - 1 || Y == 0 || Y == Resolution - 1;
+					if (ReliefSurface[Y * Resolution + X] >= Threshold && !(bReserveExteriorOcean && bBoundary))
+					{
+						++Count;
+					}
+				}
+			}
+
+			if (Count > TargetCells)
+			{
+				Low = Threshold;
+			}
+			else
+			{
+				High = Threshold;
+			}
+		}
+
+		OutThreshold = (Low + High) * 0.5f;
+		for (int32 Y = 0; Y < Resolution; ++Y)
+		{
+			for (int32 X = 0; X < Resolution; ++X)
+			{
+				const int32 Index = Y * Resolution + X;
+				const bool bBoundary = X == 0 || X == Resolution - 1 || Y == 0 || Y == Resolution - 1;
+				OutLand[Index] = ReliefSurface[Index] >= OutThreshold && !(bReserveExteriorOcean && bBoundary) ? 1 : 0;
 			}
 		}
 	}
@@ -231,90 +525,35 @@ namespace
 			return;
 		}
 
-		float MinValue = LargeDistance;
-		float MaxValue = -LargeDistance;
-		for (const float Value : OutReliefSurface)
+		if (Settings.bIsland && !Settings.bArchipelago)
 		{
-			MinValue = FMath::Min(MinValue, Value);
-			MaxValue = FMath::Max(MaxValue, Value);
-		}
-
-		const bool bReserveExteriorOcean = Settings.bIsland || Settings.bArchipelago;
-		const bool bSingleIsland = Settings.bIsland && !Settings.bArchipelago;
-		const int32 TargetCells = FMath::RoundToInt(
-			FMath::Clamp(Settings.LandCoverage, 0.05f, 0.90f)
-			* static_cast<float>(OutReliefSurface.Num()));
-
-		float Low = MinValue;
-		float High = MaxValue;
-		int32 BestDifference = MAX_int32;
-		float BestThreshold = (Low + High) * 0.5f;
-		TArray<uint8> BestMask;
-
-		constexpr int32 SearchIterations = 24;
-		for (int32 Iteration = 0; Iteration < SearchIterations; ++Iteration)
-		{
-			const float Threshold = (Low + High) * 0.5f;
-			TArray<uint8> Candidate;
-			SelectComponentsAtThreshold(
+			GrowSingleIsland(
 				OutReliefSurface,
 				HeightField.Resolution,
-				Threshold,
-				bReserveExteriorOcean,
-				bSingleIsland,
-				Candidate);
-
-			const int32 Count = CountLandCells(Candidate);
-			if (Count > 0)
-			{
-				const int32 Difference = FMath::Abs(Count - TargetCells);
-				if (Difference < BestDifference)
-				{
-					BestDifference = Difference;
-					BestThreshold = Threshold;
-					BestMask = MoveTemp(Candidate);
-				}
-			}
-
-			// Lower threshold means more cells can become land. With the domain boundary
-			// explicitly reserved as ocean, component size is monotonic enough for a
-			// bounded binary search and does not need hundreds of full-grid scans.
-			if (Count < TargetCells)
-			{
-				High = Threshold;
-			}
-			else
-			{
-				Low = Threshold;
-			}
+				Settings.LandCoverage,
+				OutLand,
+				OutThreshold);
+			return;
 		}
 
-		if (BestMask.IsEmpty())
-		{
-			SelectComponentsAtThreshold(
-				OutReliefSurface,
-				HeightField.Resolution,
-				BestThreshold,
-				bReserveExteriorOcean,
-				bSingleIsland,
-				BestMask);
-		}
-
-		OutThreshold = BestThreshold;
-		OutLand = MoveTemp(BestMask);
+		BuildThresholdLandMask(
+			OutReliefSurface,
+			HeightField.Resolution,
+			Settings.LandCoverage,
+			Settings.bArchipelago,
+			OutLand,
+			OutThreshold);
 	}
 
 	void BuildSubcellCoastDistance(
 		const TArray<uint8>& Land,
-		const TArray<float>& ReliefSurface,
-		float Threshold,
 		int32 Resolution,
 		float CellSize,
 		TArray<float>& OutDistance)
 	{
 		const int32 NumCells = Land.Num();
 		OutDistance.Init(LargeDistance, NumCells);
-		if (Resolution < 2 || NumCells != Resolution * Resolution || ReliefSurface.Num() != NumCells)
+		if (Resolution < 2 || NumCells != Resolution * Resolution)
 		{
 			return;
 		}
@@ -325,7 +564,6 @@ namespace
 			{
 				const int32 Index = Y * Resolution + X;
 				const bool bLand = Land[Index] != 0;
-				const float CenterMagnitude = FMath::Max(FMath::Abs(ReliefSurface[Index] - Threshold), UE_SMALL_NUMBER);
 
 				for (int32 OY = -1; OY <= 1; ++OY)
 				{
@@ -349,10 +587,8 @@ namespace
 							continue;
 						}
 
-						const float NeighborMagnitude = FMath::Max(FMath::Abs(ReliefSurface[Neighbor] - Threshold), UE_SMALL_NUMBER);
 						const float EdgeLength = CellSize * ((OX != 0 && OY != 0) ? DiagonalDistance : 1.0f);
-						const float Fraction = CenterMagnitude / (CenterMagnitude + NeighborMagnitude);
-						OutDistance[Index] = FMath::Min(OutDistance[Index], EdgeLength * FMath::Clamp(Fraction, 0.05f, 0.95f));
+						OutDistance[Index] = FMath::Min(OutDistance[Index], EdgeLength * 0.5f);
 					}
 				}
 			}
@@ -476,7 +712,17 @@ void FTerrainLandmass::RefreshSeaLevelClassification(
 			SeaLevelThreshold);
 		InOutMaps.SourceSeaLevelThreshold = SeaLevelThreshold;
 
-		if (GeneratedLand.Num() != NumCells || CountLandCells(GeneratedLand) <= 0)
+		if (GeneratedLand.Num() != NumCells)
+		{
+			return;
+		}
+
+		int32 LandCount = 0;
+		for (const uint8 Value : GeneratedLand)
+		{
+			LandCount += Value != 0 ? 1 : 0;
+		}
+		if (LandCount <= 0)
 		{
 			return;
 		}
@@ -486,8 +732,6 @@ void FTerrainLandmass::RefreshSeaLevelClassification(
 		TArray<float> CoastDistance;
 		BuildSubcellCoastDistance(
 			GeneratedLand,
-			ReliefSurface,
-			SeaLevelThreshold,
 			Resolution,
 			CellSize,
 			CoastDistance);
@@ -499,18 +743,25 @@ void FTerrainLandmass::RefreshSeaLevelClassification(
 		{
 			const bool bLand = GeneratedLand[Index] != 0;
 			const float Distance = CoastDistance[Index];
-			const float BroadRelief = ReliefSurface[Index] - SeaLevelThreshold;
+			const float BroadSigned = ReliefSurface[Index] - SeaLevelThreshold;
 			const float Residual = OriginalTerrain[Index] - ReliefSurface[Index];
 			const float DetailFade = SmoothStep01(Distance / ShoreDetailFadeWidth);
+			float SignedHeight = BroadSigned + Residual * FMath::Lerp(0.10f, 1.0f, DetailFade);
 
-			// Topology chooses only the sign. Physical relief comes from the terrain-derived
-			// broad surface plus the original residual detail. Boundary closure never enters
-			// this magnitude calculation, so it cannot stamp circles or squares into relief.
-			float ReliefMagnitude = FMath::Abs(BroadRelief)
-				+ Residual * FMath::Lerp(0.18f, 1.0f, DetailFade) * (bLand ? 1.0f : -1.0f);
-			ReliefMagnitude = FMath::Max(FMath::Abs(ReliefMagnitude), MinimumSignedHeight);
+			// The relief field remains the source of elevation magnitude. Topology only
+			// resolves ambiguous cells whose natural sign disagrees with the selected
+			// coherent island; those cells are placed just across sea level rather than
+			// mirrored into artificial cliffs or deep trenches.
+			if (bLand && SignedHeight <= MinimumSignedHeight)
+			{
+				SignedHeight = MinimumSignedHeight;
+			}
+			else if (!bLand && SignedHeight >= -MinimumSignedHeight)
+			{
+				SignedHeight = -MinimumSignedHeight;
+			}
 
-			HeightField.Data[Index] = bLand ? ReliefMagnitude : -ReliefMagnitude;
+			HeightField.Data[Index] = SignedHeight;
 			InOutMaps.SignedCoastDistanceCm[Index] = bLand ? Distance : -Distance;
 			InOutMaps.CoastMask[Index] = 1.0f - SmoothStep01(Distance / CoastVisualWidth);
 		}
