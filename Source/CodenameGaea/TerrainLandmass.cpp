@@ -1,6 +1,7 @@
 #include "TerrainLandmass.h"
 
 #include "TerrainBaseShape.h"
+#include "TerrainStructure.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogTerrainLandmass, Log, All);
 
@@ -281,7 +282,8 @@ namespace
 
 void FTerrainLandmass::Build(
 	const FTerrainHeightField& HeightField,
-	const FTerrainBaseShapeMaps* BaseShape,
+	const FTerrainStructuralMaps* Structure,
+	int32 Seed,
 	const FTerrainLandmassSettings& Settings,
 	FTerrainLandmassMaps& OutMaps)
 {
@@ -306,12 +308,20 @@ void FTerrainLandmass::Build(
 	OutMaps.TrenchMask.SetNumZeroed(NumCells);
 	OutMaps.SeamountMask.SetNumZeroed(NumCells);
 
-	if (BaseShape != nullptr && BaseShape->IsValidFor(HeightField))
+	FTerrainBaseShapeSettings BaseShapeSettings;
+	BaseShapeSettings.bIsland = Settings.bIsland;
+	BaseShapeSettings.bArchipelago = Settings.bArchipelago;
+	BaseShapeSettings.CoastScaleCm = Settings.CoastScale;
+	BaseShapeSettings.CoastIrregularity = Settings.CoastIrregularity;
+	BaseShapeSettings.LandCoverage = Settings.LandCoverage;
+
+	FTerrainBaseShapeMaps BaseShapeMaps;
+	if (FTerrainBaseShape::Build(HeightField, Structure, Seed, BaseShapeSettings, BaseShapeMaps))
 	{
-		OutMaps.BaseElevationCm = BaseShape->BaseElevationCm;
-		OutMaps.LandInfluence = BaseShape->LandInfluence;
-		OutMaps.TopologyLandMask = BaseShape->TopologyLandMask;
-		OutMaps.SourceSeaLevelThreshold = BaseShape->SourceSeaLevelThreshold;
+		OutMaps.BaseElevationCm = MoveTemp(BaseShapeMaps.BaseElevationCm);
+		OutMaps.LandInfluence = MoveTemp(BaseShapeMaps.LandInfluence);
+		OutMaps.TopologyLandMask = MoveTemp(BaseShapeMaps.TopologyLandMask);
+		OutMaps.SourceSeaLevelThreshold = BaseShapeMaps.SourceSeaLevelThreshold;
 	}
 	else if (!(Settings.bIsland || Settings.bArchipelago))
 	{
