@@ -36,23 +36,52 @@ bool FGaeaTerrainNodeDescriptorRegistryTest::RunTest(const FString& Parameters)
 		FGaeaTerrainNodeDescriptorRegistry::Get(GaeaTerrainNodeTypes::HydraulicErosion, Erosion));
 	TestEqual(TEXT("Erosion has one input"), Erosion.Inputs.Num(), 1);
 	TestEqual(TEXT("Erosion has one output"), Erosion.Outputs.Num(), 1);
-	TestEqual(TEXT("Erosion parameter count"), Erosion.Parameters.Num(), 8);
+	TestEqual(TEXT("Erosion parameter count"), Erosion.Parameters.Num(), 9);
 
-	const FGaeaTerrainParameterDescriptor* Iterations = Erosion.Parameters.FindByPredicate(
+	const FGaeaTerrainParameterDescriptor* Duration = Erosion.Parameters.FindByPredicate(
 		[](const FGaeaTerrainParameterDescriptor& Parameter)
 		{
 			return Parameter.Name == FName(TEXT("Iterations"));
 		});
-	TestNotNull(TEXT("Iterations parameter exists"), Iterations);
-	if (Iterations)
+	TestNotNull(TEXT("Duration parameter exists"), Duration);
+	if (Duration)
 	{
-		TestEqual(TEXT("Iterations type"), Iterations->Type, EGaeaTerrainParameterType::Integer);
-		TestEqual(TEXT("Iterations default"), Iterations->DefaultInteger, static_cast<int64>(24));
-		TestTrue(TEXT("Iterations has minimum"), Iterations->bHasMinimum);
-		TestTrue(TEXT("Iterations has maximum"), Iterations->bHasMaximum);
-		TestEqual(TEXT("Iterations minimum"), Iterations->Minimum, 1.0);
-		TestEqual(TEXT("Iterations maximum"), Iterations->Maximum, 4096.0);
+		TestEqual(TEXT("Duration display name"), Duration->DisplayName, FString(TEXT("Duration")));
+		TestEqual(TEXT("Duration type"), Duration->Type, EGaeaTerrainParameterType::Integer);
+		TestEqual(TEXT("Duration default"), Duration->DefaultInteger, static_cast<int64>(24));
+		TestTrue(TEXT("Duration has minimum"), Duration->bHasMinimum);
+		TestTrue(TEXT("Duration has maximum"), Duration->bHasMaximum);
+		TestEqual(TEXT("Duration minimum"), Duration->Minimum, 1.0);
+		TestEqual(TEXT("Duration maximum"), Duration->Maximum, 4096.0);
 	}
+
+	const FGaeaTerrainParameterDescriptor* Strength = Erosion.Parameters.FindByPredicate(
+		[](const FGaeaTerrainParameterDescriptor& Parameter)
+		{
+			return Parameter.Name == FName(TEXT("Strength"));
+		});
+	const FGaeaTerrainParameterDescriptor* RockSoftness = Erosion.Parameters.FindByPredicate(
+		[](const FGaeaTerrainParameterDescriptor& Parameter)
+		{
+			return Parameter.Name == FName(TEXT("RockSoftness"));
+		});
+	TestNotNull(TEXT("Strength parameter exists"), Strength);
+	TestNotNull(TEXT("Rock Softness parameter exists"), RockSoftness);
+
+	FGaeaTerrainNodeDescriptor Context;
+	TestTrue(TEXT("TerrainContext descriptor still exists for legacy recipes"),
+		FGaeaTerrainNodeDescriptorRegistry::Get(GaeaTerrainNodeTypes::TerrainContext, Context));
+	TestTrue(TEXT("TerrainContext is hidden from graph authoring"), Context.bHiddenInGraph);
+
+	FGaeaTerrainNodeDescriptor Geology;
+	TestTrue(TEXT("Geology descriptor still exists for legacy recipes"),
+		FGaeaTerrainNodeDescriptorRegistry::Get(GaeaTerrainNodeTypes::Geology, Geology));
+	TestTrue(TEXT("Geology is hidden from graph authoring"), Geology.bHiddenInGraph);
+
+	FGaeaTerrainNodeDescriptor Masks;
+	TestTrue(TEXT("ProcessMasks descriptor still exists for legacy recipes"),
+		FGaeaTerrainNodeDescriptorRegistry::Get(GaeaTerrainNodeTypes::ProcessMasks, Masks));
+	TestTrue(TEXT("ProcessMasks is hidden from graph authoring"), Masks.bHiddenInGraph);
 
 	TArray<FGaeaTerrainNodeDescriptor> AllDescriptors;
 	FGaeaTerrainNodeDescriptorRegistry::GetAll(AllDescriptors);
