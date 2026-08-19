@@ -27,7 +27,7 @@ namespace GaeaTypedPortTests
 
 		FGaeaTerrainNode Source;
 		Source.Id = FGuid(201, 1, 1, 1);
-		Source.Type = GaeaTerrainNodeTypes::ProceduralTerrain;
+		Source.Type = GaeaTerrainNodeTypes::PerlinNoise;
 		Source.IntegerParameters.Add(TEXT("Resolution"), 25);
 		Source.IntegerParameters.Add(TEXT("Seed"), 9182);
 		Source.NumericParameters.Add(TEXT("WorldSize"), 2400.0);
