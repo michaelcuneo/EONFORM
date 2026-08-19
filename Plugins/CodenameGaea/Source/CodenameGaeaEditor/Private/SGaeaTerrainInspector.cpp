@@ -1,6 +1,7 @@
 #include "SGaeaTerrainInspector.h"
 
 #include "GaeaScalarField.h"
+#include "SGaeaTerrainGraphPanel.h"
 #include "Styling/AppStyle.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Layout/SBorder.h"
@@ -70,7 +71,15 @@ void SGaeaTerrainInspector::Construct(const FArguments& InArgs)
 			]
 
 			+ SVerticalBox::Slot()
-			.FillHeight(1.0f)
+			.FillHeight(0.54f)
+			.Padding(0.0f, 0.0f, 0.0f, 8.0f)
+			[
+				SNew(SGaeaTerrainGraphPanel)
+				.OnEvaluated(FSimpleDelegate::CreateSP(this, &SGaeaTerrainInspector::RefreshFromRegistry))
+			]
+
+			+ SVerticalBox::Slot()
+			.FillHeight(0.46f)
 			[
 				SNew(SSplitter)
 				+ SSplitter::Slot()
@@ -138,10 +147,10 @@ void SGaeaTerrainInspector::Construct(const FArguments& InArgs)
 		]
 	];
 
-	RefreshDataset();
+	RefreshFromRegistry();
 }
 
-FReply SGaeaTerrainInspector::RefreshDataset()
+void SGaeaTerrainInspector::RefreshFromRegistry()
 {
 	FGaeaTerrainDatasetSnapshot NewSnapshot;
 	if (FGaeaTerrainDatasetRegistry::GetLatest(NewSnapshot))
@@ -176,6 +185,11 @@ FReply SGaeaTerrainInspector::RefreshDataset()
 	}
 
 	RebuildPreview();
+}
+
+FReply SGaeaTerrainInspector::RefreshDataset()
+{
+	RefreshFromRegistry();
 	return FReply::Handled();
 }
 
@@ -269,10 +283,11 @@ FText SGaeaTerrainInspector::GetSourceText() const
 	}
 
 	return FText::FromString(FString::Printf(
-		TEXT("Source: %s   Revision: %llu   Fields: %d"),
+		TEXT("Source: %s   Revision: %llu   Fields: %d   Height scale: %.1f"),
 		*Snapshot.SourceId.ToString(),
 		static_cast<unsigned long long>(Snapshot.Revision),
-		Snapshot.Dataset.NumScalarFields()));
+		Snapshot.Dataset.NumScalarFields(),
+		Snapshot.Metadata.HeightScale));
 }
 
 FText SGaeaTerrainInspector::GetFieldMetadataText() const
