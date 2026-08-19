@@ -4,6 +4,7 @@ namespace GaeaTerrainNodeTypes
 {
 	const FName SourceDataset(TEXT("SourceDataset"));
 	const FName ProceduralTerrain(TEXT("ProceduralTerrain"));
+	const FName TerrainShape(TEXT("TerrainShape"));
 	const FName TerrainContext(TEXT("TerrainContext"));
 	const FName ProcessMasks(TEXT("ProcessMasks"));
 	const FName HydraulicErosion(TEXT("HydraulicErosion"));
@@ -119,7 +120,7 @@ uint32 FGaeaTerrainRecipe::GetDeterministicHash() const
 	}
 
 	TArray<const FGaeaTerrainConnection*> SortedConnections;
-	for (const FGaeaTerrainConnection& Connection : Connections) SortedConnections.Add(&Connection);
+	for (const FGaeaTerrainConnection& Connection : Recipe.Connections) SortedConnections.Add(&Connection);
 	SortedConnections.Sort([](const FGaeaTerrainConnection& A, const FGaeaTerrainConnection& B)
 	{
 		if (A.ToNode != B.ToNode) return A.ToNode < B.ToNode;
