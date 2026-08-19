@@ -15,11 +15,13 @@ struct CODENAMEGAEACORE_API FGaeaTerrainEvaluationResult
 	bool bSuccess = false;
 	FString Error;
 	uint32 RecipeHash = 0;
+	float HeightScale = 1000.0f;
 	FGaeaTerrainDataset Dataset;
 };
 
 struct CODENAMEGAEACORE_API FGaeaTerrainNodeEvaluation
 {
+	float HeightScale = 1000.0f;
 	FGaeaTerrainDataset Dataset;
 };
 
