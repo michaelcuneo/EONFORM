@@ -13,6 +13,10 @@
 #include "SGaeaTerrainInspector.h"
 #include "ToolMenus.h"
 #include "Widgets/Docking/SDockTab.h"
+#include "Widgets/Input/SButton.h"
+#include "Widgets/Layout/SBorder.h"
+#include "Widgets/SBoxPanel.h"
+#include "Widgets/Text/STextBlock.h"
 
 #define LOCTEXT_NAMESPACE "FCodenameGaeaEditorModule"
 
@@ -69,12 +73,6 @@ private:
 			LOCTEXT("OpenCodenameGaeaTooltip", "Open the Codename Gaea terrain dataset inspector."),
 			FSlateIcon(),
 			FUIAction(FExecuteAction::CreateRaw(this, &FCodenameGaeaEditorModule::OpenCodenameGaeaTab)));
-		Section.AddMenuEntry(
-			TEXT("BuildCodenameGaeaDynamicMesh"),
-			LOCTEXT("BuildCodenameGaeaDynamicMeshLabel", "Build Gaea Dynamic Mesh"),
-			LOCTEXT("BuildCodenameGaeaDynamicMeshTooltip", "Build or refresh a Dynamic Mesh actor from the most recently evaluated Codename Gaea graph."),
-			FSlateIcon(),
-			FUIAction(FExecuteAction::CreateRaw(this, &FCodenameGaeaEditorModule::BuildDynamicMesh)));
 	}
 
 	void OpenCodenameGaeaTab()
@@ -143,7 +141,41 @@ private:
 		return SNew(SDockTab)
 			.TabRole(ETabRole::NomadTab)
 			[
-				SNew(SGaeaTerrainInspector)
+				SNew(SVerticalBox)
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(10.0f, 8.0f, 10.0f, 0.0f)
+				[
+					SNew(SBorder)
+					.Padding(FMargin(8.0f, 6.0f))
+					[
+						SNew(SHorizontalBox)
+						+ SHorizontalBox::Slot()
+						.FillWidth(1.0f)
+						.VAlign(VAlign_Center)
+						[
+							SNew(STextBlock)
+							.Text(LOCTEXT("TerrainOutputLabel", "Terrain Output"))
+						]
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						[
+							SNew(SButton)
+							.Text(LOCTEXT("GenerateDynamicMeshLabel", "Generate Dynamic Mesh"))
+							.ToolTipText(LOCTEXT("GenerateDynamicMeshTooltip", "Build or refresh a Dynamic Mesh actor from the most recently evaluated Codename Gaea graph."))
+							.OnClicked_Lambda([this]()
+							{
+								BuildDynamicMesh();
+								return FReply::Handled();
+							})
+						]
+					]
+				]
+				+ SVerticalBox::Slot()
+				.FillHeight(1.0f)
+				[
+					SNew(SGaeaTerrainInspector)
+				]
 			];
 	}
 
