@@ -2,6 +2,7 @@
 
 #include "GaeaTerrainFieldNames.h"
 #include "TerrainContext.h"
+#include "TerrainErosion.h"
 #include "TerrainGeology.h"
 #include "TerrainHeightField.h"
 
@@ -9,7 +10,8 @@ FGaeaTerrainDataset FTerrainDatasetBridge::Build(
 	const FTerrainHeightField& HeightField,
 	const FTerrainContextMaps* Context,
 	const FTerrainProcessMasks* ProcessMasks,
-	const FTerrainGeologyMaps* Geology)
+	const FTerrainGeologyMaps* Geology,
+	const FTerrainHydraulicErosionResult* HydraulicErosion)
 {
 	FGaeaTerrainDataset Dataset;
 	if (!HeightField.IsValid())
@@ -45,6 +47,13 @@ FGaeaTerrainDataset FTerrainDatasetBridge::Build(
 		Dataset.SetScalarField(Geology->RockHardnessField);
 		Dataset.SetScalarField(Geology->WeatheringField);
 		Dataset.SetScalarField(Geology->SoilDepthField);
+	}
+
+	if (HydraulicErosion && HydraulicErosion->IsValid())
+	{
+		Dataset.SetScalarField(HydraulicErosion->Wear);
+		Dataset.SetScalarField(HydraulicErosion->Deposits);
+		Dataset.SetScalarField(HydraulicErosion->Flow);
 	}
 
 	return Dataset;
