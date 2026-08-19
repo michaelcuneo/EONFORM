@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "GaeaScalarField.h"
 
 struct FTerrainHeightField
 {
@@ -33,5 +34,37 @@ struct FTerrainHeightField
 	bool IsValid() const
 	{
 		return Resolution >= 2 && Data.Num() == Resolution * Resolution;
+	}
+
+	FGaeaGridDomain GetGaeaDomain() const
+	{
+		if (!IsValid())
+		{
+			return FGaeaGridDomain();
+		}
+
+		const double HalfWorldSize = static_cast<double>(WorldSize) * 0.5;
+		return FGaeaGridDomain::Make(
+			FIntPoint(Resolution, Resolution),
+			FVector2d(-HalfWorldSize, -HalfWorldSize),
+			FVector2d(HalfWorldSize, HalfWorldSize));
+	}
+
+	FGaeaScalarField ToGaeaScalarField(FName FieldName = TEXT("Height")) const
+	{
+		FGaeaScalarField Field;
+		if (!IsValid())
+		{
+			return Field;
+		}
+
+		FGaeaFieldDescriptor Descriptor;
+		Descriptor.Name = FieldName;
+		Descriptor.Unit = EGaeaFieldUnit::Normalized;
+		Descriptor.Interpolation = EGaeaInterpolation::Bilinear;
+
+		Field.Initialize(GetGaeaDomain(), Descriptor);
+		Field.Values = Data;
+		return Field;
 	}
 };
