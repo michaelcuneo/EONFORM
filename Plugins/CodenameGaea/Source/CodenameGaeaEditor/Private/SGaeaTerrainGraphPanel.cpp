@@ -35,34 +35,6 @@ namespace
 			Factory,
 			TEXT("CodenameGaea")));
 	}
-
-	void ApplyDescriptorDefaults(FGaeaTerrainNode& Node)
-	{
-		FGaeaTerrainNodeDescriptor Descriptor;
-		if (!FGaeaTerrainNodeDescriptorRegistry::Get(Node.Type, Descriptor))
-		{
-			return;
-		}
-
-		for (const FGaeaTerrainParameterDescriptor& Parameter : Descriptor.Parameters)
-		{
-			switch (Parameter.Type)
-			{
-			case EGaeaTerrainParameterType::Number:
-				Node.NumericParameters.Add(Parameter.Name, Parameter.DefaultNumber);
-				break;
-			case EGaeaTerrainParameterType::Integer:
-				Node.IntegerParameters.Add(Parameter.Name, Parameter.DefaultInteger);
-				break;
-			case EGaeaTerrainParameterType::Boolean:
-				Node.BoolParameters.Add(Parameter.Name, Parameter.DefaultBoolean);
-				break;
-			case EGaeaTerrainParameterType::Name:
-				Node.NameParameters.Add(Parameter.Name, Parameter.DefaultName);
-				break;
-			}
-		}
-	}
 }
 
 void SGaeaTerrainGraphPanel::Construct(const FArguments& InArgs)
@@ -187,30 +159,8 @@ TSharedRef<SWidget> SGaeaTerrainGraphPanel::CreateGraphEditorWidget()
 void SGaeaTerrainGraphPanel::BuildDefaultRecipeAndGraph()
 {
 	FGaeaTerrainRecipe Recipe;
-
-	FGaeaTerrainNode SourceNode;
-	SourceNode.Id = FGuid(0x10101010, 0x20202020, 0x30303030, 0x40404040);
-	SourceNode.Type = GaeaTerrainNodeTypes::ProceduralTerrain;
-	ApplyDescriptorDefaults(SourceNode);
-
-	FGaeaTerrainNode ErosionNode;
-	ErosionNode.Id = FGuid(0x50505050, 0x60606060, 0x70707070, 0x80808080);
-	ErosionNode.Type = GaeaTerrainNodeTypes::HydraulicErosion;
-	ApplyDescriptorDefaults(ErosionNode);
-
-	Recipe.Nodes.Add(SourceNode);
-	Recipe.Nodes.Add(ErosionNode);
-
-	FGaeaTerrainConnection Connection;
-	Connection.FromNode = SourceNode.Id;
-	Connection.FromOutput = TEXT("Terrain");
-	Connection.ToNode = ErosionNode.Id;
-	Connection.ToInput = TEXT("Terrain");
-	Recipe.Connections.Add(Connection);
-	Recipe.OutputNode = ErosionNode.Id;
-
 	BuildEditorGraphFromRecipe(Recipe, nullptr);
-	StatusText = FText::FromString(TEXT("Unsaved procedural graph. Connect the final terrain to Terrain Output, then Evaluate Graph."));
+	StatusText = FText::FromString(TEXT("Empty graph evaluates as flat terrain. Add terrain nodes and connect the final result to Terrain Output."));
 }
 
 void SGaeaTerrainGraphPanel::BuildEditorGraphFromRecipe(
@@ -345,11 +295,6 @@ bool SGaeaTerrainGraphPanel::BuildRecipeFromEditorGraph(
 		}
 	}
 
-	if (TerrainNodes.IsEmpty())
-	{
-		OutError = TEXT("The terrain graph contains no terrain nodes.");
-		return false;
-	}
 	if (!TerrainOutputNode)
 	{
 		OutError = TEXT("The terrain graph has no Terrain Output node.");
@@ -357,9 +302,25 @@ bool SGaeaTerrainGraphPanel::BuildRecipeFromEditorGraph(
 	}
 
 	UEdGraphPin* TerrainOutputInput = TerrainOutputNode->FindPin(TEXT("Terrain"), EGPD_Input);
-	if (!TerrainOutputInput || TerrainOutputInput->LinkedTo.Num() != 1)
+	if (!TerrainOutputInput)
 	{
-		OutError = TEXT("Terrain Output must have exactly one Terrain connection.");
+		OutError = TEXT("Terrain Output has no input pin.");
+		return false;
+	}
+
+	if (TerrainNodes.IsEmpty())
+	{
+		if (!TerrainOutputInput->LinkedTo.IsEmpty())
+		{
+			OutError = TEXT("Terrain Output has an invalid connection.");
+			return false;
+		}
+		return OutRecipe.Validate(&OutError);
+	}
+
+	if (TerrainOutputInput->LinkedTo.Num() != 1)
+	{
+		OutError = TEXT("Terrain Output must have exactly one Terrain connection when the graph contains terrain nodes.");
 		return false;
 	}
 
@@ -634,7 +595,7 @@ void SGaeaTerrainGraphPanel::RebuildParameterPanel()
 		.AutoHeight()
 		[
 			SNew(STextBlock)
-			.Text(FText::FromString(TEXT("Connect the terrain you want to evaluate and materialize to this node.")))
+			.Text(FText::FromString(TEXT("When unconnected, the graph evaluates as flat terrain. Connect a terrain result here to use it as the graph output.")))
 			.AutoWrapText(true)
 		];
 		return;
