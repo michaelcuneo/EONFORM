@@ -124,7 +124,7 @@ namespace
 		return PublishTerrain(Out, MoveTemp(Dataset), FMath::Max(Context.HeightScale, 1.0f), Error);
 	}
 
-	bool EvaluateProceduralTerrain(
+	bool EvaluatePerlinNoise(
 		const FGaeaTerrainNode& Node,
 		const FGaeaTerrainNodeInputs&,
 		const FGaeaTerrainEvaluationContext&,
@@ -149,7 +149,7 @@ namespace
 			FVector2d(HalfWorldSize, HalfWorldSize));
 		if (!Domain.IsValid())
 		{
-			Error = TEXT("ProceduralTerrain produced an invalid grid domain.");
+			Error = TEXT("PerlinNoise produced an invalid grid domain.");
 			return false;
 		}
 
@@ -176,7 +176,7 @@ namespace
 		FGaeaTerrainDataset Dataset;
 		if (!Dataset.SetScalarField(MoveTemp(Height)))
 		{
-			Error = TEXT("ProceduralTerrain could not publish its Height field.");
+			Error = TEXT("PerlinNoise could not publish its Height field.");
 			return false;
 		}
 		return PublishTerrain(Out, MoveTemp(Dataset), HeightScale, Error);
@@ -470,7 +470,7 @@ void FGaeaTerrainNodeRegistry::RegisterBuiltIns()
 {
 	FScopeLock Lock(&RegistryMutex);
 	if (!Registry.Contains(GaeaTerrainNodeTypes::SourceDataset)) Registry.Add(GaeaTerrainNodeTypes::SourceDataset, EvaluateSourceDataset);
-	if (!Registry.Contains(GaeaTerrainNodeTypes::ProceduralTerrain)) Registry.Add(GaeaTerrainNodeTypes::ProceduralTerrain, EvaluateProceduralTerrain);
+	if (!Registry.Contains(GaeaTerrainNodeTypes::PerlinNoise)) Registry.Add(GaeaTerrainNodeTypes::PerlinNoise, EvaluatePerlinNoise);
 	if (!Registry.Contains(GaeaTerrainNodeTypes::TerrainShape)) Registry.Add(GaeaTerrainNodeTypes::TerrainShape, EvaluateTerrainShapeNode);
 	if (!Registry.Contains(GaeaTerrainNodeTypes::TerrainContext)) Registry.Add(GaeaTerrainNodeTypes::TerrainContext, EvaluateTerrainContextNode);
 	if (!Registry.Contains(GaeaTerrainNodeTypes::Geology)) Registry.Add(GaeaTerrainNodeTypes::Geology, EvaluateGeologyNode);
