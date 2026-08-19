@@ -12,6 +12,11 @@ namespace GaeaEditorGraphPins
 	extern const FName Terrain;
 }
 
+namespace GaeaEditorNodeTypes
+{
+	extern const FName TerrainOutput;
+}
+
 UCLASS()
 class UGaeaEditorGraph : public UEdGraph
 {
@@ -54,7 +59,8 @@ public:
 	virtual bool CanUserDeleteNode() const override;
 	virtual bool CanDuplicateNode() const override
 	{
-		return RecipeNodeType != GaeaTerrainNodeTypes::SourceDataset;
+		return RecipeNodeType != GaeaTerrainNodeTypes::SourceDataset
+			&& RecipeNodeType != GaeaEditorNodeTypes::TerrainOutput;
 	}
 	virtual void PrepareForCopying() override;
 	virtual void PostPasteNode() override;
