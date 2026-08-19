@@ -101,6 +101,26 @@ void FGaeaTerrainNodeDescriptorRegistry::RegisterBuiltIns()
 		DescriptorRegistry.Add(Source.Type, MoveTemp(Source));
 	}
 
+	if (!DescriptorRegistry.Contains(GaeaTerrainNodeTypes::TerrainShape))
+	{
+		FGaeaTerrainNodeDescriptor Shape;
+		Shape.Type = GaeaTerrainNodeTypes::TerrainShape;
+		Shape.DisplayName = TEXT("Terrain Shape");
+		Shape.Category = TEXT("Shape");
+		Shape.Description = TEXT("Sculpts incoming height using macro form, regional mountains, warp, ridges, foothills, valleys, and plains.");
+		Shape.Inputs.Add(TerrainPort(TEXT("Terrain")));
+		Shape.Outputs.Add(TerrainPort(TEXT("Terrain")));
+		Shape.Parameters.Add(IntegerParameter(TEXT("Seed"), TEXT("Seed"), 1337, -2147483647, 2147483647));
+		Shape.Parameters.Add(NumberParameter(TEXT("MacroStrength"), TEXT("Macro Strength"), 0.75, 0.0, 2.0));
+		Shape.Parameters.Add(NumberParameter(TEXT("MountainThreshold"), TEXT("Mountain Threshold"), 0.12, -1.0, 1.0));
+		Shape.Parameters.Add(NumberParameter(TEXT("WarpStrength"), TEXT("Warp Strength (cm)"), 4500.0, 0.0, 25000.0));
+		Shape.Parameters.Add(NumberParameter(TEXT("RidgeStrength"), TEXT("Ridge Strength"), 0.55, 0.0, 2.0));
+		Shape.Parameters.Add(NumberParameter(TEXT("FoothillStrength"), TEXT("Foothill Strength"), 0.28, 0.0, 1.0));
+		Shape.Parameters.Add(NumberParameter(TEXT("ValleyDepth"), TEXT("Valley Depth"), 0.16, 0.0, 1.0));
+		Shape.Parameters.Add(NumberParameter(TEXT("PlainsStrength"), TEXT("Plains Strength"), 0.55, 0.0, 1.0));
+		DescriptorRegistry.Add(Shape.Type, MoveTemp(Shape));
+	}
+
 	if (!DescriptorRegistry.Contains(GaeaTerrainNodeTypes::TerrainContext))
 	{
 		FGaeaTerrainNodeDescriptor Context;
