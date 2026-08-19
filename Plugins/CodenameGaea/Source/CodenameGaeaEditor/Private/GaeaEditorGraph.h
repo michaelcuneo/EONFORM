@@ -43,7 +43,7 @@ public:
 	virtual FText GetNodeTitle(ENodeTitleType::Type TitleType) const override;
 	virtual FText GetTooltipText() const override;
 	virtual bool CanUserDeleteNode() const override;
-	virtual bool CanDuplicateNode() const override { return true; }
+	virtual bool CanDuplicateNode() const override;
 	virtual void PrepareForCopying() override;
 	virtual void PostPasteNode() override;
 };
