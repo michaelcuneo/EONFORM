@@ -439,7 +439,13 @@ void ATerrainGeneratorActor::BuildTerrain()
 		&ProcessMasks,
 		&GeologyMaps,
 		HydraulicErosionResult.IsValid() ? &HydraulicErosionResult : nullptr);
-	FGaeaTerrainDatasetRegistry::Publish(TEXT("LegacyTerrainGenerator"), MoveTemp(Dataset));
+
+	FGaeaTerrainDatasetMetadata DatasetMetadata;
+	DatasetMetadata.HeightScale = HeightScale;
+	FGaeaTerrainDatasetRegistry::Publish(
+		TEXT("LegacyTerrainGenerator"),
+		MoveTemp(Dataset),
+		DatasetMetadata);
 }
 
 void ATerrainGeneratorActor::BuildRiverWaterMesh(
