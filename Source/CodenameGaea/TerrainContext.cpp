@@ -1,8 +1,5 @@
 #include "TerrainContext.h"
 
-#include "GaeaTerrainDatasetRegistry.h"
-#include "TerrainDatasetBridge.h"
-
 namespace
 {
 	float SmoothStep01(float Value)
@@ -177,7 +174,4 @@ void FTerrainContext::BuildProcessMasks(
 		const float EvaporationNatural = FMath::Clamp(0.25f + Lowland * Settings.EvaporationLowlandBias + Plains * 0.25f - Concavity * 0.25f, 0.0f, 1.0f);
 		OutMasks.Evaporation[Index] = FMath::Lerp(1.0f, EvaporationNatural, HydraulicRegionality);
 	}
-
-	FGaeaTerrainDataset Dataset = FTerrainDatasetBridge::Build(HeightField, &Context, &OutMasks, nullptr);
-	FGaeaTerrainDatasetRegistry::Publish(TEXT("LegacyTerrainGenerator"), MoveTemp(Dataset));
 }
