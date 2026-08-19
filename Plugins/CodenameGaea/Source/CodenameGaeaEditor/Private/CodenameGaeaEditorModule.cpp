@@ -1,3 +1,73 @@
 #include "Modules/ModuleManager.h"
 
-IMPLEMENT_MODULE(FDefaultModuleImpl, CodenameGaeaEditor)
+#include "Framework/Docking/TabManager.h"
+#include "SGaeaTerrainInspector.h"
+#include "ToolMenus.h"
+#include "Widgets/Docking/SDockTab.h"
+
+#define LOCTEXT_NAMESPACE "FCodenameGaeaEditorModule"
+
+namespace
+{
+	const FName CodenameGaeaTabName(TEXT("CodenameGaea"));
+}
+
+class FCodenameGaeaEditorModule : public IModuleInterface
+{
+public:
+	virtual void StartupModule() override
+	{
+		FGlobalTabmanager::Get()->RegisterNomadTabSpawner(
+			CodenameGaeaTabName,
+			FOnSpawnTab::CreateRaw(this, &FCodenameGaeaEditorModule::SpawnCodenameGaeaTab))
+			.SetDisplayName(LOCTEXT("CodenameGaeaTabTitle", "Codename Gaea"))
+			.SetTooltipText(LOCTEXT("CodenameGaeaTabTooltip", "Open the Codename Gaea terrain dataset inspector."))
+			.SetMenuType(ETabSpawnerMenuType::Hidden);
+
+		UToolMenus::RegisterStartupCallback(
+			FSimpleMulticastDelegate::FDelegate::CreateRaw(this, &FCodenameGaeaEditorModule::RegisterMenus));
+	}
+
+	virtual void ShutdownModule() override
+	{
+		UToolMenus::UnRegisterStartupCallback(this);
+		UToolMenus::UnregisterOwner(this);
+
+		if (FSlateApplication::IsInitialized())
+		{
+			FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(CodenameGaeaTabName);
+		}
+	}
+
+private:
+	void RegisterMenus()
+	{
+		FToolMenuOwnerScoped OwnerScoped(this);
+		UToolMenu* Menu = UToolMenus::Get()->ExtendMenu(TEXT("LevelEditor.MainMenu.Tools"));
+		FToolMenuSection& Section = Menu->FindOrAddSection(TEXT("CodenameGaea"), LOCTEXT("CodenameGaeaSection", "Codename Gaea"));
+		Section.AddMenuEntry(
+			TEXT("OpenCodenameGaea"),
+			LOCTEXT("OpenCodenameGaeaLabel", "Codename Gaea"),
+			LOCTEXT("OpenCodenameGaeaTooltip", "Open the Codename Gaea terrain dataset inspector."),
+			FSlateIcon(),
+			FUIAction(FExecuteAction::CreateRaw(this, &FCodenameGaeaEditorModule::OpenCodenameGaeaTab)));
+	}
+
+	void OpenCodenameGaeaTab()
+	{
+		FGlobalTabmanager::Get()->TryInvokeTab(CodenameGaeaTabName);
+	}
+
+	TSharedRef<SDockTab> SpawnCodenameGaeaTab(const FSpawnTabArgs& Args)
+	{
+		return SNew(SDockTab)
+			.TabRole(ETabRole::NomadTab)
+			[
+				SNew(SGaeaTerrainInspector)
+			];
+	}
+};
+
+IMPLEMENT_MODULE(FCodenameGaeaEditorModule, CodenameGaeaEditor)
+
+#undef LOCTEXT_NAMESPACE
