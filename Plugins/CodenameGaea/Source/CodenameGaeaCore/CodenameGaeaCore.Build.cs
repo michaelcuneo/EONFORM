@@ -8,7 +8,8 @@ public class CodenameGaeaCore : ModuleRules
 
         PublicDependencyModuleNames.AddRange(new string[]
         {
-            "Core"
+            "Core",
+            "CoreUObject"
         });
     }
 }
