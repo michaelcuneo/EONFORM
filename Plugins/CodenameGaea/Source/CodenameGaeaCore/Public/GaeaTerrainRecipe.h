@@ -7,10 +7,6 @@ namespace GaeaTerrainNodeTypes
 {
 	CODENAMEGAEACORE_API extern const FName SourceDataset;
 	CODENAMEGAEACORE_API extern const FName PerlinNoise;
-
-	/** Legacy serialized node type retained so pre-rename graph assets can migrate cleanly. */
-	CODENAMEGAEACORE_API extern const FName ProceduralTerrain;
-
 	CODENAMEGAEACORE_API extern const FName TerrainShape;
 	CODENAMEGAEACORE_API extern const FName TerrainContext;
 	CODENAMEGAEACORE_API extern const FName Geology;
