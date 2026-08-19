@@ -18,95 +18,146 @@ Compiled successfully in Unreal Engine 5.8 by the project owner:
 - `FGaeaTerrainDataset` and canonical field names
 - runtime `FGaeaTerrainDatasetRegistry`
 - first visible `Tools -> Codename Gaea` dockable dataset inspector
-
-The editor surface is now visibly available and reads real generated terrain datasets through the runtime registry without depending on the host project's terrain actor class.
+- first-class hydraulic erosion Height/Wear/Deposits/Flow outputs
 
 ## Runtime island requirement
 
 Orakai players will create their own islands in a packaged game and then play on them.
 
-The graph/recipe evaluator therefore remains runtime-safe. Orakai will apply a constrained generation policy before evaluation rather than exposing unrestricted professional terrain authoring. See `Docs/ARCHITECTURE.md` and `Docs/ORAKAI_GENERATION_POLICY.md`.
+The recipe/evaluator is therefore runtime-safe and editor-independent. Orakai will apply a constrained generation policy before evaluation rather than exposing unrestricted professional terrain authoring. See `Docs/ARCHITECTURE.md` and `Docs/ORAKAI_GENERATION_POLICY.md`.
 
-## Current checkpoint: hydraulic erosion multi-output
+## Current checkpoint: runtime-safe recipe and graph evaluator
 
-Hydraulic erosion now exposes first-class outputs matching the architecture direction:
+This checkpoint begins replacing the monolithic host-project generation architecture with a reusable runtime graph engine in `CodenameGaeaCore`.
+
+### Core hydraulic erosion ownership
+
+Hydraulic erosion now has a runtime-safe Core implementation:
+
+- `FGaeaHydraulicErosionSettings`
+- `FGaeaHydraulicErosionResult`
+- `FGaeaHydraulicErosion::ApplyInPlace()`
+- `FGaeaHydraulicErosion::Evaluate()`
+- `FGaeaHydraulicErosion::EvaluateWithArrays()`
+
+The legacy project-level `FTerrainErosion` hydraulic API now delegates to this Core implementation. There is one authoritative hydraulic solver. Thermal erosion remains in the legacy project module for now.
+
+### Runtime recipe data
+
+`FGaeaTerrainRecipe` is plain runtime-safe data and contains:
+
+- recipe version
+- output node id
+- stable `FGuid` node ids
+- stable `FName` node type ids
+- numeric/integer/bool/name parameter maps
+- directed connections with named input/output ports
+
+The recipe does not depend on `UObject`, `UEdGraph`, Slate, GraphEditor, UnrealEd, or Mesh Terrain.
+
+Validation currently rejects:
+
+- invalid/duplicate node ids
+- missing output nodes
+- invalid connections
+- connections referencing missing nodes
+- multiple edges targeting the same named input
+
+Cycle detection occurs during evaluation.
+
+### Deterministic recipe identity
+
+`FGaeaTerrainRecipe::GetDeterministicHash()` hashes:
+
+- recipe version
+- output node
+- node ids and node types
+- typed parameters in lexical key order
+- connections in stable order
+
+Node and parameter storage ordering therefore does not change recipe identity. This is the first cache-identity primitive; future cache keys will additionally incorporate node implementation versions, input hashes, and evaluation domain/resolution.
+
+### Runtime node registry
+
+`FGaeaTerrainNodeRegistry` maps stable node type names to pure runtime evaluation functions.
+
+Built-in node types in this first proof slice:
 
 ```text
-Height
-Wear
-Deposits
-Flow
+SourceDataset
+HydraulicErosion
 ```
 
-### Output semantics
+The registry allows new node implementations to be added without changing recipe storage or making the recipe depend on editor classes.
 
-- `Height` — post-hydraulic normalized terrain height
-- `Wear` — cumulative normalized material removed from each sample during the hydraulic simulation
-- `Deposits` — cumulative normalized material deposited at each sample during the hydraulic simulation
-- `Flow` — cumulative moved-water accumulation used by the existing hydrology pipeline
+### Runtime evaluator
 
-`Wear`, `Deposits`, and `Flow` are observations of values already produced by the existing solver. The erosion/deposition formulas themselves are unchanged.
+`FGaeaTerrainEvaluator`:
 
-### API shape
+- validates the recipe
+- recursively resolves dependencies
+- detects cycles
+- memoizes each evaluated node for the duration of a graph run
+- resolves node implementation through the runtime registry
+- returns a final `FGaeaTerrainDataset`
+- preserves the input source dataset as immutable graph input
+- reports recipe hash and evaluation errors
 
-`FTerrainErosion::ApplyHydraulic(...)` remains the legacy mutating compatibility API. It now optionally exposes wear and deposit arrays in addition to the existing flow accumulation output.
+The first executable graph is:
 
-`FTerrainErosion::EvaluateHydraulic(...)` is the graph-facing direction:
+```text
+SourceDataset
+      |
+      v
+HydraulicErosion
+      |
+      v
+FGaeaTerrainDataset
+  Height
+  Wear
+  Deposits
+  Flow
+  + preserved input fields
+```
 
-- accepts a const input heightfield
-- copies the input internally
-- runs the same hydraulic solver used by the legacy path
-- returns `FTerrainHydraulicErosionResult`
-- does not mutate its input
-
-`FTerrainHydraulicErosionResult` owns first-class `FGaeaScalarField` values for Height/Wear/Deposits/Flow.
-
-### Dataset publication
-
-The temporary legacy dataset publication has been moved out of `FTerrainContext::BuildProcessMasks()`.
-
-`ATerrainGeneratorActor::BuildTerrain()` now owns the end-of-generation publication point. It publishes one coherent dataset after hydraulic erosion, river carving, and mesh generation.
-
-The published dataset now includes:
-
-- final Height
-- context fields
-- process-mask fields
-- geology fields
-- Wear/Deposits/Flow when hydraulic erosion is enabled and produces a valid result
-
-This means the existing `Tools -> Codename Gaea` inspector should show the erosion outputs immediately after regeneration and Refresh.
+The HydraulicErosion node consumes the dataset Height field and automatically uses compatible Rainfall, HydraulicErosion, Deposition, Evaporation, RockHardness, and SoilDepth fields when present.
 
 ## Automated coverage
 
-The new `CodenameGaea.Legacy.Erosion.HydraulicOutputs` regression test verifies:
+New Core graph tests cover:
 
-- `EvaluateHydraulic()` succeeds on valid input
-- the returned multi-output result is valid
-- evaluation does not mutate the input heightfield
-- stable output names Height/Wear/Deposits/Flow
-- legacy `ApplyHydraulic()` and `EvaluateHydraulic()` produce matching Height, Flow, Wear, and Deposits values for identical inputs/settings
+- valid recipe validation
+- deterministic hash independence from node storage order
+- rejection of duplicate input connections
+- runtime SourceDataset -> HydraulicErosion evaluation
+- Height/Wear/Deposits/Flow output presence
+- source-dataset immutability
+- graph cycle detection and error reporting
 
-Existing core/dataset/legacy field tests remain in place.
+Existing spatial, dataset, semantic-field, and legacy hydraulic compatibility tests remain in place.
 
 ## Validation required before next step
 
-This checkpoint changes public headers and cross-module canonical field symbols, so use a cold build.
+This checkpoint adds multiple public Core types and new Core `.cpp` implementations, and changes the legacy hydraulic implementation to call into Core. Use a cold build rather than Live Coding.
 
 1. Pull `agent/mesh-terrain-foundation`.
 2. Close Unreal Editor.
 3. Build `CodenameGaeaEditor` / Development Editor / Win64.
-4. Open Unreal and regenerate the terrain actor.
-5. Open `Tools -> Codename Gaea` and press Refresh.
-6. With hydraulic erosion enabled, confirm `Wear`, `Deposits`, and `Flow` appear and preview correctly.
-7. Confirm geology fields are now present in the final snapshot as well.
-8. Confirm visible terrain remains unchanged.
-9. Run `CodenameGaea.Legacy.Erosion.HydraulicOutputs` if convenient.
+4. Open Unreal and confirm the existing terrain actor still generates normally.
+5. Confirm `Tools -> Codename Gaea` still displays final fields including Wear/Deposits/Flow.
+6. Run automation tests matching `CodenameGaea.Core.Graph` if convenient.
+7. Run `CodenameGaea.Legacy.Erosion.HydraulicOutputs` if convenient to verify the compatibility wrapper remains identical.
 
 ## Next implementation step
 
-After this checkpoint is verified, begin the runtime-safe recipe/graph evaluation foundation.
+After this graph-runtime checkpoint compiles, the next visible milestone is the first real professional graph authoring surface.
 
-The first graph milestone should be deliberately small: runtime node identifiers/descriptors, typed input/output ports, a deterministic recipe representation, and a minimal evaluator capable of expressing a short terrain chain without relying on `UEdGraph` or editor-only APIs.
+The editor will create a visual graph view over `FGaeaTerrainRecipe`, beginning with the two proven runtime node types rather than inventing a separate editor execution model. The first goal is to visually author and execute:
 
-The professional editor graph will later be a visual authoring view over that same runtime recipe/evaluator.
+```text
+Source Dataset -> Hydraulic Erosion
+```
+
+and publish its evaluated dataset into the existing Codename Gaea inspector.
+
+After that, expand the runtime node library and migrate the remaining legacy terrain stages out of `ATerrainGeneratorActor` incrementally.
