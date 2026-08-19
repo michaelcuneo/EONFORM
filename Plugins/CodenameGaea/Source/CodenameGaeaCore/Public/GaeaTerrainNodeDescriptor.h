@@ -39,6 +39,7 @@ struct CODENAMEGAEACORE_API FGaeaTerrainNodeDescriptor
 	FString DisplayName;
 	FString Category;
 	FString Description;
+	bool bHiddenInGraph = false;
 	TArray<FGaeaTerrainPortDescriptor> Inputs;
 	TArray<FGaeaTerrainPortDescriptor> Outputs;
 	TArray<FGaeaTerrainParameterDescriptor> Parameters;
