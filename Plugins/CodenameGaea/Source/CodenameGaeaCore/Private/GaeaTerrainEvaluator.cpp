@@ -3,6 +3,7 @@
 #include "GaeaGridDomain.h"
 #include "GaeaHydraulicErosion.h"
 #include "GaeaTerrainContext.h"
+#include "GaeaTerrainDerivedData.h"
 #include "GaeaTerrainFieldNames.h"
 #include "GaeaTerrainGeology.h"
 #include "GaeaTerrainNoise.h"
@@ -236,9 +237,20 @@ namespace
 			Error = TEXT("HydraulicErosion requires a Terrain input.");
 			return false;
 		}
+
 		const FGaeaTerrainNodeEvaluation& Input = **InputPtr;
-		const FGaeaTerrainDataset& InputDataset = Input.Dataset;
-		const FGaeaScalarField* Height = InputDataset.FindScalarField(GaeaTerrainFieldNames::Height);
+		FGaeaTerrainDataset PreparedDataset = Input.Dataset;
+		FGaeaTerrainDerivedDataSettings DerivedSettings;
+		if (!FGaeaTerrainDerivedData::EnsureHydraulicInputs(
+			PreparedDataset,
+			FMath::Max(Input.HeightScale, 1.0f),
+			DerivedSettings,
+			&Error))
+		{
+			return false;
+		}
+
+		const FGaeaScalarField* Height = PreparedDataset.FindScalarField(GaeaTerrainFieldNames::Height);
 		if (!Height)
 		{
 			Error = TEXT("HydraulicErosion input dataset has no Height field.");
@@ -261,18 +273,18 @@ namespace
 			FMath::Max(Input.HeightScale, 1.0f),
 			Settings,
 			Result,
-			InputDataset.FindScalarField(GaeaTerrainFieldNames::Rainfall),
-			InputDataset.FindScalarField(GaeaTerrainFieldNames::HydraulicErosion),
-			InputDataset.FindScalarField(GaeaTerrainFieldNames::Deposition),
-			InputDataset.FindScalarField(GaeaTerrainFieldNames::Evaporation),
-			InputDataset.FindScalarField(GaeaTerrainFieldNames::RockHardness),
-			InputDataset.FindScalarField(GaeaTerrainFieldNames::SoilDepth)))
+			PreparedDataset.FindScalarField(GaeaTerrainFieldNames::Rainfall),
+			PreparedDataset.FindScalarField(GaeaTerrainFieldNames::HydraulicErosion),
+			PreparedDataset.FindScalarField(GaeaTerrainFieldNames::Deposition),
+			PreparedDataset.FindScalarField(GaeaTerrainFieldNames::Evaporation),
+			PreparedDataset.FindScalarField(GaeaTerrainFieldNames::RockHardness),
+			PreparedDataset.FindScalarField(GaeaTerrainFieldNames::SoilDepth)))
 		{
 			Error = TEXT("Hydraulic erosion evaluation failed.");
 			return false;
 		}
 
-		Out.Dataset = InputDataset;
+		Out.Dataset = MoveTemp(PreparedDataset);
 		Out.Dataset.SetScalarField(MoveTemp(Result.Height));
 		Out.Dataset.SetScalarField(MoveTemp(Result.Wear));
 		Out.Dataset.SetScalarField(MoveTemp(Result.Deposits));
