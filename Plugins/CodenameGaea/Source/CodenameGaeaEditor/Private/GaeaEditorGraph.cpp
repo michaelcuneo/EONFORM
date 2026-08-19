@@ -11,6 +11,7 @@ namespace GaeaEditorNodeTypes
 namespace
 {
 	const FName TerrainPinCategory(TEXT("GaeaTerrain"));
+	const FName TerrainPinName(TEXT("Terrain"));
 
 	bool CanReachNode(const UEdGraphNode* StartNode, const UEdGraphNode* TargetNode)
 	{
@@ -105,7 +106,7 @@ void UGaeaEditorGraphNode::AllocateDefaultPins()
 	FCreatePinParams PinParams;
 	if (RecipeNodeType == GaeaEditorNodeTypes::TerrainOutput)
 	{
-		CreatePin(EGPD_Input, TerrainPinCategory, GaeaEditorGraphPins::Terrain, PinParams);
+		CreatePin(EGPD_Input, TerrainPinCategory, TerrainPinName, PinParams);
 		return;
 	}
 
