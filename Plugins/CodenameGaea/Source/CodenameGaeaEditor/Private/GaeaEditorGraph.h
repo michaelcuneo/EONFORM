@@ -4,6 +4,7 @@
 #include "EdGraph/EdGraph.h"
 #include "EdGraph/EdGraphNode.h"
 #include "EdGraph/EdGraphSchema.h"
+#include "GaeaTerrainRecipe.h"
 #include "GaeaEditorGraph.generated.h"
 
 UCLASS()
@@ -43,7 +44,10 @@ public:
 	virtual FText GetNodeTitle(ENodeTitleType::Type TitleType) const override;
 	virtual FText GetTooltipText() const override;
 	virtual bool CanUserDeleteNode() const override;
-	virtual bool CanDuplicateNode() const override;
+	virtual bool CanDuplicateNode() const override
+	{
+		return RecipeNodeType != GaeaTerrainNodeTypes::SourceDataset;
+	}
 	virtual void PrepareForCopying() override;
 	virtual void PostPasteNode() override;
 };
