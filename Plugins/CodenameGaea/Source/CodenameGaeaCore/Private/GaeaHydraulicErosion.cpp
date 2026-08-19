@@ -1,6 +1,7 @@
 #include "GaeaHydraulicErosion.h"
 
 #include "GaeaTerrainFieldNames.h"
+#include "HAL/PlatformTime.h"
 
 namespace
 {
@@ -41,6 +42,15 @@ namespace
 		}
 		return Field;
 	}
+
+	float SeedVariation(int32 RuntimeSeed, int32 Iteration, int32 Index)
+	{
+		uint32 Hash = GetTypeHash(RuntimeSeed);
+		Hash = HashCombineFast(Hash, GetTypeHash(Iteration));
+		Hash = HashCombineFast(Hash, GetTypeHash(Index));
+		const float Unit = static_cast<float>(Hash & 0xffffu) / 65535.0f;
+		return FMath::Lerp(0.9f, 1.1f, Unit);
+	}
 }
 
 bool FGaeaHydraulicErosionResult::IsValid() const
@@ -61,7 +71,9 @@ bool FGaeaHydraulicErosion::ApplyInPlace(
 	const TArray<float>* RockHardness,
 	const TArray<float>* SoilDepth,
 	TArray<float>* OutWear,
-	TArray<float>* OutDeposits)
+	TArray<float>* OutDeposits,
+	const TArray<float>* AreaMask,
+	const TArray<float>* InitialSediment)
 {
 	if (!HeightField.IsValid() || Settings.Iterations <= 0 || HeightScale <= UE_SMALL_NUMBER || HeightField.Domain.BorderSamples != 0)
 	{
@@ -76,21 +88,46 @@ bool FGaeaHydraulicErosion::ApplyInPlace(
 	const int32 NumCells = HeightField.Values.Num();
 	const FVector2d CellSize = HeightField.Domain.GetCellSize();
 	const float RepresentativeCellSize = static_cast<float>(FMath::Max(FMath::Min(CellSize.X, CellSize.Y), UE_SMALL_NUMBER));
-	const float HeightToSlope = HeightScale / RepresentativeCellSize;
+	const float FeatureScale = FMath::Clamp(Settings.FeatureScale, 0.25f, 8.0f);
+	const float HeightToSlope = HeightScale / (RepresentativeCellSize * FeatureScale);
 
-	const float Rainfall = FMath::Max(Settings.Rainfall, 0.0f);
-	const float FlowRate = FMath::Clamp(Settings.FlowRate, 0.0f, 1.0f);
-	const float CapacityFactor = FMath::Max(Settings.SedimentCapacity, 0.0f);
-	const float ErosionRate = FMath::Clamp(Settings.ErosionRate * FMath::Max(Settings.Strength, 0.0f), 0.0f, 4.0f);
+	const float AggressiveMultiplier = Settings.bAggressiveMode ? 1.75f : 1.0f;
+	const float Volume = FMath::Clamp(Settings.Volume, 0.0f, 4.0f);
+	const float Rainfall = FMath::Max(Settings.Rainfall * Volume, 0.0f);
+	const float FlowRate = FMath::Clamp(Settings.FlowRate * FMath::Sqrt(FMath::Max(Volume, 0.0f)), 0.0f, 1.0f);
+	const float Debris = FMath::Clamp(Settings.Debris, 0.0f, 1.0f);
+	const float CapacityFactor = FMath::Max(Settings.SedimentCapacity * FMath::Lerp(0.75f, 1.5f, Debris), 0.0f);
+	const float ErosionRate = FMath::Clamp(Settings.ErosionRate * FMath::Max(Settings.Strength, 0.0f) * AggressiveMultiplier, 0.0f, 8.0f);
 	const float DepositionRate = FMath::Clamp(Settings.DepositionRate, 0.0f, 1.0f);
 	const float Evaporation = FMath::Clamp(Settings.Evaporation, 0.0f, 1.0f);
 	const float MinimumSlope = FMath::Max(Settings.MinimumSlope, 0.0f);
-	const float RockSoftness = FMath::Clamp(Settings.RockSoftness, 0.0f, 1.0f);
+	const float BaseRockSoftness = FMath::Clamp(Settings.RockSoftness, 0.0f, 1.0f);
+	const float Downcutting = FMath::Clamp(Settings.Downcutting, 0.0f, 2.0f);
+	const float Inhibition = FMath::Clamp(Settings.Inhibition, 0.0f, 1.0f);
+	const float BaseLevel = FMath::Clamp(Settings.BaseLevel, -1.0f, 1.0f);
+	const float SedimentRemoval = FMath::Clamp(Settings.SedimentRemoval, 0.0f, 1.0f);
+	const bool bSelectErosionStrength = Settings.SelectiveProcessing == TEXT("ErosionStrength");
+	const bool bSelectRockSoftness = Settings.SelectiveProcessing == TEXT("RockSoftness");
+	const bool bSelectPrecipitation = Settings.SelectiveProcessing == TEXT("Precipitation");
+	const int32 RuntimeSeed = Settings.bDeterministic
+		? Settings.Seed
+		: Settings.Seed ^ static_cast<int32>(FPlatformTime::Cycles());
 
 	TArray<float> Water, Sediment, NextWater, NextSediment, Flow, Wear, Deposits;
-	Water.SetNumZeroed(NumCells); Sediment.SetNumZeroed(NumCells);
-	NextWater.SetNumZeroed(NumCells); NextSediment.SetNumZeroed(NumCells);
-	Flow.SetNumZeroed(NumCells); Wear.SetNumZeroed(NumCells); Deposits.SetNumZeroed(NumCells);
+	Water.SetNumZeroed(NumCells);
+	Sediment.SetNumZeroed(NumCells);
+	if (InitialSediment && InitialSediment->Num() == NumCells)
+	{
+		for (int32 I = 0; I < NumCells; ++I)
+		{
+			Sediment[I] = FMath::Max((*InitialSediment)[I], 0.0f);
+		}
+	}
+	NextWater.SetNumZeroed(NumCells);
+	NextSediment.SetNumZeroed(NumCells);
+	Flow.SetNumZeroed(NumCells);
+	Wear.SetNumZeroed(NumCells);
+	Deposits.SetNumZeroed(NumCells);
 
 	static const FIntPoint Neighbors[] = {
 		FIntPoint(-1, 0), FIntPoint(1, 0), FIntPoint(0, -1), FIntPoint(0, 1),
@@ -103,7 +140,9 @@ bool FGaeaHydraulicErosion::ApplyInPlace(
 	{
 		for (int32 I = 0; I < NumCells; ++I)
 		{
-			Water[I] += Rainfall * MaskValue(RainfallMask, I, NumCells);
+			const float Area = MaskValue(AreaMask, I, NumCells);
+			const float SelectivePrecipitation = bSelectPrecipitation ? Area : 1.0f;
+			Water[I] += Rainfall * MaskValue(RainfallMask, I, NumCells) * SelectivePrecipitation;
 		}
 		FMemory::Memzero(NextWater.GetData(), NumCells * sizeof(float));
 		FMemory::Memzero(NextSediment.GetData(), NumCells * sizeof(float));
@@ -159,8 +198,10 @@ bool FGaeaHydraulicErosion::ApplyInPlace(
 			}
 		}
 
-		Water = MoveTemp(NextWater); Sediment = MoveTemp(NextSediment);
-		NextWater.SetNumZeroed(NumCells); NextSediment.SetNumZeroed(NumCells);
+		Water = MoveTemp(NextWater);
+		Sediment = MoveTemp(NextSediment);
+		NextWater.SetNumZeroed(NumCells);
+		NextSediment.SetNumZeroed(NumCells);
 
 		for (int32 Y = 1; Y < ResolutionY - 1; ++Y)
 		{
@@ -174,6 +215,7 @@ bool FGaeaHydraulicErosion::ApplyInPlace(
 					const float Drop = (HeightField.Values[I] - HeightField.Values[Index(X + Offset.X, Y + Offset.Y)]) / DistanceScale;
 					MaxDownhillDrop = FMath::Max(MaxDownhillDrop, Drop);
 				}
+
 				const float PhysicalSlope = FMath::Max(MaxDownhillDrop * HeightToSlope, MinimumSlope);
 				const float Capacity = Water[I] * PhysicalSlope * CapacityFactor;
 				if (Sediment[I] > Capacity)
@@ -182,14 +224,31 @@ bool FGaeaHydraulicErosion::ApplyInPlace(
 						? FMath::Lerp(1.0f, 1.45f, FMath::Clamp((*SoilDepth)[I], 0.0f, 1.0f)) : 1.0f;
 					const float LocalDeposition = FMath::Clamp(DepositionRate * MaskValue(DepositionMask, I, NumCells) * SoilRetention, 0.0f, 1.0f);
 					const float Deposit = (Sediment[I] - Capacity) * LocalDeposition;
-					HeightField.Values[I] += Deposit; Sediment[I] -= Deposit; Deposits[I] += Deposit;
+					HeightField.Values[I] += Deposit;
+					Sediment[I] -= Deposit;
+					Deposits[I] += Deposit;
 				}
-				else if (Sediment[I] < Capacity)
+				else if (Sediment[I] < Capacity && HeightField.Values[I] > BaseLevel)
 				{
-					const float Resistance = HardnessResistance(RockHardness, I, NumCells, RockSoftness);
-					const float LocalErosion = ErosionRate * MaskValue(ErosionMask, I, NumCells) * Resistance;
-					const float Erode = FMath::Min((Capacity - Sediment[I]) * LocalErosion, 0.02f);
-					HeightField.Values[I] -= Erode; Sediment[I] += Erode; Wear[I] += Erode;
+					const float Area = MaskValue(AreaMask, I, NumCells);
+					const float LocalSoftness = bSelectRockSoftness ? BaseRockSoftness * Area : BaseRockSoftness;
+					const float Resistance = HardnessResistance(RockHardness, I, NumCells, LocalSoftness);
+					const float SelectiveStrength = bSelectErosionStrength ? Area : 1.0f;
+					const float DowncuttingFactor = 1.0f + Downcutting * FMath::Clamp(PhysicalSlope, 0.0f, 1.0f);
+					const float InhibitionFactor = 1.0f - FMath::Clamp(Wear[I] * Inhibition * 10.0f, 0.0f, 0.95f);
+					const float Variation = SeedVariation(RuntimeSeed, Iteration, I);
+					const float LocalErosion = ErosionRate
+						* MaskValue(ErosionMask, I, NumCells)
+						* SelectiveStrength
+						* Resistance
+						* DowncuttingFactor
+						* InhibitionFactor
+						* Variation;
+					const float MaxToBase = FMath::Max(HeightField.Values[I] - BaseLevel, 0.0f);
+					const float Erode = FMath::Min3((Capacity - Sediment[I]) * LocalErosion, 0.02f * AggressiveMultiplier, MaxToBase);
+					HeightField.Values[I] -= Erode;
+					Sediment[I] += Erode;
+					Wear[I] += Erode;
 				}
 			}
 		}
@@ -197,6 +256,7 @@ bool FGaeaHydraulicErosion::ApplyInPlace(
 		for (int32 I = 0; I < NumCells; ++I)
 		{
 			Water[I] *= 1.0f - FMath::Clamp(Evaporation * MaskValue(EvaporationMask, I, NumCells), 0.0f, 1.0f);
+			Sediment[I] *= 1.0f - SedimentRemoval;
 		}
 	}
 
@@ -216,14 +276,30 @@ bool FGaeaHydraulicErosion::EvaluateWithArrays(
 	const TArray<float>* DepositionMask,
 	const TArray<float>* EvaporationMask,
 	const TArray<float>* RockHardness,
-	const TArray<float>* SoilDepth)
+	const TArray<float>* SoilDepth,
+	const TArray<float>* AreaMask,
+	const TArray<float>* InitialSediment)
 {
 	OutResult = FGaeaHydraulicErosionResult{};
 	if (!InputHeight.IsValid()) return false;
 	FGaeaScalarField Height = InputHeight;
 	Height.Descriptor.Name = GaeaTerrainFieldNames::Height;
 	TArray<float> Flow, Wear, Deposits;
-	if (!ApplyInPlace(Height, HeightScale, Settings, &Flow, RainfallMask, ErosionMask, DepositionMask, EvaporationMask, RockHardness, SoilDepth, &Wear, &Deposits)) return false;
+	if (!ApplyInPlace(
+		Height,
+		HeightScale,
+		Settings,
+		&Flow,
+		RainfallMask,
+		ErosionMask,
+		DepositionMask,
+		EvaporationMask,
+		RockHardness,
+		SoilDepth,
+		&Wear,
+		&Deposits,
+		AreaMask,
+		InitialSediment)) return false;
 	OutResult.Height = MoveTemp(Height);
 	OutResult.Wear = MakeField(InputHeight.Domain, GaeaTerrainFieldNames::Wear, MoveTemp(Wear));
 	OutResult.Deposits = MakeField(InputHeight.Domain, GaeaTerrainFieldNames::Deposits, MoveTemp(Deposits));
@@ -241,13 +317,21 @@ bool FGaeaHydraulicErosion::Evaluate(
 	const FGaeaScalarField* DepositionMask,
 	const FGaeaScalarField* EvaporationMask,
 	const FGaeaScalarField* RockHardness,
-	const FGaeaScalarField* SoilDepth)
+	const FGaeaScalarField* SoilDepth,
+	const FGaeaScalarField* AreaMask,
+	const FGaeaScalarField* InitialSediment)
 {
-	return EvaluateWithArrays(InputHeight, HeightScale, Settings, OutResult,
+	return EvaluateWithArrays(
+		InputHeight,
+		HeightScale,
+		Settings,
+		OutResult,
 		ValuesIfCompatible(RainfallMask, InputHeight.Domain),
 		ValuesIfCompatible(ErosionMask, InputHeight.Domain),
 		ValuesIfCompatible(DepositionMask, InputHeight.Domain),
 		ValuesIfCompatible(EvaporationMask, InputHeight.Domain),
 		ValuesIfCompatible(RockHardness, InputHeight.Domain),
-		ValuesIfCompatible(SoilDepth, InputHeight.Domain));
+		ValuesIfCompatible(SoilDepth, InputHeight.Domain),
+		ValuesIfCompatible(AreaMask, InputHeight.Domain),
+		ValuesIfCompatible(InitialSediment, InputHeight.Domain));
 }
