@@ -18,4 +18,7 @@ namespace GaeaTerrainFieldNames
 	const FName RockHardness(TEXT("RockHardness"));
 	const FName Weathering(TEXT("Weathering"));
 	const FName SoilDepth(TEXT("SoilDepth"));
+	const FName Wear(TEXT("Wear"));
+	const FName Deposits(TEXT("Deposits"));
+	const FName Flow(TEXT("Flow"));
 }
