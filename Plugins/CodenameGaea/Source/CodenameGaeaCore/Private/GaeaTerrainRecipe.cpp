@@ -6,6 +6,22 @@ namespace GaeaTerrainNodeTypes
 	const FName HydraulicErosion(TEXT("HydraulicErosion"));
 }
 
+namespace
+{
+	template<typename ValueType>
+	void HashNamedMap(uint32& Hash, const TMap<FName, ValueType>& Map)
+	{
+		TArray<FName> Keys;
+		Map.GetKeys(Keys);
+		Keys.Sort(FNameLexicalLess());
+		for (const FName Key : Keys)
+		{
+			Hash = HashCombineFast(Hash, GetTypeHash(Key));
+			Hash = HashCombineFast(Hash, GetTypeHash(Map.FindChecked(Key)));
+		}
+	}
+}
+
 bool FGaeaTerrainNode::IsValid() const
 {
 	return Id.IsValid() && !Type.IsNone();
@@ -93,24 +109,10 @@ uint32 FGaeaTerrainRecipe::GetDeterministicHash() const
 	{
 		Hash = HashCombineFast(Hash, GetTypeHash(Node->Id));
 		Hash = HashCombineFast(Hash, GetTypeHash(Node->Type));
-
-		auto HashMap = [&Hash](const auto& Map)
-		{
-			using PairType = typename TDecay<decltype(Map)>::Type::ElementType;
-			TArray<const PairType*> Pairs;
-			for (const auto& Pair : Map) Pairs.Add(&Pair);
-			Pairs.Sort([](const PairType& A, const PairType& B) { return A.Key.LexicalLess(B.Key); });
-			for (const PairType* Pair : Pairs)
-			{
-				Hash = HashCombineFast(Hash, GetTypeHash(Pair->Key));
-				Hash = HashCombineFast(Hash, GetTypeHash(Pair->Value));
-			}
-		};
-
-		HashMap(Node->NumericParameters);
-		HashMap(Node->IntegerParameters);
-		HashMap(Node->BoolParameters);
-		HashMap(Node->NameParameters);
+		HashNamedMap(Hash, Node->NumericParameters);
+		HashNamedMap(Hash, Node->IntegerParameters);
+		HashNamedMap(Hash, Node->BoolParameters);
+		HashNamedMap(Hash, Node->NameParameters);
 	}
 
 	TArray<const FGaeaTerrainConnection*> SortedConnections;
