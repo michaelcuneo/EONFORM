@@ -1,0 +1,21 @@
+#include "GaeaTerrainFieldNames.h"
+
+namespace GaeaTerrainFieldNames
+{
+	const FName Height(TEXT("Height"));
+	const FName Elevation(TEXT("Elevation"));
+	const FName SlopeDegrees(TEXT("SlopeDegrees"));
+	const FName Concavity(TEXT("Concavity"));
+	const FName Convexity(TEXT("Convexity"));
+	const FName Mountain(TEXT("Mountain"));
+	const FName Foothill(TEXT("Foothill"));
+	const FName Plains(TEXT("Plains"));
+	const FName Thermal(TEXT("Thermal"));
+	const FName Rainfall(TEXT("Rainfall"));
+	const FName HydraulicErosion(TEXT("HydraulicErosion"));
+	const FName Deposition(TEXT("Deposition"));
+	const FName Evaporation(TEXT("Evaporation"));
+	const FName RockHardness(TEXT("RockHardness"));
+	const FName Weathering(TEXT("Weathering"));
+	const FName SoilDepth(TEXT("SoilDepth"));
+}
