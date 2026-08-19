@@ -6,7 +6,9 @@ namespace
 {
 	constexpr float DiagonalDistance = 1.41421356237f;
 	constexpr float LargeDistance = 1.0e30f;
-	constexpr float GrowthCompactnessBias = 0.30f;
+	constexpr float GrowthCompactnessBias = 0.28f;
+	constexpr float SeedDistanceBias = 0.55f;
+	constexpr float ExteriorOceanMarginFraction = 0.06f;
 
 	struct FIslandFrontierNode
 	{
@@ -249,11 +251,26 @@ namespace
 			return;
 		}
 
+		// Island mode has an explicit exterior-ocean mask. Land growth is never
+		// allowed inside this outer ring, so a valid island can never touch the finite
+		// raster boundary. The mask is deliberately only a safety domain; the actual
+		// coastline is still chosen by terrain-weighted connected growth well inside it.
+		const int32 OceanMarginCells = FMath::Clamp(
+			FMath::RoundToInt(static_cast<float>(Resolution - 1) * ExteriorOceanMarginFraction),
+			3,
+			FMath::Max(3, Resolution / 8));
+		const int32 InteriorMin = OceanMarginCells;
+		const int32 InteriorMax = Resolution - 1 - OceanMarginCells;
+		if (InteriorMax <= InteriorMin)
+		{
+			return;
+		}
+
 		float MinRelief = LargeDistance;
 		float MaxRelief = -LargeDistance;
-		for (int32 Y = 1; Y < Resolution - 1; ++Y)
+		for (int32 Y = InteriorMin; Y <= InteriorMax; ++Y)
 		{
-			for (int32 X = 1; X < Resolution - 1; ++X)
+			for (int32 X = InteriorMin; X <= InteriorMax; ++X)
 			{
 				const float Value = ReliefSurface[Y * Resolution + X];
 				MinRelief = FMath::Min(MinRelief, Value);
@@ -262,10 +279,12 @@ namespace
 		}
 		const float ReliefSpan = FMath::Max(MaxRelief - MinRelief, 0.001f);
 
-		const int32 SeedMargin = FMath::Clamp(
-			FMath::RoundToInt(static_cast<float>(Resolution - 1) * 0.14f),
-			2,
-			FMath::Max(2, Resolution / 4));
+		const int32 SeedMargin = FMath::Max(
+			OceanMarginCells + 2,
+			FMath::Clamp(
+				FMath::RoundToInt(static_cast<float>(Resolution - 1) * 0.14f),
+				2,
+				FMath::Max(2, Resolution / 4)));
 		int32 SeedIndex = INDEX_NONE;
 		float SeedRelief = -LargeDistance;
 
@@ -287,7 +306,10 @@ namespace
 			return;
 		}
 
-		const int32 MaxLandCells = (Resolution - 2) * (Resolution - 2);
+		const int32 SeedX = SeedIndex % Resolution;
+		const int32 SeedY = SeedIndex / Resolution;
+		const int32 InteriorWidth = InteriorMax - InteriorMin + 1;
+		const int32 MaxLandCells = InteriorWidth * InteriorWidth;
 		const int32 TargetCells = FMath::Clamp(
 			FMath::RoundToInt(
 				FMath::Clamp(LandCoverage, 0.05f, 0.90f)
@@ -305,6 +327,14 @@ namespace
 		auto TerrainScore = [&](int32 Index)
 		{
 			return FMath::Clamp((ReliefSurface[Index] - MinRelief) / ReliefSpan, 0.0f, 1.0f);
+		};
+
+		auto DistancePenalty = [&](int32 X, int32 Y)
+		{
+			const float DX = static_cast<float>(X - SeedX) / static_cast<float>(Resolution - 1);
+			const float DY = static_cast<float>(Y - SeedY) / static_cast<float>(Resolution - 1);
+			const float Distance01 = FMath::Clamp(FMath::Sqrt(DX * DX + DY * DY) * DiagonalDistance, 0.0f, 1.0f);
+			return Distance01 * SeedDistanceBias;
 		};
 
 		BestScore[SeedIndex] = TerrainScore(SeedIndex);
@@ -340,7 +370,7 @@ namespace
 
 					const int32 NX = X + OX;
 					const int32 NY = Y + OY;
-					if (NX <= 0 || NX >= Resolution - 1 || NY <= 0 || NY >= Resolution - 1)
+					if (NX < InteriorMin || NX > InteriorMax || NY < InteriorMin || NY > InteriorMax)
 					{
 						continue;
 					}
@@ -352,7 +382,9 @@ namespace
 					}
 
 					const float Support = static_cast<float>(CountLandNeighbors(OutLand, Resolution, NX, NY)) / 8.0f;
-					const float CandidateScore = TerrainScore(Neighbor) + Support * GrowthCompactnessBias;
+					const float CandidateScore = TerrainScore(Neighbor)
+						+ Support * GrowthCompactnessBias
+						- DistancePenalty(NX, NY);
 					if (CandidateScore > BestScore[Neighbor] + 1.0e-6f)
 					{
 						BestScore[Neighbor] = CandidateScore;
@@ -362,10 +394,15 @@ namespace
 			}
 		}
 
-		// Do not fill unselected ocean after growth. The growth loop already produces
-		// one connected landmass with an exact target cell budget. Reclassifying every
-		// ocean region that cannot reach the one-cell raster boundary as land can turn a
-		// 50% island into nearly 100% land, leaving only a one-cell underwater rim.
+		UE_LOG(
+			LogTerrainLandmass,
+			Display,
+			TEXT("Island exterior-ocean mask: %d cells per edge (%.1f%% of resolution), selected land=%d/%d"),
+			OceanMarginCells,
+			100.0f * static_cast<float>(OceanMarginCells) / static_cast<float>(Resolution - 1),
+			LandCount,
+			TargetCells);
+
 		OutCoastDatum = ComputeCoastDatum(OutLand, ReliefSurface, Resolution);
 	}
 
