@@ -1,28 +1,46 @@
 #include "SGaeaTerrainGraphPanel.h"
 
+#include "AssetRegistry/AssetData.h"
+#include "AssetToolsModule.h"
+#include "ContentBrowserModule.h"
 #include "EdGraph/EdGraphPin.h"
+#include "FileHelpers.h"
 #include "GaeaTerrainDatasetRegistry.h"
 #include "GaeaTerrainEvaluator.h"
+#include "GaeaTerrainGraphAsset.h"
+#include "GaeaTerrainGraphAssetFactory.h"
 #include "GaeaTerrainNodeDescriptor.h"
+#include "IAssetTools.h"
+#include "IContentBrowserSingleton.h"
+#include "Modules/ModuleManager.h"
 #include "Styling/AppStyle.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SCheckBox.h"
 #include "Widgets/Input/SEditableTextBox.h"
 #include "Widgets/Input/SNumericEntryBox.h"
 #include "Widgets/Layout/SBorder.h"
+#include "Widgets/Layout/SBox.h"
 #include "Widgets/Layout/SSplitter.h"
 #include "Widgets/SNullWidget.h"
 #include "Widgets/Text/STextBlock.h"
+
+namespace
+{
+	UGaeaTerrainGraphAsset* CreateTerrainGraphAssetWithDialog()
+	{
+		FAssetToolsModule& AssetToolsModule = FModuleManager::LoadModuleChecked<FAssetToolsModule>(TEXT("AssetTools"));
+		UGaeaTerrainGraphAssetFactory* Factory = NewObject<UGaeaTerrainGraphAssetFactory>();
+		return Cast<UGaeaTerrainGraphAsset>(AssetToolsModule.Get().CreateAssetWithDialog(
+			UGaeaTerrainGraphAsset::StaticClass(),
+			Factory,
+			TEXT("CodenameGaea")));
+	}
+}
 
 void SGaeaTerrainGraphPanel::Construct(const FArguments& InArgs)
 {
 	OnEvaluated = InArgs._OnEvaluated;
 	BuildDefaultRecipeAndGraph();
-
-	SGraphEditor::FGraphEditorEvents GraphEvents;
-	GraphEvents.OnSelectionChanged = SGraphEditor::FOnSelectionChanged::CreateSP(
-		this,
-		&SGaeaTerrainGraphPanel::OnGraphSelectionChanged);
 
 	ChildSlot
 	[
@@ -38,14 +56,47 @@ void SGaeaTerrainGraphPanel::Construct(const FArguments& InArgs)
 			[
 				SNew(SHorizontalBox)
 				+ SHorizontalBox::Slot()
-				.FillWidth(1.0f)
+				.AutoWidth()
+				.Padding(0.0f, 0.0f, 8.0f, 0.0f)
 				.VAlign(VAlign_Center)
 				[
 					SNew(STextBlock)
 					.Text(FText::FromString(TEXT("Terrain Graph")))
 				]
 				+ SHorizontalBox::Slot()
+				.FillWidth(1.0f)
+				.VAlign(VAlign_Center)
+				[
+					SNew(STextBlock)
+					.Text(this, &SGaeaTerrainGraphPanel::GetAssetText)
+				]
+				+ SHorizontalBox::Slot()
 				.AutoWidth()
+				.Padding(2.0f, 0.0f)
+				[
+					SNew(SButton)
+					.Text(FText::FromString(TEXT("New")))
+					.OnClicked(this, &SGaeaTerrainGraphPanel::NewGraphAsset)
+				]
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.Padding(2.0f, 0.0f)
+				[
+					SNew(SButton)
+					.Text(FText::FromString(TEXT("Open")))
+					.OnClicked(this, &SGaeaTerrainGraphPanel::OpenGraphAsset)
+				]
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.Padding(2.0f, 0.0f)
+				[
+					SNew(SButton)
+					.Text(FText::FromString(TEXT("Save")))
+					.OnClicked(this, &SGaeaTerrainGraphPanel::SaveGraphAsset)
+				]
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.Padding(8.0f, 0.0f, 0.0f, 0.0f)
 				[
 					SNew(SButton)
 					.Text(FText::FromString(TEXT("Evaluate Graph")))
@@ -60,11 +111,10 @@ void SGaeaTerrainGraphPanel::Construct(const FArguments& InArgs)
 				+ SSplitter::Slot()
 				.Value(0.78f)
 				[
-					SAssignNew(GraphEditor, SGraphEditor)
-					.GraphToEdit(EditorGraph.Get())
-					.GraphEvents(GraphEvents)
-					.IsEditable(true)
-					.ShowGraphStateOverlay(false)
+					SAssignNew(GraphHost, SBox)
+					[
+						CreateGraphEditorWidget()
+					]
 				]
 				+ SSplitter::Slot()
 				.Value(0.22f)
@@ -92,37 +142,138 @@ void SGaeaTerrainGraphPanel::Construct(const FArguments& InArgs)
 	RebuildParameterPanel();
 }
 
+TSharedRef<SWidget> SGaeaTerrainGraphPanel::CreateGraphEditorWidget()
+{
+	SGraphEditor::FGraphEditorEvents GraphEvents;
+	GraphEvents.OnSelectionChanged = SGraphEditor::FOnSelectionChanged::CreateSP(
+		this,
+		&SGaeaTerrainGraphPanel::OnGraphSelectionChanged);
+
+	return SAssignNew(GraphEditor, SGraphEditor)
+		.GraphToEdit(EditorGraph.Get())
+		.GraphEvents(GraphEvents)
+		.IsEditable(true)
+		.ShowGraphStateOverlay(false);
+}
+
 void SGaeaTerrainGraphPanel::BuildDefaultRecipeAndGraph()
 {
+	FGaeaTerrainRecipe Recipe;
+
+	FGaeaTerrainNode SourceNode;
+	SourceNode.Id = FGuid(0x10101010, 0x20202020, 0x30303030, 0x40404040);
+	SourceNode.Type = GaeaTerrainNodeTypes::SourceDataset;
+
+	FGaeaTerrainNode ErosionNode;
+	ErosionNode.Id = FGuid(0x50505050, 0x60606060, 0x70707070, 0x80808080);
+	ErosionNode.Type = GaeaTerrainNodeTypes::HydraulicErosion;
+
+	FGaeaTerrainNodeDescriptor ErosionDescriptor;
+	if (FGaeaTerrainNodeDescriptorRegistry::Get(ErosionNode.Type, ErosionDescriptor))
+	{
+		for (const FGaeaTerrainParameterDescriptor& Parameter : ErosionDescriptor.Parameters)
+		{
+			switch (Parameter.Type)
+			{
+			case EGaeaTerrainParameterType::Number:
+				ErosionNode.NumericParameters.Add(Parameter.Name, Parameter.DefaultNumber);
+				break;
+			case EGaeaTerrainParameterType::Integer:
+				ErosionNode.IntegerParameters.Add(Parameter.Name, Parameter.DefaultInteger);
+				break;
+			case EGaeaTerrainParameterType::Boolean:
+				ErosionNode.BoolParameters.Add(Parameter.Name, Parameter.DefaultBoolean);
+				break;
+			case EGaeaTerrainParameterType::Name:
+				ErosionNode.NameParameters.Add(Parameter.Name, Parameter.DefaultName);
+				break;
+			}
+		}
+	}
+
+	Recipe.Nodes.Add(SourceNode);
+	Recipe.Nodes.Add(ErosionNode);
+
+	FGaeaTerrainConnection Connection;
+	Connection.FromNode = SourceNode.Id;
+	Connection.FromOutput = TEXT("Terrain");
+	Connection.ToNode = ErosionNode.Id;
+	Connection.ToInput = TEXT("Terrain");
+	Recipe.Connections.Add(Connection);
+	Recipe.OutputNode = ErosionNode.Id;
+
+	BuildEditorGraphFromRecipe(Recipe, nullptr);
+	StatusText = FText::FromString(TEXT("Unsaved graph. Right-click the canvas to add nodes, then Save when ready."));
+}
+
+void SGaeaTerrainGraphPanel::BuildEditorGraphFromRecipe(
+	const FGaeaTerrainRecipe& Recipe,
+	const UGaeaTerrainGraphAsset* Asset)
+{
+	SelectedNode.Reset();
 	EditorGraph.Reset(NewObject<UGaeaEditorGraph>(GetTransientPackage(), NAME_None, RF_Transient));
 	EditorGraph->Schema = UGaeaEditorGraphSchema::StaticClass();
 
-	UGaeaEditorGraphNode* SourceGraphNode = NewObject<UGaeaEditorGraphNode>(EditorGraph.Get());
-	SourceGraphNode->Initialize(
-		FGuid(0x10101010, 0x20202020, 0x30303030, 0x40404040),
-		GaeaTerrainNodeTypes::SourceDataset);
-	SourceGraphNode->NodePosX = 0;
-	SourceGraphNode->NodePosY = 80;
-	EditorGraph->AddNode(SourceGraphNode, false, false);
-	SourceGraphNode->AllocateDefaultPins();
+	TMap<FGuid, UGaeaEditorGraphNode*> NodeMap;
+	int32 DefaultIndex = 0;
 
-	UGaeaEditorGraphNode* ErosionGraphNode = NewObject<UGaeaEditorGraphNode>(EditorGraph.Get());
-	ErosionGraphNode->Initialize(
-		FGuid(0x50505050, 0x60606060, 0x70707070, 0x80808080),
-		GaeaTerrainNodeTypes::HydraulicErosion);
-	ErosionGraphNode->NodePosX = 360;
-	ErosionGraphNode->NodePosY = 80;
-	EditorGraph->AddNode(ErosionGraphNode, false, false);
-	ErosionGraphNode->AllocateDefaultPins();
-
-	UEdGraphPin* OutputPin = SourceGraphNode->FindPin(TEXT("Terrain"), EGPD_Output);
-	UEdGraphPin* InputPin = ErosionGraphNode->FindPin(TEXT("Terrain"), EGPD_Input);
-	if (OutputPin && InputPin)
+	for (const FGaeaTerrainNode& RecipeNode : Recipe.Nodes)
 	{
-		OutputPin->MakeLinkTo(InputPin);
+		UGaeaEditorGraphNode* GraphNode = NewObject<UGaeaEditorGraphNode>(EditorGraph.Get());
+		GraphNode->Initialize(RecipeNode.Id, RecipeNode.Type);
+		GraphNode->NumericParameters = RecipeNode.NumericParameters;
+		GraphNode->IntegerParameters = RecipeNode.IntegerParameters;
+		GraphNode->BoolParameters = RecipeNode.BoolParameters;
+		GraphNode->NameParameters = RecipeNode.NameParameters;
+
+		if (Asset)
+		{
+			if (const FGaeaTerrainNodeLayout* Layout = Asset->FindLayout(RecipeNode.Id))
+			{
+				GraphNode->NodePosX = FMath::RoundToInt(Layout->Position.X);
+				GraphNode->NodePosY = FMath::RoundToInt(Layout->Position.Y);
+			}
+			else
+			{
+				GraphNode->NodePosX = DefaultIndex * 360;
+				GraphNode->NodePosY = 80;
+			}
+		}
+		else
+		{
+			GraphNode->NodePosX = DefaultIndex * 360;
+			GraphNode->NodePosY = 80;
+		}
+
+		EditorGraph->AddNode(GraphNode, false, false);
+		GraphNode->AllocateDefaultPins();
+		NodeMap.Add(RecipeNode.Id, GraphNode);
+		++DefaultIndex;
 	}
 
-	StatusText = FText::FromString(TEXT("Ready. Right-click the graph to add nodes, then Evaluate Graph."));
+	for (const FGaeaTerrainConnection& Connection : Recipe.Connections)
+	{
+		UGaeaEditorGraphNode* const* FromNode = NodeMap.Find(Connection.FromNode);
+		UGaeaEditorGraphNode* const* ToNode = NodeMap.Find(Connection.ToNode);
+		if (!FromNode || !ToNode || !*FromNode || !*ToNode)
+		{
+			continue;
+		}
+
+		UEdGraphPin* OutputPin = (*FromNode)->FindPin(Connection.FromOutput, EGPD_Output);
+		UEdGraphPin* InputPin = (*ToNode)->FindPin(Connection.ToInput, EGPD_Input);
+		if (OutputPin && InputPin)
+		{
+			OutputPin->MakeLinkTo(InputPin);
+		}
+	}
+
+	if (GraphHost.IsValid())
+	{
+		GraphHost->SetContent(CreateGraphEditorWidget());
+	}
+
+	RebuildParameterPanel();
 }
 
 bool SGaeaTerrainGraphPanel::BuildRecipeFromEditorGraph(
@@ -212,6 +363,161 @@ bool SGaeaTerrainGraphPanel::BuildRecipeFromEditorGraph(
 
 	OutRecipe.OutputNode = TerminalNodes[0];
 	return OutRecipe.Validate(&OutError);
+}
+
+bool SGaeaTerrainGraphPanel::WriteEditorGraphToAsset(
+	UGaeaTerrainGraphAsset& Asset,
+	FString& OutError) const
+{
+	FGaeaTerrainRecipe Recipe;
+	if (!BuildRecipeFromEditorGraph(Recipe, OutError))
+	{
+		return false;
+	}
+
+	Asset.Modify();
+	Asset.Recipe = MoveTemp(Recipe);
+	Asset.NodeLayout.Reset();
+
+	for (UEdGraphNode* Node : EditorGraph->Nodes)
+	{
+		if (const UGaeaEditorGraphNode* TerrainNode = Cast<UGaeaEditorGraphNode>(Node))
+		{
+			Asset.SetLayout(
+				TerrainNode->RecipeNodeId,
+				FVector2D(static_cast<double>(TerrainNode->NodePosX), static_cast<double>(TerrainNode->NodePosY)));
+		}
+	}
+
+	Asset.MarkPackageDirty();
+	OutError.Reset();
+	return true;
+}
+
+void SGaeaTerrainGraphPanel::LoadAsset(UGaeaTerrainGraphAsset& Asset)
+{
+	FString Error;
+	if (!Asset.Recipe.Validate(&Error))
+	{
+		StatusText = FText::FromString(FString::Printf(TEXT("Cannot open graph asset: %s"), *Error));
+		return;
+	}
+
+	CurrentAsset.Reset(&Asset);
+	BuildEditorGraphFromRecipe(Asset.Recipe, &Asset);
+	StatusText = FText::FromString(FString::Printf(TEXT("Opened %s."), *Asset.GetPathName()));
+}
+
+UGaeaTerrainGraphAsset* SGaeaTerrainGraphPanel::CreateAssetFromCurrentGraph()
+{
+	UGaeaTerrainGraphAsset* Asset = CreateTerrainGraphAssetWithDialog();
+	if (!Asset)
+	{
+		return nullptr;
+	}
+
+	FString Error;
+	if (!WriteEditorGraphToAsset(*Asset, Error))
+	{
+		StatusText = FText::FromString(FString::Printf(TEXT("Could not create graph asset: %s"), *Error));
+		return nullptr;
+	}
+
+	CurrentAsset.Reset(Asset);
+	return Asset;
+}
+
+bool SGaeaTerrainGraphPanel::SaveCurrentAsset(bool bPromptForCheckout)
+{
+	if (!CurrentAsset.IsValid())
+	{
+		return false;
+	}
+
+	FString Error;
+	if (!WriteEditorGraphToAsset(*CurrentAsset.Get(), Error))
+	{
+		StatusText = FText::FromString(FString::Printf(TEXT("Save failed: %s"), *Error));
+		return false;
+	}
+
+	UPackage* Package = CurrentAsset->GetOutermost();
+	TArray<UPackage*> PackagesToSave;
+	PackagesToSave.Add(Package);
+	FEditorFileUtils::PromptForCheckoutAndSave(
+		PackagesToSave,
+		true,
+		false,
+		nullptr,
+		!bPromptForCheckout,
+		false);
+
+	return !Package->IsDirty();
+}
+
+FReply SGaeaTerrainGraphPanel::NewGraphAsset()
+{
+	UGaeaTerrainGraphAsset* NewAsset = CreateTerrainGraphAssetWithDialog();
+	if (!NewAsset)
+	{
+		StatusText = FText::FromString(TEXT("New graph cancelled."));
+		return FReply::Handled();
+	}
+
+	BuildDefaultRecipeAndGraph();
+	CurrentAsset.Reset(NewAsset);
+
+	if (SaveCurrentAsset(true))
+	{
+		StatusText = FText::FromString(FString::Printf(TEXT("Created %s."), *NewAsset->GetPathName()));
+	}
+	return FReply::Handled();
+}
+
+FReply SGaeaTerrainGraphPanel::OpenGraphAsset()
+{
+	FContentBrowserModule& ContentBrowserModule = FModuleManager::LoadModuleChecked<FContentBrowserModule>(TEXT("ContentBrowser"));
+
+	FOpenAssetDialogConfig Config;
+	Config.AssetClassNames.Add(UGaeaTerrainGraphAsset::StaticClass()->GetClassPathName());
+	Config.bAllowMultipleSelection = false;
+	Config.DialogTitleOverride = FText::FromString(TEXT("Open Codename Gaea Graph"));
+
+	const TArray<FAssetData> SelectedAssets = ContentBrowserModule.Get().CreateModalOpenAssetDialog(Config);
+	if (SelectedAssets.IsEmpty())
+	{
+		StatusText = FText::FromString(TEXT("Open graph cancelled."));
+		return FReply::Handled();
+	}
+
+	if (UGaeaTerrainGraphAsset* Asset = Cast<UGaeaTerrainGraphAsset>(SelectedAssets[0].GetAsset()))
+	{
+		LoadAsset(*Asset);
+	}
+	else
+	{
+		StatusText = FText::FromString(TEXT("The selected asset is not a Codename Gaea graph."));
+	}
+
+	return FReply::Handled();
+}
+
+FReply SGaeaTerrainGraphPanel::SaveGraphAsset()
+{
+	if (!CurrentAsset.IsValid())
+	{
+		if (!CreateAssetFromCurrentGraph())
+		{
+			StatusText = FText::FromString(TEXT("Save cancelled."));
+			return FReply::Handled();
+		}
+	}
+
+	if (SaveCurrentAsset(true))
+	{
+		StatusText = FText::FromString(FString::Printf(TEXT("Saved %s."), *CurrentAsset->GetPathName()));
+	}
+	return FReply::Handled();
 }
 
 void SGaeaTerrainGraphPanel::OnGraphSelectionChanged(const TSet<UObject*>& NewSelection)
@@ -431,6 +737,16 @@ FReply SGaeaTerrainGraphPanel::EvaluateGraph()
 
 	OnEvaluated.ExecuteIfBound();
 	return FReply::Handled();
+}
+
+FText SGaeaTerrainGraphPanel::GetAssetText() const
+{
+	if (!CurrentAsset.IsValid())
+	{
+		return FText::FromString(TEXT("Unsaved graph"));
+	}
+
+	return FText::FromString(FString::Printf(TEXT("Asset: %s"), *CurrentAsset->GetPathName()));
 }
 
 FText SGaeaTerrainGraphPanel::GetStatusText() const
