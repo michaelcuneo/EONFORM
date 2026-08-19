@@ -1,7 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "NodeFactory.h"
+#include "EdGraphUtilities.h"
 #include "SGraphNode.h"
 
 class SGraphPin;
@@ -27,8 +27,8 @@ public:
 	virtual TSharedPtr<SGraphPin> CreatePinWidget(UEdGraphPin* Pin) const override;
 };
 
-class FGaeaTerrainGraphNodeFactory final : public FGraphNodeFactory
+class FGaeaTerrainGraphNodeFactory final : public FGraphPanelNodeFactory
 {
 public:
-	virtual TSharedPtr<SGraphNode> CreateNodeWidget(UEdGraphNode* InNode) override;
+	virtual TSharedPtr<SGraphNode> CreateNode(UEdGraphNode* InNode) const override;
 };
