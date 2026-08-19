@@ -1,5 +1,6 @@
 #include "Modules/ModuleManager.h"
 
+#include "GaeaCurvatureNode.h"
 #include "GaeaTerrainNodeDescriptor.h"
 #include "GaeaTerrainRecipe.h"
 #include "GaeaThermalErosionNode.h"
@@ -19,6 +20,7 @@ public:
 		}
 
 		RegisterGaeaThermalErosionNode();
+		RegisterGaeaCurvatureNode();
 	}
 };
 
