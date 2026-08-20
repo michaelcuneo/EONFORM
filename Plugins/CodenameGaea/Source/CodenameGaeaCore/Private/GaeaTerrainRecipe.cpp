@@ -12,8 +12,7 @@ namespace GaeaTerrainNodeTypes
 	const FName HydraulicErosion(TEXT("HydraulicErosion"));
 	const FName Slope(TEXT("Slope"));
 	const FName Curvature(TEXT("Curvature"));
-	const FName Elevation(TEXT("Elevation"));
-	const FName TerrainRegions(TEXT("TerrainRegions"));
+	const FName Height(TEXT("Height"));
 }
 
 namespace
