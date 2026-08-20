@@ -1,10 +1,9 @@
 #include "Modules/ModuleManager.h"
 
 #include "GaeaCurvatureNode.h"
-#include "GaeaElevationNode.h"
+#include "GaeaHeightNode.h"
 #include "GaeaTerrainNodeDescriptor.h"
 #include "GaeaTerrainRecipe.h"
-#include "GaeaTerrainRegionsNode.h"
 #include "GaeaThermalErosionNode.h"
 
 class FCodenameGaeaCoreModule final : public IModuleInterface
@@ -23,8 +22,7 @@ public:
 
 		RegisterGaeaThermalErosionNode();
 		RegisterGaeaCurvatureNode();
-		RegisterGaeaElevationNode();
-		RegisterGaeaTerrainRegionsNode();
+		RegisterGaeaHeightNode();
 	}
 };
 
