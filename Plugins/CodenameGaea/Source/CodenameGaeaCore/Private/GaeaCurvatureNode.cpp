@@ -8,7 +8,7 @@
 
 namespace
 {
-	FGaeaTerrainPortDescriptor TerrainPort(FName Name, const TCHAR* DisplayName = nullptr)
+	FGaeaTerrainPortDescriptor CurvatureTerrainPort(FName Name, const TCHAR* DisplayName = nullptr)
 	{
 		FGaeaTerrainPortDescriptor Port;
 		Port.Name = Name;
@@ -17,7 +17,7 @@ namespace
 		return Port;
 	}
 
-	FGaeaTerrainPortDescriptor ScalarPort(FName Name, const TCHAR* DisplayName = nullptr)
+	FGaeaTerrainPortDescriptor CurvatureScalarPort(FName Name, const TCHAR* DisplayName = nullptr)
 	{
 		FGaeaTerrainPortDescriptor Port;
 		Port.Name = Name;
@@ -71,9 +71,9 @@ void RegisterGaeaCurvatureNode()
 	Descriptor.DisplayName = TEXT("Curvature");
 	Descriptor.Category = TEXT("Data");
 	Descriptor.Description = TEXT("Derives concave and convex curvature fields from terrain height.");
-	Descriptor.Inputs.Add(TerrainPort(TEXT("Terrain"), TEXT("Input")));
-	Descriptor.Outputs.Add(ScalarPort(TEXT("Concavity"), TEXT("Concavity")));
-	Descriptor.Outputs.Add(ScalarPort(TEXT("Convexity"), TEXT("Convexity")));
+	Descriptor.Inputs.Add(CurvatureTerrainPort(TEXT("Terrain"), TEXT("Input")));
+	Descriptor.Outputs.Add(CurvatureScalarPort(TEXT("Concavity"), TEXT("Concavity")));
+	Descriptor.Outputs.Add(CurvatureScalarPort(TEXT("Convexity"), TEXT("Convexity")));
 	FGaeaTerrainNodeDescriptorRegistry::Register(Descriptor);
 
 	FGaeaTerrainNodeRegistry::Register(GaeaTerrainNodeTypes::Curvature, EvaluateCurvatureNode);
