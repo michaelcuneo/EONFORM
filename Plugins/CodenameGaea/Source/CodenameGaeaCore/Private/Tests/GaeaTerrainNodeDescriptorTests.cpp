@@ -135,6 +135,23 @@ bool FGaeaTerrainNodeDescriptorRegistryTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("Elevation output type"), Elevation.Outputs[0].DataType, FName(TEXT("ScalarField")));
 	}
 
+	FGaeaTerrainNodeDescriptor Regions;
+	TestTrue(
+		TEXT("TerrainRegions descriptor exists"),
+		FGaeaTerrainNodeDescriptorRegistry::Get(GaeaTerrainNodeTypes::TerrainRegions, Regions));
+	TestEqual(TEXT("Terrain Regions display name"), Regions.DisplayName, FString(TEXT("Terrain Regions")));
+	TestEqual(TEXT("Terrain Regions category"), Regions.Category, FString(TEXT("Data")));
+	TestEqual(TEXT("Terrain Regions has one input"), Regions.Inputs.Num(), 1);
+	TestEqual(TEXT("Terrain Regions has three outputs"), Regions.Outputs.Num(), 3);
+	TestEqual(TEXT("Terrain Regions has no parameters"), Regions.Parameters.Num(), 0);
+	if (Regions.Outputs.Num() == 3)
+	{
+		TestEqual(TEXT("Terrain Regions Mountain output"), Regions.Outputs[0].Name, FName(TEXT("Mountain")));
+		TestEqual(TEXT("Terrain Regions Foothill output"), Regions.Outputs[1].Name, FName(TEXT("Foothill")));
+		TestEqual(TEXT("Terrain Regions Plains output"), Regions.Outputs[2].Name, FName(TEXT("Plains")));
+		TestEqual(TEXT("Terrain Regions output type"), Regions.Outputs[0].DataType, FName(TEXT("ScalarField")));
+	}
+
 	FGaeaTerrainNodeDescriptor Context;
 	TestTrue(TEXT("TerrainContext descriptor exists"),
 		FGaeaTerrainNodeDescriptorRegistry::Get(GaeaTerrainNodeTypes::TerrainContext, Context));
