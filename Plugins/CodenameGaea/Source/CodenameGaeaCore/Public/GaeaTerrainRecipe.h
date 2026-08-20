@@ -15,6 +15,7 @@ namespace GaeaTerrainNodeTypes
 	CODENAMEGAEACORE_API extern const FName HydraulicErosion;
 	CODENAMEGAEACORE_API extern const FName Slope;
 	CODENAMEGAEACORE_API extern const FName Curvature;
+	CODENAMEGAEACORE_API extern const FName Elevation;
 }
 
 USTRUCT(BlueprintType)
