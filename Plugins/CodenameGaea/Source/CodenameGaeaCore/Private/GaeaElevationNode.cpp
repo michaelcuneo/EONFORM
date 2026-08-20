@@ -8,7 +8,7 @@
 
 namespace
 {
-	FGaeaTerrainPortDescriptor TerrainPort(FName Name, const TCHAR* DisplayName = nullptr)
+	FGaeaTerrainPortDescriptor ElevationTerrainPort(FName Name, const TCHAR* DisplayName = nullptr)
 	{
 		FGaeaTerrainPortDescriptor Port;
 		Port.Name = Name;
@@ -17,7 +17,7 @@ namespace
 		return Port;
 	}
 
-	FGaeaTerrainPortDescriptor ScalarPort(FName Name, const TCHAR* DisplayName = nullptr)
+	FGaeaTerrainPortDescriptor ElevationScalarPort(FName Name, const TCHAR* DisplayName = nullptr)
 	{
 		FGaeaTerrainPortDescriptor Port;
 		Port.Name = Name;
@@ -69,8 +69,8 @@ void RegisterGaeaElevationNode()
 	Descriptor.DisplayName = TEXT("Elevation");
 	Descriptor.Category = TEXT("Data");
 	Descriptor.Description = TEXT("Derives a normalized elevation scalar field from terrain height.");
-	Descriptor.Inputs.Add(TerrainPort(TEXT("Terrain"), TEXT("Input")));
-	Descriptor.Outputs.Add(ScalarPort(TEXT("Elevation"), TEXT("Elevation")));
+	Descriptor.Inputs.Add(ElevationTerrainPort(TEXT("Terrain"), TEXT("Input")));
+	Descriptor.Outputs.Add(ElevationScalarPort(TEXT("Elevation"), TEXT("Elevation")));
 	FGaeaTerrainNodeDescriptorRegistry::Register(Descriptor);
 
 	FGaeaTerrainNodeRegistry::Register(GaeaTerrainNodeTypes::Elevation, EvaluateElevationNode);
