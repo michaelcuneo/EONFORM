@@ -120,6 +120,21 @@ bool FGaeaTerrainNodeDescriptorRegistryTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("Curvature convexity output type"), Curvature.Outputs[1].DataType, FName(TEXT("ScalarField")));
 	}
 
+	FGaeaTerrainNodeDescriptor Elevation;
+	TestTrue(
+		TEXT("Elevation descriptor exists"),
+		FGaeaTerrainNodeDescriptorRegistry::Get(GaeaTerrainNodeTypes::Elevation, Elevation));
+	TestEqual(TEXT("Elevation display name"), Elevation.DisplayName, FString(TEXT("Elevation")));
+	TestEqual(TEXT("Elevation category"), Elevation.Category, FString(TEXT("Data")));
+	TestEqual(TEXT("Elevation has one input"), Elevation.Inputs.Num(), 1);
+	TestEqual(TEXT("Elevation has one output"), Elevation.Outputs.Num(), 1);
+	TestEqual(TEXT("Elevation has no parameters"), Elevation.Parameters.Num(), 0);
+	if (Elevation.Outputs.Num() == 1)
+	{
+		TestEqual(TEXT("Elevation output name"), Elevation.Outputs[0].Name, FName(TEXT("Elevation")));
+		TestEqual(TEXT("Elevation output type"), Elevation.Outputs[0].DataType, FName(TEXT("ScalarField")));
+	}
+
 	FGaeaTerrainNodeDescriptor Context;
 	TestTrue(TEXT("TerrainContext descriptor exists"),
 		FGaeaTerrainNodeDescriptorRegistry::Get(GaeaTerrainNodeTypes::TerrainContext, Context));
