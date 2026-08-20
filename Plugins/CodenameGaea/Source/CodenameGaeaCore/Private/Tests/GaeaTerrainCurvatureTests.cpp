@@ -25,6 +25,11 @@ bool FGaeaTerrainCurvatureRoutingTest::RunTest(const FString& Parameters)
 	FGaeaTerrainNode Curvature;
 	Curvature.Id = FGuid(502, 2, 2, 2);
 	Curvature.Type = GaeaTerrainNodeTypes::Curvature;
+	Curvature.NumericParameters.Add(TEXT("Min"), 0.0);
+	Curvature.NumericParameters.Add(TEXT("Max"), 1.0);
+	Curvature.NumericParameters.Add(TEXT("Falloff"), 0.1);
+	Curvature.NameParameters.Add(TEXT("CurvatureType"), TEXT("Average"));
+	Curvature.BoolParameters.Add(TEXT("Invert"), false);
 
 	FGaeaTerrainNode Erosion;
 	Erosion.Id = FGuid(503, 3, 3, 3);
@@ -50,7 +55,7 @@ bool FGaeaTerrainCurvatureRoutingTest::RunTest(const FString& Parameters)
 
 	FGaeaTerrainConnection CurvatureToMask;
 	CurvatureToMask.FromNode = Curvature.Id;
-	CurvatureToMask.FromOutput = TEXT("Concavity");
+	CurvatureToMask.FromOutput = TEXT("Mask");
 	CurvatureToMask.ToNode = Erosion.Id;
 	CurvatureToMask.ToInput = TEXT("Mask");
 	Recipe.Connections.Add(CurvatureToMask);
