@@ -110,46 +110,59 @@ bool FGaeaTerrainNodeDescriptorRegistryTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Curvature display name"), Curvature.DisplayName, FString(TEXT("Curvature")));
 	TestEqual(TEXT("Curvature category"), Curvature.Category, FString(TEXT("Data")));
 	TestEqual(TEXT("Curvature has one input"), Curvature.Inputs.Num(), 1);
-	TestEqual(TEXT("Curvature has two outputs"), Curvature.Outputs.Num(), 2);
-	TestEqual(TEXT("Curvature has no parameters"), Curvature.Parameters.Num(), 0);
-	if (Curvature.Outputs.Num() == 2)
+	TestEqual(TEXT("Curvature has one output"), Curvature.Outputs.Num(), 1);
+	TestEqual(TEXT("Curvature parameter count"), Curvature.Parameters.Num(), 5);
+	if (Curvature.Outputs.Num() == 1)
 	{
-		TestEqual(TEXT("Curvature concavity output"), Curvature.Outputs[0].Name, FName(TEXT("Concavity")));
-		TestEqual(TEXT("Curvature convexity output"), Curvature.Outputs[1].Name, FName(TEXT("Convexity")));
-		TestEqual(TEXT("Curvature concavity output type"), Curvature.Outputs[0].DataType, FName(TEXT("ScalarField")));
-		TestEqual(TEXT("Curvature convexity output type"), Curvature.Outputs[1].DataType, FName(TEXT("ScalarField")));
+		TestEqual(TEXT("Curvature output name"), Curvature.Outputs[0].Name, FName(TEXT("Mask")));
+		TestEqual(TEXT("Curvature output type"), Curvature.Outputs[0].DataType, FName(TEXT("ScalarField")));
+	}
+	const FGaeaTerrainParameterDescriptor* CurvatureType = Curvature.Parameters.FindByPredicate(
+		[](const FGaeaTerrainParameterDescriptor& Parameter)
+		{
+			return Parameter.Name == FName(TEXT("CurvatureType"));
+		});
+	TestNotNull(TEXT("Curvature Type parameter exists"), CurvatureType);
+	if (CurvatureType)
+	{
+		TestEqual(TEXT("Curvature Type is a name parameter"), CurvatureType->Type, EGaeaTerrainParameterType::Name);
+		TestEqual(TEXT("Curvature Type default"), CurvatureType->DefaultName, FName(TEXT("Average")));
+		TestEqual(TEXT("Curvature Type option count"), CurvatureType->NameOptions.Num(), 3);
+	}
+	const FGaeaTerrainParameterDescriptor* CurvatureInvert = Curvature.Parameters.FindByPredicate(
+		[](const FGaeaTerrainParameterDescriptor& Parameter)
+		{
+			return Parameter.Name == FName(TEXT("Invert"));
+		});
+	TestNotNull(TEXT("Curvature Invert parameter exists"), CurvatureInvert);
+	if (CurvatureInvert)
+	{
+		TestEqual(TEXT("Curvature Invert is boolean"), CurvatureInvert->Type, EGaeaTerrainParameterType::Boolean);
 	}
 
-	FGaeaTerrainNodeDescriptor Elevation;
+	FGaeaTerrainNodeDescriptor Height;
 	TestTrue(
-		TEXT("Elevation descriptor exists"),
-		FGaeaTerrainNodeDescriptorRegistry::Get(GaeaTerrainNodeTypes::Elevation, Elevation));
-	TestEqual(TEXT("Elevation display name"), Elevation.DisplayName, FString(TEXT("Elevation")));
-	TestEqual(TEXT("Elevation category"), Elevation.Category, FString(TEXT("Data")));
-	TestEqual(TEXT("Elevation has one input"), Elevation.Inputs.Num(), 1);
-	TestEqual(TEXT("Elevation has one output"), Elevation.Outputs.Num(), 1);
-	TestEqual(TEXT("Elevation has no parameters"), Elevation.Parameters.Num(), 0);
-	if (Elevation.Outputs.Num() == 1)
+		TEXT("Height descriptor exists"),
+		FGaeaTerrainNodeDescriptorRegistry::Get(GaeaTerrainNodeTypes::Height, Height));
+	TestEqual(TEXT("Height display name"), Height.DisplayName, FString(TEXT("Height")));
+	TestEqual(TEXT("Height category"), Height.Category, FString(TEXT("Data")));
+	TestEqual(TEXT("Height has one input"), Height.Inputs.Num(), 1);
+	TestEqual(TEXT("Height has one output"), Height.Outputs.Num(), 1);
+	TestEqual(TEXT("Height parameter count"), Height.Parameters.Num(), 4);
+	if (Height.Outputs.Num() == 1)
 	{
-		TestEqual(TEXT("Elevation output name"), Elevation.Outputs[0].Name, FName(TEXT("Elevation")));
-		TestEqual(TEXT("Elevation output type"), Elevation.Outputs[0].DataType, FName(TEXT("ScalarField")));
+		TestEqual(TEXT("Height output name"), Height.Outputs[0].Name, FName(TEXT("Mask")));
+		TestEqual(TEXT("Height output type"), Height.Outputs[0].DataType, FName(TEXT("ScalarField")));
 	}
-
-	FGaeaTerrainNodeDescriptor Regions;
-	TestTrue(
-		TEXT("TerrainRegions descriptor exists"),
-		FGaeaTerrainNodeDescriptorRegistry::Get(GaeaTerrainNodeTypes::TerrainRegions, Regions));
-	TestEqual(TEXT("Terrain Regions display name"), Regions.DisplayName, FString(TEXT("Terrain Regions")));
-	TestEqual(TEXT("Terrain Regions category"), Regions.Category, FString(TEXT("Data")));
-	TestEqual(TEXT("Terrain Regions has one input"), Regions.Inputs.Num(), 1);
-	TestEqual(TEXT("Terrain Regions has three outputs"), Regions.Outputs.Num(), 3);
-	TestEqual(TEXT("Terrain Regions has no parameters"), Regions.Parameters.Num(), 0);
-	if (Regions.Outputs.Num() == 3)
+	const FGaeaTerrainParameterDescriptor* HeightNormalized = Height.Parameters.FindByPredicate(
+		[](const FGaeaTerrainParameterDescriptor& Parameter)
+		{
+			return Parameter.Name == FName(TEXT("Normalized"));
+		});
+	TestNotNull(TEXT("Height Normalized parameter exists"), HeightNormalized);
+	if (HeightNormalized)
 	{
-		TestEqual(TEXT("Terrain Regions Mountain output"), Regions.Outputs[0].Name, FName(TEXT("Mountain")));
-		TestEqual(TEXT("Terrain Regions Foothill output"), Regions.Outputs[1].Name, FName(TEXT("Foothill")));
-		TestEqual(TEXT("Terrain Regions Plains output"), Regions.Outputs[2].Name, FName(TEXT("Plains")));
-		TestEqual(TEXT("Terrain Regions output type"), Regions.Outputs[0].DataType, FName(TEXT("ScalarField")));
+		TestEqual(TEXT("Height Normalized is boolean"), HeightNormalized->Type, EGaeaTerrainParameterType::Boolean);
 	}
 
 	FGaeaTerrainNodeDescriptor Context;
