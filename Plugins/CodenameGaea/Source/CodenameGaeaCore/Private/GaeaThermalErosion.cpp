@@ -2,7 +2,7 @@
 
 namespace
 {
-	float MaskValue(const TArray<float>* Mask, int32 Index, int32 ExpectedNum)
+	float ThermalMaskValue(const TArray<float>* Mask, int32 Index, int32 ExpectedNum)
 	{
 		if (!Mask || Mask->Num() != ExpectedNum)
 		{
@@ -11,7 +11,7 @@ namespace
 		return FMath::Clamp((*Mask)[Index], 0.0f, 1.0f);
 	}
 
-	float HardnessResistance(const TArray<float>* RockHardness, int32 Index, int32 ExpectedNum)
+	float ThermalHardnessResistance(const TArray<float>* RockHardness, int32 Index, int32 ExpectedNum)
 	{
 		const float Hardness = RockHardness && RockHardness->Num() == ExpectedNum
 			? FMath::Clamp((*RockHardness)[Index], 0.0f, 1.0f)
@@ -130,7 +130,7 @@ bool FGaeaThermalErosion::ApplyInPlaceWithArrays(
 			for (int32 X = 1; X < Dimensions.X - 1; ++X)
 			{
 				const int32 CenterIndex = HeightField.Domain.GetStorageIndex(X + HeightField.Domain.BorderSamples, Y + HeightField.Domain.BorderSamples);
-				const float LocalMask = MaskValue(ProcessMask, CenterIndex, NumCells);
+				const float LocalMask = ThermalMaskValue(ProcessMask, CenterIndex, NumCells);
 				if (LocalMask <= UE_SMALL_NUMBER) continue;
 
 				const float CenterHeight = HeightField.AtInterior(X, Y);
@@ -150,7 +150,7 @@ bool FGaeaThermalErosion::ApplyInPlaceWithArrays(
 				}
 				if (TotalExcess <= UE_SMALL_NUMBER) continue;
 
-				const float Resistance = HardnessResistance(RockHardness, CenterIndex, NumCells);
+				const float Resistance = ThermalHardnessResistance(RockHardness, CenterIndex, NumCells);
 				const float MaterialToMove = TotalExcess * 0.5f * SafeStrength * LocalMask * Resistance;
 				Delta[CenterIndex] -= MaterialToMove;
 				for (int32 NeighborIndex = 0; NeighborIndex < UE_ARRAY_COUNT(Neighbors); ++NeighborIndex)
