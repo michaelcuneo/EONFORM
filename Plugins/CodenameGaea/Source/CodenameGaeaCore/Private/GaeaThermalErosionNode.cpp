@@ -9,7 +9,7 @@
 
 namespace
 {
-	FGaeaTerrainPortDescriptor TerrainPort(FName Name, const TCHAR* DisplayName = nullptr)
+	FGaeaTerrainPortDescriptor ThermalTerrainPort(FName Name, const TCHAR* DisplayName = nullptr)
 	{
 		FGaeaTerrainPortDescriptor Port;
 		Port.Name = Name;
@@ -18,7 +18,7 @@ namespace
 		return Port;
 	}
 
-	FGaeaTerrainPortDescriptor ScalarPort(FName Name, const TCHAR* DisplayName = nullptr)
+	FGaeaTerrainPortDescriptor ThermalScalarPort(FName Name, const TCHAR* DisplayName = nullptr)
 	{
 		FGaeaTerrainPortDescriptor Port;
 		Port.Name = Name;
@@ -27,7 +27,7 @@ namespace
 		return Port;
 	}
 
-	FGaeaTerrainParameterDescriptor NumberParameter(
+	FGaeaTerrainParameterDescriptor ThermalNumberParameter(
 		FName Name,
 		const TCHAR* DisplayName,
 		double DefaultValue,
@@ -46,7 +46,7 @@ namespace
 		return Parameter;
 	}
 
-	FGaeaTerrainParameterDescriptor IntegerParameter(
+	FGaeaTerrainParameterDescriptor ThermalIntegerParameter(
 		FName Name,
 		const TCHAR* DisplayName,
 		int64 DefaultValue,
@@ -167,12 +167,12 @@ void RegisterGaeaThermalErosionNode()
 	Descriptor.DisplayName = TEXT("Thermal Erosion");
 	Descriptor.Category = TEXT("Erosion");
 	Descriptor.Description = TEXT("Relaxes slopes above the talus angle by redistributing material downslope.");
-	Descriptor.Inputs.Add(TerrainPort(TEXT("Terrain"), TEXT("Input")));
-	Descriptor.Inputs.Add(ScalarPort(TEXT("Mask"), TEXT("Area Mask")));
-	Descriptor.Outputs.Add(TerrainPort(TEXT("Terrain"), TEXT("Out")));
-	Descriptor.Parameters.Add(IntegerParameter(TEXT("Iterations"), TEXT("Iterations"), 12, 1, 4096));
-	Descriptor.Parameters.Add(NumberParameter(TEXT("TalusAngle"), TEXT("Talus Angle (deg)"), 34.0, 0.0, 89.9));
-	Descriptor.Parameters.Add(NumberParameter(TEXT("Strength"), TEXT("Strength"), 0.35, 0.0, 1.0));
+	Descriptor.Inputs.Add(ThermalTerrainPort(TEXT("Terrain"), TEXT("Input")));
+	Descriptor.Inputs.Add(ThermalScalarPort(TEXT("Mask"), TEXT("Area Mask")));
+	Descriptor.Outputs.Add(ThermalTerrainPort(TEXT("Terrain"), TEXT("Out")));
+	Descriptor.Parameters.Add(ThermalIntegerParameter(TEXT("Iterations"), TEXT("Iterations"), 12, 1, 4096));
+	Descriptor.Parameters.Add(ThermalNumberParameter(TEXT("TalusAngle"), TEXT("Talus Angle (deg)"), 34.0, 0.0, 89.9));
+	Descriptor.Parameters.Add(ThermalNumberParameter(TEXT("Strength"), TEXT("Strength"), 0.35, 0.0, 1.0));
 	FGaeaTerrainNodeDescriptorRegistry::Register(Descriptor);
 
 	FGaeaTerrainNodeRegistry::Register(GaeaTerrainNodeTypes::ThermalErosion, EvaluateThermalErosionNode);
