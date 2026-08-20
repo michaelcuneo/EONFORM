@@ -13,6 +13,7 @@ namespace GaeaTerrainNodeTypes
 	const FName Slope(TEXT("Slope"));
 	const FName Curvature(TEXT("Curvature"));
 	const FName Elevation(TEXT("Elevation"));
+	const FName TerrainRegions(TEXT("TerrainRegions"));
 }
 
 namespace
