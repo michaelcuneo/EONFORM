@@ -11,6 +11,9 @@
 #include "Modifiers/MeshPartitionMeshProvider.h"
 
 using UE::Geometry::FDynamicMesh3;
+using UE::MeshPartition::AMeshPartition;
+using UE::MeshPartition::UMeshPartitionDefinition;
+using UE::MeshPartition::UMeshProviderModifier;
 
 AGaeaMeshTerrainBridgeActor::AGaeaMeshTerrainBridgeActor()
 {
