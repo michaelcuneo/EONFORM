@@ -10,6 +10,8 @@
 namespace GaeaEditorGraphPins
 {
 	extern const FName Terrain;
+	extern const FName ScalarField;
+	extern const FName Any;
 }
 
 namespace GaeaEditorNodeTypes
