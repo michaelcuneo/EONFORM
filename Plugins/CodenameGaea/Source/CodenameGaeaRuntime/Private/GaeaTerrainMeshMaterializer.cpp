@@ -6,66 +6,181 @@
 using UE::Geometry::FDynamicMesh3;
 using UE::Geometry::FMeshNormals;
 
+namespace
+{
+	bool ResolveHeightField(
+		const FGaeaTerrainDataset& Dataset,
+		const FGaeaTerrainMeshBuildOptions& Options,
+		const FGaeaScalarField*& OutHeight,
+		FIntPoint& OutTargetResolution,
+		FString* OutError)
+	{
+		auto Fail = [OutError](const TCHAR* Message)
+		{
+			if (OutError)
+			{
+				*OutError = Message;
+			}
+			return false;
+		};
+
+		OutHeight = Dataset.FindScalarField(GaeaTerrainFieldNames::Height);
+		if (!OutHeight || !OutHeight->IsValid())
+		{
+			return Fail(TEXT("Terrain dataset has no valid Height field."));
+		}
+		if (Options.HeightScale <= UE_SMALL_NUMBER)
+		{
+			return Fail(TEXT("HeightScale must be greater than zero."));
+		}
+		if (Options.HorizontalScale <= UE_SMALL_NUMBER || Options.VerticalScale <= UE_SMALL_NUMBER)
+		{
+			return Fail(TEXT("HorizontalScale and VerticalScale must be greater than zero."));
+		}
+
+		OutTargetResolution = FGaeaTerrainMeshMaterializer::ResolveTargetResolution(Dataset, Options);
+		if (OutTargetResolution.X < 2 || OutTargetResolution.Y < 2)
+		{
+			return Fail(TEXT("Target terrain resolution must be at least 2x2 samples."));
+		}
+		return true;
+	}
+}
+
+FIntPoint FGaeaTerrainMeshMaterializer::ResolveTargetResolution(
+	const FGaeaTerrainDataset& Dataset,
+	const FGaeaTerrainMeshBuildOptions& Options)
+{
+	const FGaeaScalarField* Height = Dataset.FindScalarField(GaeaTerrainFieldNames::Height);
+	if (!Height || !Height->IsValid())
+	{
+		return FIntPoint::ZeroValue;
+	}
+
+	const FIntPoint Source = Height->Domain.Dimensions;
+	const int32 X = Options.TargetResolution.X > 1 ? Options.TargetResolution.X : Source.X;
+	const int32 Y = Options.TargetResolution.Y > 1 ? Options.TargetResolution.Y : Source.Y;
+	return FIntPoint(X, Y);
+}
+
 bool FGaeaTerrainMeshMaterializer::BuildDynamicMesh(
 	const FGaeaTerrainDataset& Dataset,
 	float HeightScale,
 	FDynamicMesh3& OutMesh,
 	FString* OutError)
 {
-	auto Fail = [OutError](const TCHAR* Message)
+	FGaeaTerrainMeshBuildOptions Options;
+	Options.HeightScale = HeightScale;
+	return BuildDynamicMesh(Dataset, Options, OutMesh, OutError);
+}
+
+bool FGaeaTerrainMeshMaterializer::BuildDynamicMesh(
+	const FGaeaTerrainDataset& Dataset,
+	const FGaeaTerrainMeshBuildOptions& Options,
+	FDynamicMesh3& OutMesh,
+	FString* OutError)
+{
+	const FIntPoint Resolution = ResolveTargetResolution(Dataset, Options);
+	if (Resolution.X < 2 || Resolution.Y < 2)
 	{
 		if (OutError)
 		{
-			*OutError = Message;
+			*OutError = TEXT("Target terrain resolution must be at least 2x2 samples.");
 		}
 		return false;
-	};
-
-	const FGaeaScalarField* Height = Dataset.FindScalarField(GaeaTerrainFieldNames::Height);
-	if (!Height || !Height->IsValid())
-	{
-		return Fail(TEXT("Terrain dataset has no valid Height field."));
-	}
-	if (HeightScale <= UE_SMALL_NUMBER)
-	{
-		return Fail(TEXT("HeightScale must be greater than zero."));
 	}
 
-	const FIntPoint Dimensions = Height->Domain.Dimensions;
-	if (Dimensions.X < 2 || Dimensions.Y < 2)
+	return BuildDynamicMeshRegion(
+		Dataset,
+		Options,
+		FIntPoint(0, 0),
+		FIntPoint(Resolution.X - 1, Resolution.Y - 1),
+		OutMesh,
+		OutError);
+}
+
+bool FGaeaTerrainMeshMaterializer::BuildDynamicMeshRegion(
+	const FGaeaTerrainDataset& Dataset,
+	const FGaeaTerrainMeshBuildOptions& Options,
+	const FIntPoint& StartSample,
+	const FIntPoint& EndSample,
+	FDynamicMesh3& OutMesh,
+	FString* OutError)
+{
+	const FGaeaScalarField* Height = nullptr;
+	FIntPoint TargetResolution = FIntPoint::ZeroValue;
+	if (!ResolveHeightField(Dataset, Options, Height, TargetResolution, OutError))
 	{
-		return Fail(TEXT("Height field must be at least 2x2 samples."));
+		return false;
 	}
 
+	if (StartSample.X < 0 || StartSample.Y < 0 ||
+		EndSample.X >= TargetResolution.X || EndSample.Y >= TargetResolution.Y ||
+		EndSample.X <= StartSample.X || EndSample.Y <= StartSample.Y)
+	{
+		if (OutError)
+		{
+			*OutError = TEXT("Requested terrain mesh region is outside the target sample grid.");
+		}
+		return false;
+	}
+
+	const FVector2d MinWorld = Height->Domain.InteriorSampleToWorld(0, 0);
+	const FVector2d MaxWorld = Height->Domain.InteriorSampleToWorld(
+		Height->Domain.Dimensions.X - 1,
+		Height->Domain.Dimensions.Y - 1);
+
+	const int32 LocalWidth = EndSample.X - StartSample.X + 1;
+	const int32 LocalHeight = EndSample.Y - StartSample.Y + 1;
 	OutMesh = FDynamicMesh3(true, false, false, false);
 
 	TArray<int32> VertexIds;
-	VertexIds.SetNumUninitialized(Dimensions.X * Dimensions.Y);
+	VertexIds.SetNumUninitialized(LocalWidth * LocalHeight);
 
-	for (int32 Y = 0; Y < Dimensions.Y; ++Y)
+	for (int32 LocalY = 0; LocalY < LocalHeight; ++LocalY)
 	{
-		for (int32 X = 0; X < Dimensions.X; ++X)
+		const int32 GlobalY = StartSample.Y + LocalY;
+		const double V = TargetResolution.Y > 1
+			? static_cast<double>(GlobalY) / static_cast<double>(TargetResolution.Y - 1)
+			: 0.0;
+
+		for (int32 LocalX = 0; LocalX < LocalWidth; ++LocalX)
 		{
-			const FVector2d WorldPosition = Height->Domain.InteriorSampleToWorld(X, Y);
-			const double Z = static_cast<double>(Height->AtInterior(X, Y)) * static_cast<double>(HeightScale);
-			VertexIds[Y * Dimensions.X + X] = OutMesh.AppendVertex(FVector3d(WorldPosition.X, WorldPosition.Y, Z));
+			const int32 GlobalX = StartSample.X + LocalX;
+			const double U = TargetResolution.X > 1
+				? static_cast<double>(GlobalX) / static_cast<double>(TargetResolution.X - 1)
+				: 0.0;
+
+			const FVector2d SourceWorld(
+				FMath::Lerp(MinWorld.X, MaxWorld.X, U),
+				FMath::Lerp(MinWorld.Y, MaxWorld.Y, V));
+			const float HeightValue = Height->SampleWorld(SourceWorld, true);
+			const FVector3d Position(
+				SourceWorld.X * Options.HorizontalScale,
+				SourceWorld.Y * Options.HorizontalScale,
+				static_cast<double>(HeightValue) * static_cast<double>(Options.HeightScale) * Options.VerticalScale);
+
+			VertexIds[LocalY * LocalWidth + LocalX] = OutMesh.AppendVertex(Position);
 		}
 	}
 
-	for (int32 Y = 0; Y < Dimensions.Y - 1; ++Y)
+	for (int32 Y = 0; Y < LocalHeight - 1; ++Y)
 	{
-		for (int32 X = 0; X < Dimensions.X - 1; ++X)
+		for (int32 X = 0; X < LocalWidth - 1; ++X)
 		{
-			const int32 V00 = VertexIds[Y * Dimensions.X + X];
-			const int32 V10 = VertexIds[Y * Dimensions.X + X + 1];
-			const int32 V01 = VertexIds[(Y + 1) * Dimensions.X + X];
-			const int32 V11 = VertexIds[(Y + 1) * Dimensions.X + X + 1];
+			const int32 V00 = VertexIds[Y * LocalWidth + X];
+			const int32 V10 = VertexIds[Y * LocalWidth + X + 1];
+			const int32 V01 = VertexIds[(Y + 1) * LocalWidth + X];
+			const int32 V11 = VertexIds[(Y + 1) * LocalWidth + X + 1];
 
-			// Match the known-good legacy terrain winding: A,D,B and A,C,D.
 			if (OutMesh.AppendTriangle(V00, V11, V10, 0) < 0 ||
 				OutMesh.AppendTriangle(V00, V01, V11, 0) < 0)
 			{
-				return Fail(TEXT("Failed to append terrain mesh triangles."));
+				if (OutError)
+				{
+					*OutError = TEXT("Failed to append terrain mesh triangles.");
+				}
+				return false;
 			}
 		}
 	}
