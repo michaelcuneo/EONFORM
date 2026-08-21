@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GaeaMeshTerrainOutput.h"
+#include "GaeaTerrainGraphAsset.h"
 #include "Widgets/SCompoundWidget.h"
 
 class STextBlock;
@@ -27,8 +28,8 @@ private:
 	bool ApplyPhysicalScale(const struct FGaeaTerrainDatasetSnapshot& Snapshot, FGaeaMeshTerrainOutputSettings& InOutSettings, FString& OutError) const;
 
 	FText GetResolutionLabel(int32 Resolution) const;
-	FText GetSectionLayoutLabel(enum class EGaeaTerrainOutputSectionLayout Layout) const;
-	FText GetSectionComplexityLabel(enum class EGaeaTerrainOutputComplexity Complexity) const;
+	FText GetSectionLayoutLabel(EGaeaTerrainOutputSectionLayout Layout) const;
+	FText GetSectionComplexityLabel(EGaeaTerrainOutputComplexity Complexity) const;
 	FText GetOutputEstimateText() const;
 
 	TSharedPtr<int32> FindResolutionPreset(int32 Resolution) const;
