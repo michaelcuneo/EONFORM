@@ -6,6 +6,8 @@
 
 class UGaeaTerrainGraphAsset;
 class UPrimitiveComponent;
+class USceneComponent;
+class UArrowComponent;
 
 /**
  * Editor-only vertical bridge from an EONFORM terrain graph to UE 5.8 Mesh Terrain.
@@ -44,6 +46,14 @@ public:
 	/** Optional existing Mesh Partition actor. Kept as AActor to isolate the experimental type from UHT. */
 	UPROPERTY(EditInstanceOnly, Category="EONFORM|Mesh Terrain")
 	TObjectPtr<AActor> TargetMeshPartition;
+
+	/** Ordinary scene root so the bridge behaves like a normal selectable level actor. */
+	UPROPERTY(VisibleAnywhere, Category="EONFORM|Bridge")
+	TObjectPtr<USceneComponent> SceneRoot;
+
+	/** Visible editor marker used to select and locate the bridge in the viewport. */
+	UPROPERTY(VisibleAnywhere, Category="EONFORM|Bridge")
+	TObjectPtr<UArrowComponent> EditorMarker;
 
 	UPROPERTY(VisibleAnywhere, Category="EONFORM|Mesh Terrain")
 	TObjectPtr<UPrimitiveComponent> MeshProviderComponent;
