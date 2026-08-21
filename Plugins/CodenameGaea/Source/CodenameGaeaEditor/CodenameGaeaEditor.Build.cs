@@ -23,6 +23,7 @@ public class CodenameGaeaEditor : ModuleRules
             "DesktopPlatform",
             "GraphEditor",
             "InputCore",
+            "CodenameGaeaMeshTerrainEditor",
             "UnrealEd",
             "Slate",
             "SlateCore",
