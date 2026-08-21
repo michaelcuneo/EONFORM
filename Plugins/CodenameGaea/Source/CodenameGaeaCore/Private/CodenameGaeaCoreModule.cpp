@@ -17,6 +17,7 @@
 #include "GaeaShaperNode.h"
 #include "GaeaSharpenNode.h"
 #include "GaeaSineNode.h"
+#include "GaeaSlopeNode.h"
 #include "GaeaSoftClipNode.h"
 #include "GaeaTerraceNode.h"
 #include "GaeaTerrainNodeDescriptor.h"
@@ -50,6 +51,7 @@ public:
 		RegisterGaeaCurvatureNode();
 		RegisterGaeaHeightNode();
 		RegisterGaeaAngleNode();
+		RegisterGaeaSlopeNode();
 		RegisterGaeaCombineNode();
 		RegisterGaeaClampNode();
 		RegisterGaeaAutoLevelNode();
