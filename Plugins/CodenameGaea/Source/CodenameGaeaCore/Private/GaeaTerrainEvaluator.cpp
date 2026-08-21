@@ -217,7 +217,7 @@ namespace
 	bool EvaluateTerrainContextNode(
 		const FGaeaTerrainNode&,
 		const FGaeaTerrainNodeInputs& Inputs,
-		const FGaeaTerrainEvaluationContext&,
+		const FGaeaTerrainEvaluationContext& Context,
 		FGaeaTerrainNodeEvaluation& Out,
 		FString& Error)
 	{
@@ -231,7 +231,15 @@ namespace
 		}
 
 		FGaeaTerrainDataset Dataset = Input->TerrainDataset;
-		if (!FGaeaTerrainContext::Analyze(*Height, FMath::Max(Input->HeightScale, 1.0f), Dataset, &Error)) return false;
+		if (!FGaeaTerrainContext::Analyze(
+			*Height,
+			FMath::Max(Input->HeightScale, 1.0f),
+			Context.PhysicalMetrics,
+			Dataset,
+			&Error))
+		{
+			return false;
+		}
 		return PublishTerrain(Out, MoveTemp(Dataset), Input->HeightScale, Error);
 	}
 
@@ -296,7 +304,7 @@ namespace
 	bool EvaluateSlopeNode(
 		const FGaeaTerrainNode& Node,
 		const FGaeaTerrainNodeInputs& Inputs,
-		const FGaeaTerrainEvaluationContext&,
+		const FGaeaTerrainEvaluationContext& Context,
 		FGaeaTerrainNodeEvaluation& Out,
 		FString& Error)
 	{
@@ -313,10 +321,14 @@ namespace
 		const float MinSlope = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Min"), 0.0)), 0.0f, 90.0f);
 		const float MaxSlope = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Max"), 45.0)), MinSlope, 90.0f);
 		const float Falloff = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Falloff"), 5.0)), 0.0f, 45.0f);
-		const FVector2d CellSize = Height->Domain.GetCellSize();
-		if (CellSize.X <= UE_SMALL_NUMBER || CellSize.Y <= UE_SMALL_NUMBER)
+		const FIntPoint Dimensions = Height->Domain.Dimensions;
+		const FVector2d CellSizeMeters = Context.PhysicalMetrics.ResolveSampleSpacingMeters(
+			Dimensions,
+			Height->Domain.GetCellSize());
+		const double ElevationScaleMeters = Context.PhysicalMetrics.ResolveElevationScaleMeters(Input->HeightScale);
+		if (CellSizeMeters.X <= UE_DOUBLE_SMALL_NUMBER || CellSizeMeters.Y <= UE_DOUBLE_SMALL_NUMBER)
 		{
-			Error = TEXT("Slope input terrain has an invalid grid spacing.");
+			Error = TEXT("Slope input terrain has an invalid physical grid spacing.");
 			return false;
 		}
 
@@ -327,7 +339,6 @@ namespace
 		FGaeaScalarField Mask;
 		Mask.Initialize(Height->Domain, Descriptor);
 
-		const FIntPoint Dimensions = Height->Domain.Dimensions;
 		for (int32 Y = 0; Y < Dimensions.Y; ++Y)
 		{
 			for (int32 X = 0; X < Dimensions.X; ++X)
@@ -336,11 +347,11 @@ namespace
 				const int32 XR = FMath::Min(Dimensions.X - 1, X + 1);
 				const int32 YD = FMath::Max(0, Y - 1);
 				const int32 YU = FMath::Min(Dimensions.Y - 1, Y + 1);
-				const float DX = (Height->AtInterior(XR, Y) - Height->AtInterior(XL, Y)) * Input->HeightScale
-					/ FMath::Max(static_cast<float>(XR - XL) * static_cast<float>(CellSize.X), UE_SMALL_NUMBER);
-				const float DY = (Height->AtInterior(X, YU) - Height->AtInterior(X, YD)) * Input->HeightScale
-					/ FMath::Max(static_cast<float>(YU - YD) * static_cast<float>(CellSize.Y), UE_SMALL_NUMBER);
-				const float SlopeDegrees = FMath::RadiansToDegrees(FMath::Atan(FMath::Sqrt(DX * DX + DY * DY)));
+				const double DX = static_cast<double>(Height->AtInterior(XR, Y) - Height->AtInterior(XL, Y)) * ElevationScaleMeters
+					/ FMath::Max(static_cast<double>(XR - XL) * CellSizeMeters.X, UE_DOUBLE_SMALL_NUMBER);
+				const double DY = static_cast<double>(Height->AtInterior(X, YU) - Height->AtInterior(X, YD)) * ElevationScaleMeters
+					/ FMath::Max(static_cast<double>(YU - YD) * CellSizeMeters.Y, UE_DOUBLE_SMALL_NUMBER);
+				const float SlopeDegrees = static_cast<float>(FMath::RadiansToDegrees(FMath::Atan(FMath::Sqrt(DX * DX + DY * DY))));
 
 				float Weight = 0.0f;
 				if (SlopeDegrees >= MinSlope && SlopeDegrees <= MaxSlope)
@@ -369,7 +380,7 @@ namespace
 	bool EvaluateHydraulicErosionNode(
 		const FGaeaTerrainNode& Node,
 		const FGaeaTerrainNodeInputs& Inputs,
-		const FGaeaTerrainEvaluationContext&,
+		const FGaeaTerrainEvaluationContext& Context,
 		FGaeaTerrainNodeEvaluation& Out,
 		FString& Error)
 	{
@@ -381,6 +392,7 @@ namespace
 		if (!FGaeaTerrainDerivedData::EnsureHydraulicInputs(
 			PreparedDataset,
 			FMath::Max(Input->HeightScale, 1.0f),
+			Context.PhysicalMetrics,
 			DerivedSettings,
 			&Error))
 		{
@@ -417,10 +429,29 @@ namespace
 		Settings.bAggressiveMode = Node.GetBool(TEXT("AggressiveMode"), Settings.bAggressiveMode);
 		Settings.bDeterministic = Node.GetBool(TEXT("Deterministic"), Settings.bDeterministic);
 
+		const FVector2d DomainCellSize = Height->Domain.GetCellSize();
+		const double DomainRepresentativeCentimeters = FMath::Max(
+			FMath::Min(FMath::Abs(DomainCellSize.X), FMath::Abs(DomainCellSize.Y)),
+			UE_DOUBLE_SMALL_NUMBER);
+		const double PhysicalSampleSpacingMeters = Context.PhysicalMetrics.ResolveRepresentativeSampleSpacingMeters(
+			Height->Domain.Dimensions,
+			DomainCellSize);
+		const double PhysicalElevationScaleMeters = Context.PhysicalMetrics.ResolveElevationScaleMeters(Input->HeightScale);
+		Settings.PhysicalSampleSpacingMeters = PhysicalSampleSpacingMeters;
+		Settings.PhysicalElevationScaleMeters = PhysicalElevationScaleMeters;
+
+		// Preserve the existing stable hydraulic solver while changing the height/cell
+		// ratio it sees. The normalized output remains identical in representation,
+		// but slopes now correspond to the graph's physical world dimensions.
+		const float SolverHeightScale = static_cast<float>(FMath::Max(
+			PhysicalElevationScaleMeters / FMath::Max(PhysicalSampleSpacingMeters, UE_DOUBLE_SMALL_NUMBER)
+				* DomainRepresentativeCentimeters,
+			1.0));
+
 		FGaeaHydraulicErosionResult Result;
 		if (!FGaeaHydraulicErosion::Evaluate(
 			*Height,
-			FMath::Max(Input->HeightScale, 1.0f),
+			SolverHeightScale,
 			Settings,
 			Result,
 			PreparedDataset.FindScalarField(GaeaTerrainFieldNames::Rainfall),
