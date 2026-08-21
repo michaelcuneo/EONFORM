@@ -22,6 +22,7 @@ public class CodenameGaeaEditor : ModuleRules
             "ContentBrowser",
             "DesktopPlatform",
             "DynamicMesh",
+            "GeometryCore",
             "GeometryFramework",
             "GraphEditor",
             "InputCore",
