@@ -6,6 +6,7 @@
 #include "GaeaClampNode.h"
 #include "GaeaCombineNode.h"
 #include "GaeaCurvatureNode.h"
+#include "GaeaDenoiseNode.h"
 #include "GaeaHeightNode.h"
 #include "GaeaTerrainNodeDescriptor.h"
 #include "GaeaTerrainRecipe.h"
@@ -33,6 +34,7 @@ public:
 		RegisterGaeaClampNode();
 		RegisterGaeaAutoLevelNode();
 		RegisterGaeaBlurNode();
+		RegisterGaeaDenoiseNode();
 	}
 };
 
