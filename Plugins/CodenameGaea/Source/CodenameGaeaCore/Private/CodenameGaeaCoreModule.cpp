@@ -18,6 +18,7 @@
 #include "GaeaThermalErosionNode.h"
 #include "GaeaThresholdNode.h"
 #include "GaeaTransformNode.h"
+#include "GaeaZeroBordersNode.h"
 
 class FCodenameGaeaCoreModule final : public IModuleInterface
 {
@@ -49,6 +50,7 @@ public:
 		RegisterGaeaSineNode();
 		RegisterGaeaThresholdNode();
 		RegisterGaeaTransformNode();
+		RegisterGaeaZeroBordersNode();
 	}
 };
 
