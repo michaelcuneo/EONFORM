@@ -44,6 +44,7 @@ struct CODENAMEGAEACORE_API FGaeaGridDomain
 	FVector2d GetCellSize() const;
 	FVector2d GetEvaluationMin() const;
 	FVector2d GetEvaluationMax() const;
+	FVector2d WorldSize() const { return WorldMax - WorldMin; }
 
 	bool IsInteriorCoordinate(int32 X, int32 Y) const;
 	bool IsStorageCoordinate(int32 X, int32 Y) const;
