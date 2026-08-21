@@ -1,6 +1,7 @@
 #include "GaeaFileNodeDecoder.h"
 
 #include "GaeaColorField.h"
+#include "GaeaGeoTiffMetadata.h"
 #include "GaeaGridDomain.h"
 #include "GaeaTerrainEvaluator.h"
 #include "GaeaTerrainFieldNames.h"
@@ -115,8 +116,34 @@ namespace
 		return true;
 	}
 
+	bool ResolveGeoTiffExtentsMetres(
+		const FGaeaGeoTiffMetadata& GeoTiff,
+		double& OutExtentXMetres,
+		double& OutExtentYMetres)
+	{
+		if (!GeoTiff.bValid) return false;
+		if (GeoTiff.bGeographic)
+		{
+			if (GeoTiff.XMin < -180.0 || GeoTiff.XMax > 180.0 || GeoTiff.YMin < -90.0 || GeoTiff.YMax > 90.0) return false;
+			const double MidLatitudeRadians = FMath::DegreesToRadians((GeoTiff.YMin + GeoTiff.YMax) * 0.5);
+			OutExtentXMetres = Wgs84EquatorialRadiusMetres
+				* FMath::Cos(MidLatitudeRadians)
+				* FMath::DegreesToRadians(GeoTiff.XMax - GeoTiff.XMin);
+			OutExtentYMetres = Wgs84EquatorialRadiusMetres
+				* FMath::DegreesToRadians(GeoTiff.YMax - GeoTiff.YMin);
+		}
+		else
+		{
+			OutExtentXMetres = (GeoTiff.XMax - GeoTiff.XMin) * GeoTiff.LinearUnitsToMetres;
+			OutExtentYMetres = (GeoTiff.YMax - GeoTiff.YMin) * GeoTiff.LinearUnitsToMetres;
+		}
+		return FMath::IsFinite(OutExtentXMetres) && FMath::IsFinite(OutExtentYMetres)
+			&& OutExtentXMetres > UE_DOUBLE_SMALL_NUMBER && OutExtentYMetres > UE_DOUBLE_SMALL_NUMBER;
+	}
+
 	bool ResolveFileNodeSpatialExtents(
 		const FGaeaTerrainNode& Node,
+		const FGaeaGeoTiffMetadata* GeoTiff,
 		int32 SourceWidth,
 		int32 SourceHeight,
 		int32 OutputWidth,
@@ -140,6 +167,11 @@ namespace
 		if (bUseCoordinateBounds)
 		{
 			if (!ResolveCoordinateBoundsMetres(Node, SourceExtentXMetres, SourceExtentYMetres, Error)) return false;
+		}
+		else if (!bUseGroundSampleDistance && GeoTiff && ResolveGeoTiffExtentsMetres(*GeoTiff, SourceExtentXMetres, SourceExtentYMetres))
+		{
+			// Embedded GeoTIFF georeferencing is authoritative unless the user
+			// explicitly supplied coordinate bounds or metres-per-pixel overrides.
 		}
 		else if (bUseGroundSampleDistance)
 		{
@@ -283,6 +315,9 @@ namespace
 			return false;
 		}
 
+		FGaeaGeoTiffMetadata GeoTiff;
+		const bool bHasGeoTiffMetadata = GaeaReadGeoTiffMetadata(Path, SourceWidth, SourceHeight, GeoTiff);
+
 		const bool bCropSquare = Node.GetBool(TEXT("CropToSquare"), false);
 		const int32 OutputWidth = bCropSquare ? FMath::Min(SourceWidth, SourceHeight) : SourceWidth;
 		const int32 OutputHeight = bCropSquare ? FMath::Min(SourceWidth, SourceHeight) : SourceHeight;
@@ -293,6 +328,7 @@ namespace
 		double ExtentYUnrealUnits = 0.0;
 		if (!ResolveFileNodeSpatialExtents(
 			Node,
+			bHasGeoTiffMetadata ? &GeoTiff : nullptr,
 			SourceWidth,
 			SourceHeight,
 			OutputWidth,
