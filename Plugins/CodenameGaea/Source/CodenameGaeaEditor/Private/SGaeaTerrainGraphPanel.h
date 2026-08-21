@@ -44,6 +44,7 @@ private:
 	FReply SaveGraphAsset();
 	FReply EvaluateGraph();
 	bool EvaluateSelectedNodePreview();
+	void SyncOutputSettingsState();
 	uint32 ComputeAutoPreviewHash() const;
 	FText GetAssetText() const;
 	FText GetStatusText() const;
@@ -55,12 +56,14 @@ private:
 	TSharedPtr<SBox> GraphHost;
 	TSharedPtr<SVerticalBox> ParameterPanel;
 	TWeakObjectPtr<UGaeaEditorGraphNode> SelectedNode;
+	TWeakObjectPtr<UGaeaTerrainGraphAsset> LastOutputSettingsAsset;
 	FSimpleDelegate OnEvaluated;
 	FText StatusText;
 
 	uint32 LastAutoPreviewHash = 0;
 	float AutoPreviewPollAccumulator = 0.0f;
 	FGuid LastPreviewNodeId;
+	uint64 LastOutputSettingsRevision = 0;
 	bool bAutoPreviewInitialized = false;
 	bool bAutoPreviewEvaluating = false;
 	bool bLegacyEvaluateButtonHidden = false;
