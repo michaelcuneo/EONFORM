@@ -41,9 +41,6 @@ namespace
 		if (!Node) return nullptr;
 		if (UEdGraphPin* Exact = Node->FindPin(RequestedName, EGPD_Output)) return Exact;
 
-		// During the Gaea 2 cleanup public node outputs changed from Terrain to
-		// Out. The editor now keeps Terrain as the stable internal name while the
-		// pin is displayed as Out. Accept either spelling when rebuilding assets.
 		if (RequestedName == TEXT("Out")) return Node->FindPin(TEXT("Terrain"), EGPD_Output);
 		if (RequestedName == TEXT("Terrain")) return Node->FindPin(TEXT("Out"), EGPD_Output);
 		return nullptr;
@@ -54,9 +51,6 @@ namespace
 		if (!Node) return nullptr;
 		if (UEdGraphPin* Exact = Node->FindPin(RequestedName, EGPD_Input)) return Exact;
 
-		// Handle the short-lived connection names produced during the Gaea 1 ->
-		// Gaea 2 public-contract cleanup. This is deliberately narrow: it repairs
-		// known migrations without silently connecting unrelated ports.
 		if (Node->RecipeNodeType == GaeaTerrainNodeTypes::Combine)
 		{
 			if (RequestedName == TEXT("Primary")) return Node->FindPin(TEXT("Input1"), EGPD_Input);
@@ -354,7 +348,7 @@ bool SGaeaTerrainGraphPanel::BuildRecipeFromEditorGraph(
 
 	if (TerrainOutputInput->LinkedTo.Num() != 1)
 	{
-		OutError = TEXT("Terrain Output must have exactly one Terrain connection when the graph contains terrain nodes."));
+		OutError = TEXT("Terrain Output must have exactly one Terrain connection when the graph contains terrain nodes.");
 		return false;
 	}
 
@@ -395,9 +389,6 @@ bool SGaeaTerrainGraphPanel::BuildRecipeFromEditorGraph(
 		}
 	}
 
-	// Unused/disconnected authoring nodes are valid. Only the subgraph reachable
-	// from Terrain Output participates in evaluation; retaining other nodes is
-	// essential for normal graph experimentation and matches node-editor usage.
 	return OutRecipe.Validate(&OutError);
 }
 
