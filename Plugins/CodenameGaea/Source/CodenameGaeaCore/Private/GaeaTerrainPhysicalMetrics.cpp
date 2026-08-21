@@ -1,5 +1,7 @@
 #include "GaeaTerrainPhysicalMetrics.h"
 
+#include "Misc/ScopeLock.h"
+
 namespace
 {
 	struct FGaeaTerrainPhysicalContextState
