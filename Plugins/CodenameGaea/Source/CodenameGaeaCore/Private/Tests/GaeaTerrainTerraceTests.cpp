@@ -26,15 +26,15 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FGaeaTerrainTerraceDescriptorTest::RunTest(const FString& Parameters)
 {
 	FGaeaTerrainNodeDescriptor Descriptor;
-	TestTrue(TEXT("Terrace descriptor exists"), FGaeaTerrainNodeDescriptorRegistry::Get(GaeaTerrainNodeTypes::Terrace, Descriptor));
-	TestEqual(TEXT("Terrace display name"), Descriptor.DisplayName, FString(TEXT("Terrace")));
-	TestEqual(TEXT("Terrace category"), Descriptor.Category, FString(TEXT("Profile")));
-	TestEqual(TEXT("Terrace input count"), Descriptor.Inputs.Num(), 1);
-	TestEqual(TEXT("Terrace output count"), Descriptor.Outputs.Num(), 1);
-	TestEqual(TEXT("Terrace parameter count"), Descriptor.Parameters.Num(), 8);
+	TestTrue(TEXT("Terraces descriptor exists"), FGaeaTerrainNodeDescriptorRegistry::Get(GaeaTerrainNodeTypes::Terrace, Descriptor));
+	TestEqual(TEXT("Terraces display name"), Descriptor.DisplayName, FString(TEXT("Terraces")));
+	TestEqual(TEXT("Terraces category"), Descriptor.Category, FString(TEXT("Surface")));
+	TestEqual(TEXT("Terraces input count"), Descriptor.Inputs.Num(), 1);
+	TestEqual(TEXT("Terraces output count"), Descriptor.Outputs.Num(), 1);
+	TestEqual(TEXT("Terraces parameter count"), Descriptor.Parameters.Num(), 5);
 	if (Descriptor.Outputs.Num() == 1)
 	{
-		TestEqual(TEXT("Terrace output pin"), Descriptor.Outputs[0].Name, FName(TEXT("Out")));
+		TestEqual(TEXT("Terraces output pin"), Descriptor.Outputs[0].Name, FName(TEXT("Out")));
 	}
 	return true;
 }
@@ -64,9 +64,6 @@ bool FGaeaTerrainTerraceTerminalTest::RunTest(const FString& Parameters)
 	Terrace.NumericParameters.Add(TEXT("Uniformity"), 0.8);
 	Terrace.NumericParameters.Add(TEXT("Steepness"), 0.65);
 	Terrace.NumericParameters.Add(TEXT("Intensity"), 0.9);
-	Terrace.NumericParameters.Add(TEXT("SoftFalloff"), 0.15);
-	Terrace.BoolParameters.Add(TEXT("Reprocess"), false);
-	Terrace.NumericParameters.Add(TEXT("Process"), 1.0);
 	Terrace.IntegerParameters.Add(TEXT("Seed"), 1287);
 
 	Recipe.Nodes = { Source, Terrace };
@@ -75,7 +72,7 @@ bool FGaeaTerrainTerraceTerminalTest::RunTest(const FString& Parameters)
 
 	FGaeaTerrainEvaluationContext Context;
 	const FGaeaTerrainEvaluationResult Result = FGaeaTerrainEvaluator::Evaluate(Recipe, Context);
-	TestTrue(TEXT("Terrace terminal Out evaluates"), Result.bSuccess);
+	TestTrue(TEXT("Terraces terminal Out evaluates"), Result.bSuccess);
 	if (!Result.bSuccess)
 	{
 		AddError(Result.Error);
@@ -83,7 +80,7 @@ bool FGaeaTerrainTerraceTerminalTest::RunTest(const FString& Parameters)
 	}
 
 	const FGaeaScalarField* Height = Result.Dataset.FindScalarField(GaeaTerrainFieldNames::Height);
-	TestNotNull(TEXT("Terrace result has Height"), Height);
+	TestNotNull(TEXT("Terraces result has Height"), Height);
 	return Height != nullptr;
 }
 
