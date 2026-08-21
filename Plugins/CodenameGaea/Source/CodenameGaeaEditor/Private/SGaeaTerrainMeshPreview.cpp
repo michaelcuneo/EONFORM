@@ -39,8 +39,22 @@ void SGaeaTerrainMeshPreview::Construct(const FArguments& InArgs)
 		PreviewScene.AddComponent(PreviewMeshComponent, FTransform::Identity);
 	}
 
+	LastOutputSettingsRevision = FGaeaTerrainOutputEditorState::Get().GetRevision();
 	StatusText = FText::FromString(TEXT("Drop/connect a terrain-capable graph output to preview it here."));
 	SEditorViewport::Construct(SEditorViewport::FArguments());
+}
+
+void SGaeaTerrainMeshPreview::Tick(
+	const FGeometry& AllottedGeometry,
+	const double InCurrentTime,
+	const float InDeltaTime)
+{
+	SEditorViewport::Tick(AllottedGeometry, InCurrentTime, InDeltaTime);
+	const uint64 CurrentRevision = FGaeaTerrainOutputEditorState::Get().GetRevision();
+	if (CurrentRevision != LastOutputSettingsRevision && LastSnapshot.IsValid())
+	{
+		SetTerrain(LastSnapshot);
+	}
 }
 
 TSharedRef<FEditorViewportClient> SGaeaTerrainMeshPreview::MakeEditorViewportClient()
@@ -56,6 +70,8 @@ TSharedRef<FEditorViewportClient> SGaeaTerrainMeshPreview::MakeEditorViewportCli
 
 void SGaeaTerrainMeshPreview::ClearTerrain()
 {
+	LastSnapshot = FGaeaTerrainDatasetSnapshot();
+	LastOutputSettingsRevision = FGaeaTerrainOutputEditorState::Get().GetRevision();
 	if (PreviewMeshComponent)
 	{
 		UE::Geometry::FDynamicMesh3 EmptyMesh;
@@ -71,6 +87,9 @@ void SGaeaTerrainMeshPreview::SetTerrain(const FGaeaTerrainDatasetSnapshot& Snap
 		ClearTerrain();
 		return;
 	}
+
+	LastSnapshot = Snapshot;
+	LastOutputSettingsRevision = FGaeaTerrainOutputEditorState::Get().GetRevision();
 
 	FGaeaTerrainMeshBuildOptions Options;
 	Options.HeightScale = Snapshot.Metadata.HeightScale;
@@ -100,7 +119,12 @@ void SGaeaTerrainMeshPreview::SetTerrain(const FGaeaTerrainDatasetSnapshot& Snap
 	FString Error;
 	if (!FGaeaTerrainMeshMaterializer::BuildDynamicMesh(Snapshot.Dataset, Options, Mesh, &Error))
 	{
-		ClearTerrain();
+		LastSnapshot = Snapshot;
+		if (PreviewMeshComponent)
+		{
+			UE::Geometry::FDynamicMesh3 EmptyMesh;
+			PreviewMeshComponent->SetMesh(MoveTemp(EmptyMesh));
+		}
 		StatusText = FText::FromString(Error.IsEmpty() ? TEXT("This output cannot be rendered as a terrain mesh.") : Error);
 		return;
 	}
