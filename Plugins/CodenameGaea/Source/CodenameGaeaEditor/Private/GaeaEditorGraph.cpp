@@ -48,6 +48,12 @@ namespace
 			const FName Mode = Node->NameParameters.FindRef(TEXT("Output"));
 			return Mode == TEXT("Color") ? GaeaEditorGraphPins::Color : GaeaEditorGraphPins::Terrain;
 		}
+		if (Node && Node->RecipeNodeType == GaeaTerrainNodeTypes::File)
+		{
+			return Node->BoolParameters.FindRef(TEXT("IsRGB"))
+				? GaeaEditorGraphPins::Color
+				: GaeaEditorGraphPins::Terrain;
+		}
 		return Category;
 	}
 
