@@ -16,12 +16,7 @@ namespace
 		return Port;
 	}
 
-	FGaeaTerrainParameterDescriptor DistanceNumberParameter(
-		FName Name,
-		const TCHAR* DisplayName,
-		double DefaultValue,
-		double Minimum,
-		double Maximum)
+	FGaeaTerrainParameterDescriptor DistanceNumberParameter(FName Name, const TCHAR* DisplayName, double DefaultValue, double Minimum, double Maximum)
 	{
 		FGaeaTerrainParameterDescriptor Parameter;
 		Parameter.Name = Name;
@@ -35,6 +30,20 @@ namespace
 		return Parameter;
 	}
 
+	FGaeaTerrainParameterDescriptor DistanceIntegerParameter(FName Name, const TCHAR* DisplayName, int64 DefaultValue, int64 Minimum, int64 Maximum)
+	{
+		FGaeaTerrainParameterDescriptor Parameter;
+		Parameter.Name = Name;
+		Parameter.DisplayName = DisplayName;
+		Parameter.Type = EGaeaTerrainParameterType::Integer;
+		Parameter.DefaultInteger = DefaultValue;
+		Parameter.bHasMinimum = true;
+		Parameter.Minimum = static_cast<double>(Minimum);
+		Parameter.bHasMaximum = true;
+		Parameter.Maximum = static_cast<double>(Maximum);
+		return Parameter;
+	}
+
 	FGaeaTerrainParameterDescriptor DistanceBooleanParameter(FName Name, const TCHAR* DisplayName, bool DefaultValue)
 	{
 		FGaeaTerrainParameterDescriptor Parameter;
@@ -45,25 +54,37 @@ namespace
 		return Parameter;
 	}
 
-	float DistanceNormalizedInput(float Value, bool bTerrain)
+	FGaeaTerrainParameterDescriptor DistanceNameParameter(FName Name, const TCHAR* DisplayName, FName DefaultValue, std::initializer_list<FName> Options)
 	{
-		return bTerrain
-			? FMath::Clamp(Value * 0.5f + 0.5f, 0.0f, 1.0f)
-			: FMath::Clamp(Value, 0.0f, 1.0f);
+		FGaeaTerrainParameterDescriptor Parameter;
+		Parameter.Name = Name;
+		Parameter.DisplayName = DisplayName;
+		Parameter.Type = EGaeaTerrainParameterType::Name;
+		Parameter.DefaultName = DefaultValue;
+		for (const FName Option : Options) Parameter.NameOptions.Add(Option);
+		return Parameter;
 	}
 
-	void DistanceTransformInside(
-		const TArray<uint8>& Inside,
-		int32 Width,
-		int32 Height,
-		TArray<float>& Distances)
+	float DistanceHash01(int32 X, int32 Y, int32 Seed)
+	{
+		uint32 H = static_cast<uint32>(X) * 374761393u;
+		H += static_cast<uint32>(Y) * 668265263u;
+		H += static_cast<uint32>(Seed) * 2246822519u;
+		H = (H ^ (H >> 13u)) * 1274126177u;
+		H ^= H >> 16u;
+		return static_cast<float>(H & 0x00ffffffu) / static_cast<float>(0x00ffffffu);
+	}
+
+	float DistanceNormalizedInput(float Value, bool bTerrain)
+	{
+		return bTerrain ? FMath::Clamp(Value * 0.5f + 0.5f, 0.0f, 1.0f) : FMath::Clamp(Value, 0.0f, 1.0f);
+	}
+
+	void DistanceTransformInside(const TArray<uint8>& Inside, int32 Width, int32 Height, TArray<float>& Distances)
 	{
 		const float Far = static_cast<float>(Width + Height + 1);
 		Distances.SetNumUninitialized(Width * Height);
-		for (int32 Index = 0; Index < Distances.Num(); ++Index)
-		{
-			Distances[Index] = Inside[Index] ? Far : 0.0f;
-		}
+		for (int32 Index = 0; Index < Distances.Num(); ++Index) Distances[Index] = Inside[Index] ? Far : 0.0f;
 
 		const float Diagonal = 1.41421356237f;
 		for (int32 Y = 0; Y < Height; ++Y)
@@ -80,7 +101,6 @@ namespace
 				Distances[Index] = D;
 			}
 		}
-
 		for (int32 Y = Height - 1; Y >= 0; --Y)
 		{
 			for (int32 X = Width - 1; X >= 0; --X)
@@ -97,12 +117,7 @@ namespace
 		}
 	}
 
-	bool DistanceProcessField(
-		const FGaeaTerrainNode& Node,
-		const FGaeaScalarField& Source,
-		bool bTerrain,
-		FGaeaScalarField& OutField,
-		FString& Error)
+	bool DistanceProcessField(const FGaeaTerrainNode& Node, const FGaeaScalarField& Source, bool bTerrain, FGaeaScalarField& OutField, FString& Error)
 	{
 		if (!Source.IsValid())
 		{
@@ -110,13 +125,32 @@ namespace
 			return false;
 		}
 
+		const FName Method = Node.GetName(TEXT("Method"), TEXT("Classic"));
+		const FName Mode = Node.GetName(TEXT("Mode"), TEXT("Asterisk"));
+		if (Method != TEXT("Classic") && Method != TEXT("RT"))
+		{
+			Error = TEXT("Distance Method must be Classic or RT.");
+			return false;
+		}
+		if (Mode != TEXT("Asterisk") && Mode != TEXT("Pyramid"))
+		{
+			Error = TEXT("Distance Mode must be Asterisk or Pyramid.");
+			return false;
+		}
+
 		const int32 Width = Source.Domain.Dimensions.X;
 		const int32 Height = Source.Domain.Dimensions.Y;
-		const float Threshold = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Threshold"), 0.5)), 0.0f, 1.0f);
+		const float Directions = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Directions"), 1.0)), 0.0f, 1.0f);
+		const float Skew = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Skew"), 0.0)), -1.0f, 1.0f);
+		const float Angle = static_cast<float>(Node.GetNumber(TEXT("Angle"), 0.0));
+		const float AngularJitter = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("AngularJitter"), 0.0)), 0.0f, 1.0f);
 		const float Falloff = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Falloff"), 0.25)), 0.001f, 1.0f);
+		const float Threshold = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Threshold"), 0.5)), 0.0f, 1.0f);
+		const float FalloffJitter = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("FalloffJitter"), 0.0)), 0.0f, 1.0f);
 		const bool bInvertInput = Node.GetBool(TEXT("InvertInput"), false);
 		const bool bInvertOutput = Node.GetBool(TEXT("InvertOutput"), false);
 		const bool bMultiplyByInput = Node.GetBool(TEXT("MultiplyByInput"), false);
+		const int32 Seed = static_cast<int32>(Node.GetInteger(TEXT("Seed"), 1337));
 
 		TArray<uint8> Inside;
 		TArray<float> NormalizedInput;
@@ -136,7 +170,12 @@ namespace
 
 		TArray<float> Distances;
 		DistanceTransformInside(Inside, Width, Height, Distances);
-		const float MaxDistance = FMath::Max(1.0f, Falloff * 0.5f * static_cast<float>(FMath::Min(Width, Height)));
+		const float BaseMaxDistance = FMath::Max(1.0f, Falloff * 0.5f * static_cast<float>(FMath::Min(Width, Height)));
+		const float Radians = FMath::DegreesToRadians(Angle);
+		const FVector2D Axis(FMath::Cos(Radians), FMath::Sin(Radians));
+		const FVector2D Perp(-Axis.Y, Axis.X);
+		const float CenterX = 0.5f * static_cast<float>(Width - 1);
+		const float CenterY = 0.5f * static_cast<float>(Height - 1);
 
 		OutField = Source;
 		for (int32 Y = 0; Y < Height; ++Y)
@@ -144,9 +183,21 @@ namespace
 			for (int32 X = 0; X < Width; ++X)
 			{
 				const int32 Index = Y * Width + X;
-				float Value = Inside[Index]
-					? FMath::Clamp(Distances[Index] / MaxDistance, 0.0f, 1.0f)
-					: 0.0f;
+				const float Jitter = DistanceHash01(X, Y, Seed) - 0.5f;
+				const float LocalFalloff = BaseMaxDistance * FMath::Max(0.1f, 1.0f + Jitter * 2.0f * FalloffJitter);
+				float Value = Inside[Index] ? FMath::Clamp(Distances[Index] / LocalFalloff, 0.0f, 1.0f) : 0.0f;
+
+				const FVector2D P(static_cast<float>(X) - CenterX, static_cast<float>(Y) - CenterY);
+				const float Along = FVector2D::DotProduct(P, Axis);
+				const float Across = FVector2D::DotProduct(P, Perp);
+				const float Directional = Mode == TEXT("Pyramid")
+					? FMath::Abs(Along) + FMath::Abs(Across)
+					: FMath::Max(FMath::Abs(Along), FMath::Abs(Across));
+				const float DirectionScale = 1.0f + Skew * (Along / FMath::Max(1.0f, static_cast<float>(FMath::Max(Width, Height))))
+					+ AngularJitter * Jitter * 0.25f;
+				Value *= FMath::Lerp(1.0f, FMath::Clamp(1.0f - Directional / FMath::Max(1.0f, static_cast<float>(FMath::Max(Width, Height))), 0.0f, 1.0f), Directions * 0.25f);
+				Value = FMath::Clamp(Value * FMath::Max(0.0f, DirectionScale), 0.0f, 1.0f);
+				if (Method == TEXT("RT")) Value = Value * Value * (3.0f - 2.0f * Value);
 				if (bMultiplyByInput) Value *= NormalizedInput[Index];
 				if (bInvertOutput) Value = 1.0f - Value;
 				OutField.AtInterior(X, Y) = bTerrain ? Value * 2.0f - 1.0f : Value;
@@ -155,12 +206,7 @@ namespace
 		return OutField.IsValid();
 	}
 
-	bool EvaluateDistanceNode(
-		const FGaeaTerrainNode& Node,
-		const FGaeaTerrainNodeInputs& Inputs,
-		const FGaeaTerrainEvaluationContext&,
-		FGaeaTerrainNodeEvaluation& Out,
-		FString& Error)
+	bool EvaluateDistanceNode(const FGaeaTerrainNode& Node, const FGaeaTerrainNodeInputs& Inputs, const FGaeaTerrainEvaluationContext&, FGaeaTerrainNodeEvaluation& Out, FString& Error)
 	{
 		const FGaeaTerrainValue* const* InputPtr = Inputs.Find(TEXT("Input"));
 		const FGaeaTerrainValue* Input = InputPtr ? *InputPtr : nullptr;
@@ -186,7 +232,6 @@ namespace
 				Error = TEXT("Distance terrain input has no valid Height field.");
 				return false;
 			}
-
 			FGaeaScalarField ResultHeight;
 			if (!DistanceProcessField(Node, *Height, true, ResultHeight, Error)) return false;
 			ResultHeight.Descriptor.Name = GaeaTerrainFieldNames::Height;
@@ -210,15 +255,23 @@ void RegisterGaeaDistanceNode()
 	FGaeaTerrainNodeDescriptor Descriptor;
 	Descriptor.Type = GaeaTerrainNodeTypes::Distance;
 	Descriptor.DisplayName = TEXT("Distance");
-	Descriptor.Category = TEXT("Profile");
-	Descriptor.Description = TEXT("Creates a distance-based falloff profile from hard terrain or mask shapes.");
+	Descriptor.Category = TEXT("Modify");
+	Descriptor.Description = TEXT("Creates directional distance profiles from hard terrain or mask shapes.");
 	Descriptor.Inputs.Add(DistanceAnyPort(TEXT("Input"), TEXT("Input")));
 	Descriptor.Outputs.Add(DistanceAnyPort(TEXT("Out"), TEXT("Out")));
+	Descriptor.Parameters.Add(DistanceNameParameter(TEXT("Method"), TEXT("Method"), TEXT("Classic"), { TEXT("Classic"), TEXT("RT") }));
+	Descriptor.Parameters.Add(DistanceNameParameter(TEXT("Mode"), TEXT("Mode"), TEXT("Asterisk"), { TEXT("Asterisk"), TEXT("Pyramid") }));
+	Descriptor.Parameters.Add(DistanceNumberParameter(TEXT("Directions"), TEXT("Directions"), 1.0, 0.0, 1.0));
+	Descriptor.Parameters.Add(DistanceNumberParameter(TEXT("Skew"), TEXT("Skew"), 0.0, -1.0, 1.0));
+	Descriptor.Parameters.Add(DistanceNumberParameter(TEXT("Angle"), TEXT("Angle"), 0.0, -360.0, 360.0));
+	Descriptor.Parameters.Add(DistanceNumberParameter(TEXT("AngularJitter"), TEXT("Angular Jitter"), 0.0, 0.0, 1.0));
 	Descriptor.Parameters.Add(DistanceNumberParameter(TEXT("Falloff"), TEXT("Falloff"), 0.25, 0.001, 1.0));
 	Descriptor.Parameters.Add(DistanceNumberParameter(TEXT("Threshold"), TEXT("Threshold"), 0.5, 0.0, 1.0));
-	Descriptor.Parameters.Add(DistanceBooleanParameter(TEXT("InvertInput"), TEXT("Invert input"), false));
-	Descriptor.Parameters.Add(DistanceBooleanParameter(TEXT("InvertOutput"), TEXT("Invert output"), false));
-	Descriptor.Parameters.Add(DistanceBooleanParameter(TEXT("MultiplyByInput"), TEXT("Multiply by input"), false));
+	Descriptor.Parameters.Add(DistanceNumberParameter(TEXT("FalloffJitter"), TEXT("Falloff Jitter"), 0.0, 0.0, 1.0));
+	Descriptor.Parameters.Add(DistanceBooleanParameter(TEXT("InvertInput"), TEXT("Invert Input"), false));
+	Descriptor.Parameters.Add(DistanceBooleanParameter(TEXT("InvertOutput"), TEXT("Invert Output"), false));
+	Descriptor.Parameters.Add(DistanceBooleanParameter(TEXT("MultiplyByInput"), TEXT("Multiply by Input"), false));
+	Descriptor.Parameters.Add(DistanceIntegerParameter(TEXT("Seed"), TEXT("Seed"), 1337, -2147483647, 2147483647));
 
 	FGaeaTerrainNodeDescriptorRegistry::Register(Descriptor);
 	FGaeaTerrainNodeRegistry::Register(GaeaTerrainNodeTypes::Distance, EvaluateDistanceNode);
