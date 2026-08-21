@@ -35,8 +35,13 @@ namespace
 
 	bool ArePinCategoriesCompatible(FName A, FName B)
 	{
-		if (A == B) return true;
-		return A == GaeaEditorGraphPins::Any || B == GaeaEditorGraphPins::Any;
+		// Gaea's graph is fundamentally heightfield-based. Internally EONFORM
+		// distinguishes a full terrain dataset from a single scalar heightfield so
+		// simulations can preserve auxiliary channels, but authoring must not make
+		// that implementation detail block legitimate Gaea connections. A terrain
+		// can be used as a mask through its Height field, and a scalar mask/noise
+		// can be promoted to a terrain Height field when a heightfield input needs it.
+		return IsSupportedPinCategory(A) && IsSupportedPinCategory(B);
 	}
 
 	FText FriendlyPinName(const FGaeaTerrainPortDescriptor& Port, EEdGraphPinDirection Direction)
@@ -143,10 +148,6 @@ void UGaeaEditorGraphNode::AllocateDefaultPins()
 	}
 	for (const FGaeaTerrainPortDescriptor& Output : Descriptor.Outputs)
 	{
-		// The public Gaea-facing output is named Out, while the editor recipe has
-		// historically used Terrain as the terminal terrain channel. Keep that
-		// stable internal name so save/reopen and Terrain Output reconstruction
-		// work end-to-end, while the visible pin remains exactly "Out".
 		const FName EditorPinName = Output.Name == TEXT("Out") ? TerrainPinName : Output.Name;
 		UEdGraphPin* Pin = CreatePin(EGPD_Output, PinCategoryForDataType(Output.DataType), EditorPinName, PinParams);
 		if (Pin) Pin->PinFriendlyName = FriendlyPinName(Output, EGPD_Output);
@@ -242,7 +243,7 @@ const FPinConnectionResponse UGaeaEditorGraphSchema::CanCreateConnection(
 	}
 	if (!ArePinCategoriesCompatible(A->PinType.PinCategory, B->PinType.PinCategory))
 	{
-		return FPinConnectionResponse(CONNECT_RESPONSE_DISALLOW, TEXT("Terrain and mask data are different value types. Use an Any-compatible node or the appropriate mask input."));
+		return FPinConnectionResponse(CONNECT_RESPONSE_DISALLOW, TEXT("These ports carry incompatible values."));
 	}
 
 	const UEdGraphPin* OutputPin = A->Direction == EGPD_Output ? A : B;
