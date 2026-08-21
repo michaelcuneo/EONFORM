@@ -49,18 +49,29 @@ bool FGaeaCurrentNodeContractTest::RunTest(const FString& Parameters)
 	CheckNode(*this, GaeaTerrainNodeTypes::WaveShine, TEXT("WaveShine"), TEXT("Primitive"), 15);
 	CheckNode(*this, GaeaTerrainNodeTypes::HydraulicErosion, TEXT("Erosion"), TEXT("Simulate"), 20);
 	CheckNode(*this, GaeaTerrainNodeTypes::ThermalErosion, TEXT("Thermal"), TEXT("Simulate"), 11);
+
+	CheckNode(*this, GaeaTerrainNodeTypes::Adjust, TEXT("Adjust"), TEXT("Modify"), 11);
+	CheckNode(*this, GaeaTerrainNodeTypes::Aperture, TEXT("Aperture"), TEXT("Modify"), 7);
 	CheckNode(*this, GaeaTerrainNodeTypes::AutoLevel, TEXT("Autolevel"), TEXT("Modify"), 0);
+	CheckNode(*this, GaeaTerrainNodeTypes::BlobRemover, TEXT("BlobRemover"), TEXT("Modify"), 4);
 	CheckNode(*this, GaeaTerrainNodeTypes::Blur, TEXT("Blur"), TEXT("Modify"), 1);
 	CheckNode(*this, GaeaTerrainNodeTypes::Clamp, TEXT("Clamp"), TEXT("Modify"), 3);
+	CheckNode(*this, GaeaTerrainNodeTypes::Clip, TEXT("Clip"), TEXT("Modify"), 3);
+	CheckNode(*this, GaeaTerrainNodeTypes::Deflate, TEXT("Deflate"), TEXT("Modify"), 1);
 	CheckNode(*this, GaeaTerrainNodeTypes::Denoise, TEXT("Denoise"), TEXT("Modify"), 3);
+	CheckNode(*this, GaeaTerrainNodeTypes::Dilate, TEXT("Dilate"), TEXT("Modify"), 5);
 	CheckNode(*this, GaeaTerrainNodeTypes::Distance, TEXT("Distance"), TEXT("Modify"), 13);
+	CheckNode(*this, GaeaTerrainNodeTypes::Equalize, TEXT("Equalize"), TEXT("Modify"), 0);
+	CheckNode(*this, GaeaTerrainNodeTypes::Extend, TEXT("Extend"), TEXT("Modify"), 1);
 	CheckNode(*this, GaeaTerrainNodeTypes::Flip, TEXT("Flip"), TEXT("Modify"), 1);
+	CheckNode(*this, GaeaTerrainNodeTypes::Median, TEXT("Median"), TEXT("Modify"), 2);
 	CheckNode(*this, GaeaTerrainNodeTypes::Recurve, TEXT("Recurve"), TEXT("Modify"), 4);
 	CheckNode(*this, GaeaTerrainNodeTypes::Shaper, TEXT("Shaper"), TEXT("Modify"), 5);
 	CheckNode(*this, GaeaTerrainNodeTypes::Sharpen, TEXT("Sharpen"), TEXT("Modify"), 2);
 	CheckNode(*this, GaeaTerrainNodeTypes::SoftClip, TEXT("SoftClip"), TEXT("Modify"), 4);
 	CheckNode(*this, GaeaTerrainNodeTypes::Threshold, TEXT("Threshold"), TEXT("Modify"), 1);
 	CheckNode(*this, GaeaTerrainNodeTypes::Transform, TEXT("Transform"), TEXT("Modify"), 11);
+
 	CheckNode(*this, GaeaTerrainNodeTypes::FractalTerraces, TEXT("FractalTerraces"), TEXT("Surface"), 20);
 	CheckNode(*this, GaeaTerrainNodeTypes::Terrace, TEXT("Terraces"), TEXT("Surface"), 5);
 	CheckNode(*this, GaeaTerrainNodeTypes::Angle, TEXT("Angle"), TEXT("Derive"), 3);
