@@ -2,6 +2,7 @@
 
 #include "GaeaAngleNode.h"
 #include "GaeaAutoLevelNode.h"
+#include "GaeaBlurNode.h"
 #include "GaeaClampNode.h"
 #include "GaeaCombineNode.h"
 #include "GaeaCurvatureNode.h"
@@ -31,6 +32,7 @@ public:
 		RegisterGaeaCombineNode();
 		RegisterGaeaClampNode();
 		RegisterGaeaAutoLevelNode();
+		RegisterGaeaBlurNode();
 	}
 };
 
