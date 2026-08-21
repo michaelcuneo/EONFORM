@@ -5,6 +5,7 @@ namespace GaeaTerrainNodeTypes
 	const FName SourceDataset(TEXT("SourceDataset"));
 	const FName PerlinNoise(TEXT("PerlinNoise"));
 	const FName Cellular(TEXT("Cellular"));
+	const FName Cellular3D(TEXT("Cellular3D"));
 	const FName TerrainShape(TEXT("TerrainShape"));
 	const FName TerrainContext(TEXT("TerrainContext"));
 	const FName Geology(TEXT("Geology"));
