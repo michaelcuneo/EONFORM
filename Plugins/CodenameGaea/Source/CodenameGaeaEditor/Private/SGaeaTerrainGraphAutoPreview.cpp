@@ -112,6 +112,10 @@ void SGaeaTerrainGraphPanel::Tick(
 {
 	SCompoundWidget::Tick(AllottedGeometry, InCurrentTime, InDeltaTime);
 
+	// Keep the active graph asset and the Terrain Output pane synchronized. Output
+	// changes mark the graph dirty and opening another graph restores its saved settings.
+	SyncOutputSettingsState();
+
 	if (!bLegacyEvaluateButtonHidden)
 	{
 		bLegacyEvaluateButtonHidden = HideButtonWithText(SharedThis(this), TEXT("Evaluate Graph"));
