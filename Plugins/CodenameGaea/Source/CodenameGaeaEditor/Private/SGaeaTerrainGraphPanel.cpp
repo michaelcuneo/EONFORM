@@ -5,7 +5,9 @@
 #include "ContentBrowserModule.h"
 #include "EdGraph/EdGraphPin.h"
 #include "FileHelpers.h"
+#include "Framework/MultiBox/MultiBoxBuilder.h"
 #include "GaeaTerrainDatasetRegistry.h"
+#include "GaeaTerrainDerivedData.h"
 #include "GaeaTerrainEvaluator.h"
 #include "GaeaTerrainGraphAsset.h"
 #include "GaeaTerrainGraphAssetFactory.h"
@@ -16,6 +18,7 @@
 #include "Styling/AppStyle.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SCheckBox.h"
+#include "Widgets/Input/SComboButton.h"
 #include "Widgets/Input/SEditableTextBox.h"
 #include "Widgets/Input/SNumericEntryBox.h"
 #include "Widgets/Layout/SBorder.h"
@@ -68,6 +71,29 @@ namespace
 		if (!Graph || !OutputPin || !InputPin) return false;
 		const UEdGraphSchema* Schema = Graph->GetSchema();
 		return Schema && Schema->TryCreateConnection(OutputPin, InputPin);
+	}
+
+	bool TerrainGraphParameterIsVisible(
+		const UGaeaEditorGraphNode& Node,
+		const FGaeaTerrainParameterDescriptor& Parameter)
+	{
+		if (Node.RecipeNodeType == GaeaTerrainNodeTypes::PerlinNoise
+			&& (Parameter.Name == TEXT("WarpFrequency")
+				|| Parameter.Name == TEXT("WarpAmplitude")
+				|| Parameter.Name == TEXT("WarpOctaves")))
+		{
+			return Node.NameParameters.FindRef(TEXT("WarpType")) != TEXT("None");
+		}
+
+		if (Node.RecipeNodeType == GaeaTerrainNodeTypes::HydraulicErosion
+			&& (Parameter.Name == TEXT("BiasType")
+				|| Parameter.Name == TEXT("Bias")
+				|| Parameter.Name == TEXT("Reverse")))
+		{
+			return Node.NameParameters.FindRef(TEXT("AreaEffect")) != TEXT("None");
+		}
+
+		return true;
 	}
 }
 
@@ -569,10 +595,7 @@ void SGaeaTerrainGraphPanel::OnGraphSelectionChanged(const TSet<UObject*>& NewSe
 
 void SGaeaTerrainGraphPanel::RebuildParameterPanel()
 {
-	if (!ParameterPanel.IsValid())
-	{
-		return;
-	}
+	if (!ParameterPanel.IsValid()) return;
 
 	ParameterPanel->ClearChildren();
 	UGaeaEditorGraphNode* Node = SelectedNode.Get();
@@ -608,10 +631,7 @@ void SGaeaTerrainGraphPanel::RebuildParameterPanel()
 	}
 
 	FGaeaTerrainNodeDescriptor Descriptor;
-	if (!FGaeaTerrainNodeDescriptorRegistry::Get(Node->RecipeNodeType, Descriptor))
-	{
-		return;
-	}
+	if (!FGaeaTerrainNodeDescriptorRegistry::Get(Node->RecipeNodeType, Descriptor)) return;
 
 	ParameterPanel->AddSlot()
 	.AutoHeight()
@@ -632,8 +652,25 @@ void SGaeaTerrainGraphPanel::RebuildParameterPanel()
 		return;
 	}
 
+	TWeakPtr<SGaeaTerrainGraphPanel> WeakPanel = SharedThis(this);
+	FString CurrentGroup;
 	for (const FGaeaTerrainParameterDescriptor& Parameter : Descriptor.Parameters)
 	{
+		if (!TerrainGraphParameterIsVisible(*Node, Parameter)) continue;
+
+		if (!Parameter.Group.IsEmpty() && Parameter.Group != CurrentGroup)
+		{
+			CurrentGroup = Parameter.Group;
+			ParameterPanel->AddSlot()
+			.AutoHeight()
+			.Padding(0.0f, 10.0f, 0.0f, 3.0f)
+			[
+				SNew(STextBlock)
+				.Text(FText::FromString(CurrentGroup))
+				.Font(FAppStyle::GetFontStyle(TEXT("PropertyWindow.BoldFont")))
+			];
+		}
+
 		TWeakObjectPtr<UGaeaEditorGraphNode> WeakNode(Node);
 		const FName ParameterName = Parameter.Name;
 		TSharedRef<SWidget> ValueWidget = SNullWidget::NullWidget;
@@ -699,22 +736,65 @@ void SGaeaTerrainGraphPanel::RebuildParameterPanel()
 			break;
 
 		case EGaeaTerrainParameterType::Name:
-			ValueWidget = SNew(SEditableTextBox)
-				.Text_Lambda([WeakNode, ParameterName]()
-				{
-					if (const UGaeaEditorGraphNode* Current = WeakNode.Get())
+			if (!Parameter.NameOptions.IsEmpty())
+			{
+				const TArray<FName> Options = Parameter.NameOptions;
+				ValueWidget = SNew(SComboButton)
+					.OnGetMenuContent_Lambda([WeakNode, WeakPanel, ParameterName, Options]()
 					{
-						if (const FName* Value = Current->NameParameters.Find(ParameterName)) return FText::FromName(*Value);
-					}
-					return FText::GetEmpty();
-				})
-				.OnTextCommitted_Lambda([WeakNode, ParameterName](const FText& Text, ETextCommit::Type)
-				{
-					if (UGaeaEditorGraphNode* Current = WeakNode.Get())
+						FMenuBuilder MenuBuilder(true, nullptr);
+						for (const FName Option : Options)
+						{
+							MenuBuilder.AddMenuEntry(
+								FText::FromName(Option),
+								FText::GetEmpty(),
+								FSlateIcon(),
+								FUIAction(FExecuteAction::CreateLambda([WeakNode, WeakPanel, ParameterName, Option]()
+								{
+									if (UGaeaEditorGraphNode* Current = WeakNode.Get())
+									{
+										Current->NameParameters.Add(ParameterName, Option);
+									}
+									if (TSharedPtr<SGaeaTerrainGraphPanel> Panel = WeakPanel.Pin())
+									{
+										Panel->RebuildParameterPanel();
+									}
+								})));
+						}
+						return MenuBuilder.MakeWidget();
+					})
+					.ButtonContent()
+					[
+						SNew(STextBlock)
+						.Text_Lambda([WeakNode, ParameterName]()
+						{
+							if (const UGaeaEditorGraphNode* Current = WeakNode.Get())
+							{
+								if (const FName* Value = Current->NameParameters.Find(ParameterName)) return FText::FromName(*Value);
+							}
+							return FText::GetEmpty();
+						})
+					];
+			}
+			else
+			{
+				ValueWidget = SNew(SEditableTextBox)
+					.Text_Lambda([WeakNode, ParameterName]()
 					{
-						Current->NameParameters.Add(ParameterName, FName(*Text.ToString()));
-					}
-				});
+						if (const UGaeaEditorGraphNode* Current = WeakNode.Get())
+						{
+							if (const FName* Value = Current->NameParameters.Find(ParameterName)) return FText::FromName(*Value);
+						}
+						return FText::GetEmpty();
+					})
+					.OnTextCommitted_Lambda([WeakNode, ParameterName](const FText& Text, ETextCommit::Type)
+					{
+						if (UGaeaEditorGraphNode* Current = WeakNode.Get())
+						{
+							Current->NameParameters.Add(ParameterName, FName(*Text.ToString()));
+						}
+					});
+			}
 			break;
 
 		case EGaeaTerrainParameterType::Range:
@@ -727,6 +807,11 @@ void SGaeaTerrainGraphPanel::RebuildParameterPanel()
 				.Padding(0.0f, 0.0f, 2.0f, 0.0f)
 				[
 					SNew(SNumericEntryBox<double>)
+					.LabelVAlign(VAlign_Center)
+					.Label()
+					[
+						SNew(STextBlock).Text(FText::FromString(TEXT("Min")))
+					]
 					.Value_Lambda([WeakNode, MinName]() -> TOptional<double>
 					{
 						if (const UGaeaEditorGraphNode* Current = WeakNode.Get())
@@ -751,6 +836,11 @@ void SGaeaTerrainGraphPanel::RebuildParameterPanel()
 				.Padding(2.0f, 0.0f, 0.0f, 0.0f)
 				[
 					SNew(SNumericEntryBox<double>)
+					.LabelVAlign(VAlign_Center)
+					.Label()
+					[
+						SNew(STextBlock).Text(FText::FromString(TEXT("Max")))
+					]
 					.Value_Lambda([WeakNode, MaxName]() -> TOptional<double>
 					{
 						if (const UGaeaEditorGraphNode* Current = WeakNode.Get())
@@ -829,6 +919,13 @@ FReply SGaeaTerrainGraphPanel::EvaluateGraph()
 		return FReply::Handled();
 	}
 
+	FString HydrologyError;
+	if (!FGaeaTerrainDerivedData::EnsureHydrology(Result.Dataset, Result.HeightScale, &HydrologyError))
+	{
+		StatusText = FText::FromString(FString::Printf(TEXT("Terrain evaluated, but EONFORM hydrology analysis failed: %s"), *HydrologyError));
+		return FReply::Handled();
+	}
+
 	const int32 FieldCount = Result.Dataset.NumScalarFields();
 	const uint32 RecipeHash = Result.RecipeHash;
 	FGaeaTerrainDatasetMetadata Metadata;
@@ -846,7 +943,7 @@ FReply SGaeaTerrainGraphPanel::EvaluateGraph()
 	}
 
 	StatusText = FText::FromString(FString::Printf(
-		TEXT("Evaluated authored recipe %08X -> revision %llu (%d fields, height scale %.1f)."),
+		TEXT("Evaluated authored recipe %08X -> revision %llu (%d fields, height scale %.1f, hydrology ready)."),
 		RecipeHash,
 		static_cast<unsigned long long>(Revision),
 		FieldCount,
