@@ -13,6 +13,7 @@
 #include "GaeaHeightNode.h"
 #include "GaeaInvertNode.h"
 #include "GaeaMultiCombineNode.h"
+#include "GaeaPerlinNode.h"
 #include "GaeaRecurveNode.h"
 #include "GaeaShaperNode.h"
 #include "GaeaSharpenNode.h"
@@ -47,6 +48,7 @@ public:
 	{
 		FGaeaTerrainNodeDescriptorRegistry::RegisterBuiltIns();
 
+		RegisterGaeaPerlinNode();
 		RegisterGaeaThermalErosionNode();
 		RegisterGaeaCurvatureNode();
 		RegisterGaeaHeightNode();
