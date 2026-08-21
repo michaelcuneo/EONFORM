@@ -3,6 +3,13 @@
 #include "GaeaTerrainNodeDescriptor.h"
 #include "GaeaTerrainRecipe.h"
 
+namespace GaeaEditorGraphPins
+{
+	const FName Terrain(TEXT("GaeaTerrain"));
+	const FName ScalarField(TEXT("GaeaScalarField"));
+	const FName Any(TEXT("GaeaAny"));
+}
+
 namespace GaeaEditorNodeTypes
 {
 	const FName TerrainOutput(TEXT("__TerrainOutput"));
@@ -10,21 +17,26 @@ namespace GaeaEditorNodeTypes
 
 namespace
 {
-	const FName TerrainPinCategory(TEXT("GaeaTerrain"));
-	const FName ScalarFieldPinCategory(TEXT("GaeaScalarField"));
-	const FName AnyPinCategory(TEXT("GaeaAny"));
 	const FName TerrainPinName(TEXT("Terrain"));
 
 	FName PinCategoryForDataType(FName DataType)
 	{
-		if (DataType == TEXT("ScalarField")) return ScalarFieldPinCategory;
-		if (DataType == TEXT("Any")) return AnyPinCategory;
-		return TerrainPinCategory;
+		if (DataType == TEXT("ScalarField")) return GaeaEditorGraphPins::ScalarField;
+		if (DataType == TEXT("Any")) return GaeaEditorGraphPins::Any;
+		return GaeaEditorGraphPins::Terrain;
 	}
 
 	bool IsSupportedPinCategory(FName Category)
 	{
-		return Category == TerrainPinCategory || Category == ScalarFieldPinCategory || Category == AnyPinCategory;
+		return Category == GaeaEditorGraphPins::Terrain
+			|| Category == GaeaEditorGraphPins::ScalarField
+			|| Category == GaeaEditorGraphPins::Any;
+	}
+
+	bool ArePinCategoriesCompatible(FName A, FName B)
+	{
+		if (A == B) return true;
+		return A == GaeaEditorGraphPins::Any || B == GaeaEditorGraphPins::Any;
 	}
 
 	FText FriendlyPinName(const FGaeaTerrainPortDescriptor& Port, EEdGraphPinDirection Direction)
@@ -116,7 +128,7 @@ void UGaeaEditorGraphNode::AllocateDefaultPins()
 	FCreatePinParams PinParams;
 	if (RecipeNodeType == GaeaEditorNodeTypes::TerrainOutput)
 	{
-		UEdGraphPin* Pin = CreatePin(EGPD_Input, TerrainPinCategory, TerrainPinName, PinParams);
+		UEdGraphPin* Pin = CreatePin(EGPD_Input, GaeaEditorGraphPins::Terrain, TerrainPinName, PinParams);
 		if (Pin) Pin->PinFriendlyName = FText::FromString(TEXT("In"));
 		return;
 	}
@@ -221,12 +233,11 @@ const FPinConnectionResponse UGaeaEditorGraphSchema::CanCreateConnection(
 
 	if (!IsSupportedPinCategory(A->PinType.PinCategory) || !IsSupportedPinCategory(B->PinType.PinCategory))
 	{
-		return FPinConnectionResponse(CONNECT_RESPONSE_DISALLOW, TEXT("Unsupported terrain graph value type."));
+		return FPinConnectionResponse(CONNECT_RESPONSE_DISALLOW, TEXT("Unsupported EONFORM graph value type."));
 	}
-	const bool bWildcardConnection = A->PinType.PinCategory == AnyPinCategory || B->PinType.PinCategory == AnyPinCategory;
-	if (!bWildcardConnection && A->PinType.PinCategory != B->PinType.PinCategory)
+	if (!ArePinCategoriesCompatible(A->PinType.PinCategory, B->PinType.PinCategory))
 	{
-		return FPinConnectionResponse(CONNECT_RESPONSE_DISALLOW, TEXT("These graph value types are not compatible."));
+		return FPinConnectionResponse(CONNECT_RESPONSE_DISALLOW, TEXT("Terrain and mask data are different value types. Use an Any-compatible node or the appropriate mask input."));
 	}
 
 	const UEdGraphPin* OutputPin = A->Direction == EGPD_Output ? A : B;
