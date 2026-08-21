@@ -6,6 +6,7 @@
 #include "Framework/Application/SlateApplication.h"
 #include "Framework/Commands/UIAction.h"
 #include "Framework/Docking/TabManager.h"
+#include "GaeaMeshTerrainOutput.h"
 #include "GaeaTerrainDatasetRegistry.h"
 #include "GaeaTerrainDynamicMeshActor.h"
 #include "GaeaTerrainGraphNode.h"
@@ -72,6 +73,24 @@ public:
 	}
 
 private:
+	bool GetLatestEvaluatedTerrain(FGaeaTerrainDatasetSnapshot& OutSnapshot) const
+	{
+		if (FGaeaTerrainDatasetRegistry::Get(TEXT("CodenameGaeaGraph"), OutSnapshot) && OutSnapshot.IsValid())
+		{
+			return true;
+		}
+
+		FMessageDialog::Open(
+			EAppMsgType::Ok,
+			LOCTEXT("NoEvaluatedGaeaGraph", "No evaluated EONFORM graph is available. Evaluate the graph first."));
+		return false;
+	}
+
+	UWorld* GetEditorWorld() const
+	{
+		return GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+	}
+
 	void RegisterMenus()
 	{
 		FToolMenuOwnerScoped OwnerScoped(this);
@@ -90,18 +109,15 @@ private:
 		FGlobalTabmanager::Get()->TryInvokeTab(CodenameGaeaTabName);
 	}
 
-	void BuildDynamicMesh()
+	void BuildPreviewMesh()
 	{
 		FGaeaTerrainDatasetSnapshot Snapshot;
-		if (!FGaeaTerrainDatasetRegistry::Get(TEXT("CodenameGaeaGraph"), Snapshot) || !Snapshot.IsValid())
+		if (!GetLatestEvaluatedTerrain(Snapshot))
 		{
-			FMessageDialog::Open(
-				EAppMsgType::Ok,
-				LOCTEXT("NoEvaluatedGaeaGraph", "No evaluated Codename Gaea graph is available. Evaluate the graph first."));
 			return;
 		}
 
-		UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+		UWorld* World = GetEditorWorld();
 		if (!World)
 		{
 			FMessageDialog::Open(EAppMsgType::Ok, LOCTEXT("NoEditorWorld", "The editor world is not available."));
@@ -127,22 +143,60 @@ private:
 
 		if (!MeshActor)
 		{
-			FMessageDialog::Open(EAppMsgType::Ok, LOCTEXT("GaeaMeshSpawnFailed", "Could not create the Codename Gaea Dynamic Mesh actor."));
+			FMessageDialog::Open(EAppMsgType::Ok, LOCTEXT("GaeaMeshSpawnFailed", "Could not create the EONFORM Dynamic Mesh preview actor."));
 			return;
 		}
+
+#if WITH_EDITOR
+		MeshActor->SetActorLabel(TEXT("EONFORM Terrain Preview"));
+#endif
 
 		FString Error;
 		if (!MeshActor->ApplyTerrainDataset(Snapshot.Dataset, Snapshot.Metadata.HeightScale, &Error))
 		{
 			FMessageDialog::Open(
 				EAppMsgType::Ok,
-				FText::FromString(FString::Printf(TEXT("Dynamic Mesh build failed: %s"), *Error)));
+				FText::FromString(FString::Printf(TEXT("Terrain preview build failed: %s"), *Error)));
 			return;
 		}
 
 		MeshActor->Modify();
 		GEditor->SelectNone(false, true, false);
 		GEditor->SelectActor(MeshActor, true, true, true, true);
+	}
+
+	void BuildMeshTerrain()
+	{
+		FGaeaTerrainDatasetSnapshot Snapshot;
+		if (!GetLatestEvaluatedTerrain(Snapshot))
+		{
+			return;
+		}
+
+		UWorld* World = GetEditorWorld();
+		if (!World)
+		{
+			FMessageDialog::Open(EAppMsgType::Ok, LOCTEXT("NoMeshTerrainWorld", "The editor world is not available."));
+			return;
+		}
+
+		const FGaeaMeshTerrainBuildResult BuildResult = FGaeaMeshTerrainOutput::Build(
+			World,
+			Snapshot.Dataset,
+			Snapshot.Metadata.HeightScale);
+
+		if (!BuildResult.bSuccess)
+		{
+			FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(BuildResult.Message));
+			return;
+		}
+
+		UE_LOG(LogTemp, Display, TEXT("EONFORM: %s"), *BuildResult.Message);
+		if (BuildResult.TerrainActor && GEditor)
+		{
+			GEditor->SelectNone(false, true, false);
+			GEditor->SelectActor(BuildResult.TerrainActor.Get(), true, true, true, true);
+		}
 	}
 
 	TSharedRef<SDockTab> SpawnCodenameGaeaTab(const FSpawnTabArgs& Args)
@@ -168,13 +222,26 @@ private:
 						]
 						+ SHorizontalBox::Slot()
 						.AutoWidth()
+						.Padding(4.0f, 0.0f)
 						[
 							SNew(SButton)
-							.Text(LOCTEXT("GenerateDynamicMeshLabel", "Generate Dynamic Mesh"))
-							.ToolTipText(LOCTEXT("GenerateDynamicMeshTooltip", "Build or refresh a Dynamic Mesh actor from the most recently evaluated Codename Gaea graph."))
+							.Text(LOCTEXT("PreviewTerrainLabel", "Preview Mesh"))
+							.ToolTipText(LOCTEXT("PreviewTerrainTooltip", "Build or refresh the lightweight Dynamic Mesh preview from the latest evaluated EONFORM graph."))
 							.OnClicked_Lambda([this]()
 							{
-								BuildDynamicMesh();
+								BuildPreviewMesh();
+								return FReply::Handled();
+							})
+						]
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						[
+							SNew(SButton)
+							.Text(LOCTEXT("GenerateTerrainLabel", "Generate Terrain"))
+							.ToolTipText(LOCTEXT("GenerateTerrainTooltip", "Build or refresh the committed UE 5.8 Mesh Terrain from the latest evaluated EONFORM graph."))
+							.OnClicked_Lambda([this]()
+							{
+								BuildMeshTerrain();
 								return FReply::Handled();
 							})
 						]
