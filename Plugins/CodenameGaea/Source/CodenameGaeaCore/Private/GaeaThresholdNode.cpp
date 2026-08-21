@@ -16,12 +16,7 @@ namespace
 		return Port;
 	}
 
-	FGaeaTerrainParameterDescriptor ThresholdNumberParameter(
-		FName Name,
-		const TCHAR* DisplayName,
-		double DefaultValue,
-		double Minimum,
-		double Maximum)
+	FGaeaTerrainParameterDescriptor ThresholdNumberParameter(FName Name, const TCHAR* DisplayName, double DefaultValue, double Minimum, double Maximum)
 	{
 		FGaeaTerrainParameterDescriptor Parameter;
 		Parameter.Name = Name;
@@ -35,47 +30,7 @@ namespace
 		return Parameter;
 	}
 
-	FGaeaTerrainParameterDescriptor ThresholdBooleanParameter(FName Name, const TCHAR* DisplayName, bool DefaultValue)
-	{
-		FGaeaTerrainParameterDescriptor Parameter;
-		Parameter.Name = Name;
-		Parameter.DisplayName = DisplayName;
-		Parameter.Type = EGaeaTerrainParameterType::Boolean;
-		Parameter.DefaultBoolean = DefaultValue;
-		return Parameter;
-	}
-
-	float ThresholdSampleClamped(const FGaeaScalarField& Field, int32 X, int32 Y)
-	{
-		const int32 SX = FMath::Clamp(X, 0, Field.Domain.Dimensions.X - 1);
-		const int32 SY = FMath::Clamp(Y, 0, Field.Domain.Dimensions.Y - 1);
-		return Field.AtInterior(SX, SY);
-	}
-
-	float ThresholdLocalMean(const FGaeaScalarField& Field, int32 X, int32 Y, bool bTerrain)
-	{
-		float Sum = 0.0f;
-		for (int32 DY = -1; DY <= 1; ++DY)
-		{
-			for (int32 DX = -1; DX <= 1; ++DX)
-			{
-				float Value = ThresholdSampleClamped(Field, X + DX, Y + DY);
-				if (bTerrain)
-				{
-					Value = Value * 0.5f + 0.5f;
-				}
-				Sum += FMath::Clamp(Value, 0.0f, 1.0f);
-			}
-		}
-		return Sum / 9.0f;
-	}
-
-	bool ThresholdProcessField(
-		const FGaeaTerrainNode& Node,
-		const FGaeaScalarField& Source,
-		bool bTerrain,
-		FGaeaScalarField& OutField,
-		FString& Error)
+	bool ThresholdProcessField(const FGaeaTerrainNode& Node, const FGaeaScalarField& Source, bool bTerrain, FGaeaScalarField& OutField, FString& Error)
 	{
 		if (!Source.IsValid())
 		{
@@ -83,46 +38,23 @@ namespace
 			return false;
 		}
 
-		const float Scale = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Scale"), 0.5)), 0.0f, 1.0f);
-		const float Bias = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Bias"), 0.0)), -1.0f, 1.0f);
-		const bool bAdaptive = Node.GetBool(TEXT("Adaptive"), false);
-		const bool bInvert = Node.GetBool(TEXT("Invert"), false);
-
+		const float Level = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Level"), 0.5)), 0.0f, 1.0f);
 		OutField = Source;
 		for (int32 Y = 0; Y < Source.Domain.Dimensions.Y; ++Y)
 		{
 			for (int32 X = 0; X < Source.Domain.Dimensions.X; ++X)
 			{
 				float Value = Source.AtInterior(X, Y);
-				if (bTerrain)
-				{
-					Value = Value * 0.5f + 0.5f;
-				}
+				if (bTerrain) Value = Value * 0.5f + 0.5f;
 				Value = FMath::Clamp(Value, 0.0f, 1.0f);
-
-				float Limit = Scale;
-				if (bAdaptive)
-				{
-					Limit = FMath::Clamp(ThresholdLocalMean(Source, X, Y, bTerrain) + Bias, 0.0f, 1.0f);
-				}
-
-				float Result = Value >= Limit ? 1.0f : 0.0f;
-				if (bInvert)
-				{
-					Result = 1.0f - Result;
-				}
+				const float Result = Value >= Level ? 1.0f : 0.0f;
 				OutField.AtInterior(X, Y) = bTerrain ? Result * 2.0f - 1.0f : Result;
 			}
 		}
 		return OutField.IsValid();
 	}
 
-	bool EvaluateThresholdNode(
-		const FGaeaTerrainNode& Node,
-		const FGaeaTerrainNodeInputs& Inputs,
-		const FGaeaTerrainEvaluationContext&,
-		FGaeaTerrainNodeEvaluation& Out,
-		FString& Error)
+	bool EvaluateThresholdNode(const FGaeaTerrainNode& Node, const FGaeaTerrainNodeInputs& Inputs, const FGaeaTerrainEvaluationContext&, FGaeaTerrainNodeEvaluation& Out, FString& Error)
 	{
 		const FGaeaTerrainValue* const* InputPtr = Inputs.Find(TEXT("Input"));
 		const FGaeaTerrainValue* Input = InputPtr ? *InputPtr : nullptr;
@@ -179,14 +111,11 @@ void RegisterGaeaThresholdNode()
 	FGaeaTerrainNodeDescriptor Descriptor;
 	Descriptor.Type = GaeaTerrainNodeTypes::Threshold;
 	Descriptor.DisplayName = TEXT("Threshold");
-	Descriptor.Category = TEXT("Adjustments");
-	Descriptor.Description = TEXT("Alters terrain or mask values around a height limit, with optional adaptive thresholding and inversion.");
+	Descriptor.Category = TEXT("Modify");
+	Descriptor.Description = TEXT("Converts terrain or mask values into a hard selection using a single cutoff level.");
 	Descriptor.Inputs.Add(ThresholdAnyPort(TEXT("Input"), TEXT("Input")));
 	Descriptor.Outputs.Add(ThresholdAnyPort(TEXT("Out"), TEXT("Out")));
-	Descriptor.Parameters.Add(ThresholdNumberParameter(TEXT("Scale"), TEXT("Scale"), 0.5, 0.0, 1.0));
-	Descriptor.Parameters.Add(ThresholdNumberParameter(TEXT("Bias"), TEXT("Bias"), 0.0, -1.0, 1.0));
-	Descriptor.Parameters.Add(ThresholdBooleanParameter(TEXT("Adaptive"), TEXT("Adaptive"), false));
-	Descriptor.Parameters.Add(ThresholdBooleanParameter(TEXT("Invert"), TEXT("Invert"), false));
+	Descriptor.Parameters.Add(ThresholdNumberParameter(TEXT("Level"), TEXT("Level"), 0.5, 0.0, 1.0));
 
 	FGaeaTerrainNodeDescriptorRegistry::Register(Descriptor);
 	FGaeaTerrainNodeRegistry::Register(GaeaTerrainNodeTypes::Threshold, EvaluateThresholdNode);
