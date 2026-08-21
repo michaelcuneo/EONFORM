@@ -386,7 +386,7 @@ bool SGaeaTerrainGraphPanel::BuildRecipeFromEditorGraph(
 	UGaeaEditorGraphNode* OutputSourceNode = Cast<UGaeaEditorGraphNode>(TerrainOutputInput->LinkedTo[0]->GetOwningNode());
 	if (!OutputSourceNode || OutputSourceNode->RecipeNodeType == GaeaEditorNodeTypes::TerrainOutput)
 	{
-		OutError = TEXT("Terrain Output is not connected to a valid terrain node."));
+		OutError = TEXT("Terrain Output is not connected to a valid terrain node.");
 		return false;
 	}
 	OutRecipe.OutputNode = OutputSourceNode->RecipeNodeId;
