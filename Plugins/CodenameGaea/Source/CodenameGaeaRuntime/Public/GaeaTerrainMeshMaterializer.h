@@ -7,11 +7,14 @@
 /** Geometry controls applied when materializing an EONFORM terrain dataset. */
 struct CODENAMEGAEARUNTIME_API FGaeaTerrainMeshBuildOptions
 {
-	/** Existing EONFORM vertical conversion factor. */
+	/** Existing EONFORM vertical conversion factor for normalized Height values. */
 	float HeightScale = 1000.0f;
 
-	/** 1.0 preserves the authored real-world XY size. Baked into vertices, not actor scale. */
+	/** Legacy uniform XY multiplier, preserved for compatibility. */
 	double HorizontalScale = 1.0;
+
+	/** Independent X/Y multipliers applied after HorizontalScale. */
+	FVector2d HorizontalScaleXY = FVector2d(1.0, 1.0);
 
 	/** 1.0 preserves the authored elevation scale. Applied in addition to HeightScale. */
 	double VerticalScale = 1.0;
