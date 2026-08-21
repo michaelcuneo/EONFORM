@@ -17,6 +17,7 @@
 #include "GaeaShaperNode.h"
 #include "GaeaSharpenNode.h"
 #include "GaeaSineNode.h"
+#include "GaeaSoftClipNode.h"
 #include "GaeaTerrainNodeDescriptor.h"
 #include "GaeaTerrainRecipe.h"
 #include "GaeaThermalErosionNode.h"
@@ -59,6 +60,7 @@ public:
 		RegisterGaeaFractalTerracesNode();
 		RegisterGaeaRecurveNode();
 		RegisterGaeaShaperNode();
+		RegisterGaeaSoftClipNode();
 	}
 };
 
