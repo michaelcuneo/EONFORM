@@ -37,6 +37,11 @@ public:
 		const FGaeaTerrainDerivedDataSettings& Settings = FGaeaTerrainDerivedDataSettings(),
 		FString* OutError = nullptr);
 
+	static bool EnsureHydrology(
+		FGaeaTerrainDataset& InOutDataset,
+		float HeightScale,
+		FString* OutError = nullptr);
+
 	static bool EnsureHydraulicInputs(
 		FGaeaTerrainDataset& InOutDataset,
 		float HeightScale,
