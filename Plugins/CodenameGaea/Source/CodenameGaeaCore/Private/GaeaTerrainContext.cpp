@@ -44,6 +44,16 @@ bool FGaeaTerrainContext::Analyze(
 	FGaeaTerrainDataset& InOutDataset,
 	FString* OutError)
 {
+	return Analyze(Height, HeightScale, FGaeaTerrainPhysicalMetrics(), InOutDataset, OutError);
+}
+
+bool FGaeaTerrainContext::Analyze(
+	const FGaeaScalarField& Height,
+	float HeightScale,
+	const FGaeaTerrainPhysicalMetrics& PhysicalMetrics,
+	FGaeaTerrainDataset& InOutDataset,
+	FString* OutError)
+{
 	auto Fail = [OutError](const TCHAR* Message)
 	{
 		if (OutError) *OutError = Message;
@@ -54,10 +64,18 @@ bool FGaeaTerrainContext::Analyze(
 	if (HeightScale <= UE_SMALL_NUMBER) return Fail(TEXT("Terrain Context requires a positive HeightScale."));
 
 	const FIntPoint Dimensions = Height.Domain.Dimensions;
-	const FVector2d CellSize = Height.Domain.GetCellSize();
-	if (Dimensions.X < 2 || Dimensions.Y < 2 || CellSize.X <= UE_SMALL_NUMBER || CellSize.Y <= UE_SMALL_NUMBER)
+	const FVector2d DomainCellSize = Height.Domain.GetCellSize();
+	if (Dimensions.X < 2 || Dimensions.Y < 2 || DomainCellSize.X <= UE_SMALL_NUMBER || DomainCellSize.Y <= UE_SMALL_NUMBER)
 	{
 		return Fail(TEXT("Terrain Context received an invalid Height domain."));
+	}
+
+	const FVector2d PhysicalCellSizeMeters = PhysicalMetrics.ResolveSampleSpacingMeters(Dimensions, DomainCellSize);
+	const double PhysicalHeightScaleMeters = PhysicalMetrics.ResolveElevationScaleMeters(HeightScale);
+	if (PhysicalCellSizeMeters.X <= UE_DOUBLE_SMALL_NUMBER || PhysicalCellSizeMeters.Y <= UE_DOUBLE_SMALL_NUMBER
+		|| PhysicalHeightScaleMeters <= UE_DOUBLE_SMALL_NUMBER)
+	{
+		return Fail(TEXT("Terrain Context could not resolve valid physical terrain metrics."));
 	}
 
 	FGaeaScalarField Elevation = MakeField(Height.Domain, GaeaTerrainFieldNames::Elevation);
@@ -95,12 +113,12 @@ bool FGaeaTerrainContext::Analyze(
 			const int32 YD = FMath::Max(0, Y - 1);
 			const int32 YU = FMath::Min(Dimensions.Y - 1, Y + 1);
 
-			const float DX = (Height.AtInterior(XR, Y) - Height.AtInterior(XL, Y)) * HeightScale
-				/ FMath::Max(static_cast<float>(XR - XL) * static_cast<float>(CellSize.X), UE_SMALL_NUMBER);
-			const float DY = (Height.AtInterior(X, YU) - Height.AtInterior(X, YD)) * HeightScale
-				/ FMath::Max(static_cast<float>(YU - YD) * static_cast<float>(CellSize.Y), UE_SMALL_NUMBER);
-			const float Gradient = FMath::Sqrt(DX * DX + DY * DY);
-			Slope.AtInterior(X, Y) = FMath::RadiansToDegrees(FMath::Atan(Gradient));
+			const double DX = static_cast<double>(Height.AtInterior(XR, Y) - Height.AtInterior(XL, Y)) * PhysicalHeightScaleMeters
+				/ FMath::Max(static_cast<double>(XR - XL) * PhysicalCellSizeMeters.X, UE_DOUBLE_SMALL_NUMBER);
+			const double DY = static_cast<double>(Height.AtInterior(X, YU) - Height.AtInterior(X, YD)) * PhysicalHeightScaleMeters
+				/ FMath::Max(static_cast<double>(YU - YD) * PhysicalCellSizeMeters.Y, UE_DOUBLE_SMALL_NUMBER);
+			const double Gradient = FMath::Sqrt(DX * DX + DY * DY);
+			Slope.AtInterior(X, Y) = static_cast<float>(FMath::RadiansToDegrees(FMath::Atan(Gradient)));
 
 			float NeighborSum = 0.0f;
 			int32 NeighborCount = 0;
@@ -120,8 +138,11 @@ bool FGaeaTerrainContext::Analyze(
 			if (NeighborCount > 0)
 			{
 				const float Delta = NeighborSum / static_cast<float>(NeighborCount) - Center;
-				const float CurvatureScale = FMath::Max(static_cast<float>(FMath::Min(CellSize.X, CellSize.Y)), UE_SMALL_NUMBER);
-				const float Curvature = FMath::Clamp(Delta * HeightScale / CurvatureScale, -1.0f, 1.0f);
+				const double CurvatureScaleMeters = FMath::Max(FMath::Min(PhysicalCellSizeMeters.X, PhysicalCellSizeMeters.Y), UE_DOUBLE_SMALL_NUMBER);
+				const float Curvature = FMath::Clamp(
+					static_cast<float>(static_cast<double>(Delta) * PhysicalHeightScaleMeters / CurvatureScaleMeters),
+					-1.0f,
+					1.0f);
 				Concavity.AtInterior(X, Y) = FMath::Max(Curvature, 0.0f);
 				Convexity.AtInterior(X, Y) = FMath::Max(-Curvature, 0.0f);
 			}
