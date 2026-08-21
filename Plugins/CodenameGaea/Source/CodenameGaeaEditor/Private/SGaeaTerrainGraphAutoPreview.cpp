@@ -1,6 +1,7 @@
 #include "SGaeaTerrainGraphPanel.h"
 
 #include "EdGraph/EdGraphPin.h"
+#include "GaeaTerrainPhysicalMetrics.h"
 #include "Misc/Crc.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Text/STextBlock.h"
@@ -94,6 +95,17 @@ uint32 SGaeaTerrainGraphPanel::ComputeAutoPreviewHash() const
 			}
 		}
 	}
+
+	// Physical dimensions are part of terrain evaluation now, not merely final mesh scale.
+	// Including them here makes Width/Depth/Elevation edits trigger the same live reevaluation
+	// as a node parameter change while section/output-only settings remain cheap UI changes.
+	const FGaeaTerrainPhysicalMetrics Physical = FGaeaTerrainPhysicalContext::GetActive();
+	Parts.Add(FString::Printf(
+		TEXT("PHYSICAL:%.17g:%.17g:%.17g:%.17g"),
+		Physical.WorldWidthMeters,
+		Physical.WorldDepthMeters,
+		Physical.ElevationScaleMeters,
+		Physical.SeaLevelMeters));
 
 	Parts.Sort();
 	FString Canonical;
