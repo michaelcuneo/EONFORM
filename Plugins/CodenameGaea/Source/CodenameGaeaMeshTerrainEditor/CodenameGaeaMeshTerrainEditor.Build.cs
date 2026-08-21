@@ -20,6 +20,7 @@ public class CodenameGaeaMeshTerrainEditor : ModuleRules
             "DynamicMesh",
             "GeometryCore",
             "GeometryFramework",
+            "MaterialCache",
             "MeshPartition",
             "MeshPartitionEditor",
             "UnrealEd"
