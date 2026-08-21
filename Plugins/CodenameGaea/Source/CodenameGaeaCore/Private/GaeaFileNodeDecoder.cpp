@@ -58,8 +58,13 @@ namespace
 			return false;
 		}
 
-		IImageWrapperModule& ImageWrapper = FModuleManager::LoadModuleChecked<IImageWrapperModule>(TEXT("ImageWrapper"));
-		if (!ImageWrapper.DecompressImage(Compressed.GetData(), Compressed.Num(), OutImage))
+		// UE 5.8: decode through the module-level FImage API. Do not call
+		// IImageWrapper::GetRawImage(FImage&) directly; keeping the wrapper
+		// implementation behind IImageWrapperModule avoids the unresolved
+		// GetRawImage symbol that can otherwise appear when linking this module.
+		IImageWrapperModule& ImageWrapperModule =
+			FModuleManager::LoadModuleChecked<IImageWrapperModule>(TEXT("ImageWrapper"));
+		if (!ImageWrapperModule.DecompressImage(Compressed.GetData(), Compressed.Num(), OutImage))
 		{
 			Error = FString::Printf(TEXT("File could not decode '%s'. Supported raster formats include TIFF/GeoTIFF, PNG, JPEG, BMP, and EXR."), *Path);
 			return false;
