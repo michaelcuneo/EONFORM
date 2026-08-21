@@ -8,6 +8,7 @@ namespace GaeaTerrainNodeTypes
 	CODENAMEGAEACORE_API extern const FName SourceDataset;
 	CODENAMEGAEACORE_API extern const FName PerlinNoise;
 	CODENAMEGAEACORE_API extern const FName Cellular;
+	CODENAMEGAEACORE_API extern const FName Cellular3D;
 	CODENAMEGAEACORE_API extern const FName TerrainShape;
 	CODENAMEGAEACORE_API extern const FName TerrainContext;
 	CODENAMEGAEACORE_API extern const FName Geology;
@@ -89,7 +90,6 @@ struct CODENAMEGAEACORE_API FGaeaTerrainConnection
 	bool IsValid() const;
 };
 
-/** Runtime-safe, editor-independent terrain graph recipe. */
 USTRUCT(BlueprintType)
 struct CODENAMEGAEACORE_API FGaeaTerrainRecipe
 {
