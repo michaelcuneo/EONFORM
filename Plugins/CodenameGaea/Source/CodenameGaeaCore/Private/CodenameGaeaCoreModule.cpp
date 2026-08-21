@@ -8,6 +8,7 @@
 #include "GaeaCurvatureNode.h"
 #include "GaeaDenoiseNode.h"
 #include "GaeaDistanceNode.h"
+#include "GaeaErosionNode.h"
 #include "GaeaFlipNode.h"
 #include "GaeaFractalTerracesNode.h"
 #include "GaeaHeightNode.h"
@@ -49,6 +50,7 @@ public:
 		FGaeaTerrainNodeDescriptorRegistry::RegisterBuiltIns();
 
 		RegisterGaeaPerlinNode();
+		RegisterGaeaErosionNode();
 		RegisterGaeaThermalErosionNode();
 		RegisterGaeaCurvatureNode();
 		RegisterGaeaHeightNode();
