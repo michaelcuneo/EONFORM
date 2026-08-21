@@ -41,13 +41,21 @@ namespace
 		return Parameter;
 	}
 
-	FGaeaTerrainParameterDescriptor PrimitiveAssetName(FName Name, const TCHAR* Label, FName DefaultValue)
+	FGaeaTerrainParameterDescriptor PrimitiveAssetName(
+		FName Name,
+		const TCHAR* Label,
+		FName DefaultValue,
+		std::initializer_list<FName> Options = {})
 	{
 		FGaeaTerrainParameterDescriptor Parameter;
 		Parameter.Name = Name;
 		Parameter.DisplayName = Label;
 		Parameter.Type = EGaeaTerrainParameterType::Name;
 		Parameter.DefaultName = DefaultValue;
+		for (const FName Option : Options)
+		{
+			Parameter.NameOptions.Add(Option);
+		}
 		return Parameter;
 	}
 
@@ -111,7 +119,7 @@ void RegisterGaeaFileNode()
 	Descriptor.Type = GaeaTerrainNodeTypes::File;
 	Descriptor.DisplayName = TEXT("File");
 	Descriptor.Category = TEXT("Primitive");
-	Descriptor.Description = TEXT("Loads an external heightfield or RGB image using coordinate bounds, explicit physical extents, or ground-sample distance.");
+	Descriptor.Description = TEXT("Loads an external heightfield or RGB image. Coordinate bounds define XY scale automatically; TIFF sample type can define elevation scale automatically.");
 	Descriptor.Outputs.Add(PrimitiveAssetPort(TEXT("Out"), TEXT("Any"), TEXT("Out")));
 
 	Descriptor.Parameters.Add(PrimitiveAssetBool(TEXT("IsRGB"), TEXT("Is RGB"), false));
@@ -119,22 +127,31 @@ void RegisterGaeaFileNode()
 	Descriptor.Parameters.Add(PrimitiveAssetBool(TEXT("AllowUnclamped"), TEXT("Allow Unclamped"), false));
 	Descriptor.Parameters.Add(PrimitiveAssetBool(TEXT("CropToSquare"), TEXT("Crop to Square"), false));
 
-	// Spatial calibration. Coordinate bounds take priority when enabled; the
-	// existing explicit extents and metres-per-pixel modes remain available.
-	Descriptor.Parameters.Add(PrimitiveAssetBool(TEXT("UseCoordinateBounds"), TEXT("Use Coordinate Bounds"), false));
+	// Entering a valid coordinate rectangle automatically makes it the spatial
+	// authority. No separate enable switch is required. Geographic bounds are
+	// converted from WGS84 degrees to metres at the dataset centre latitude.
 	Descriptor.Parameters.Add(PrimitiveAssetBool(TEXT("BoundsAreGeographic"), TEXT("Bounds are Lon / Lat (WGS84)"), true));
 	Descriptor.Parameters.Add(PrimitiveAssetNumber(TEXT("XMin"), TEXT("X Min / Longitude"), 0.0, -1000000000000.0, 1000000000000.0));
 	Descriptor.Parameters.Add(PrimitiveAssetNumber(TEXT("YMin"), TEXT("Y Min / Latitude"), 0.0, -1000000000000.0, 1000000000000.0));
-	Descriptor.Parameters.Add(PrimitiveAssetNumber(TEXT("XMax"), TEXT("X Max / Longitude"), 1.0, -1000000000000.0, 1000000000000.0));
-	Descriptor.Parameters.Add(PrimitiveAssetNumber(TEXT("YMax"), TEXT("Y Max / Latitude"), 1.0, -1000000000000.0, 1000000000000.0));
+	Descriptor.Parameters.Add(PrimitiveAssetNumber(TEXT("XMax"), TEXT("X Max / Longitude"), 0.0, -1000000000000.0, 1000000000000.0));
+	Descriptor.Parameters.Add(PrimitiveAssetNumber(TEXT("YMax"), TEXT("Y Max / Latitude"), 0.0, -1000000000000.0, 1000000000000.0));
 
+	// Fallback spatial modes for sources that have no coordinate bounds.
 	Descriptor.Parameters.Add(PrimitiveAssetNumber(TEXT("ExtentXMetres"), TEXT("Extent X (m)"), 1000.0, 0.001, 100000000.0));
 	Descriptor.Parameters.Add(PrimitiveAssetNumber(TEXT("ExtentYMetres"), TEXT("Extent Y (m)"), 1000.0, 0.001, 100000000.0));
 	Descriptor.Parameters.Add(PrimitiveAssetNumber(TEXT("XYScale"), TEXT("XY Scale"), 1.0, 0.0001, 10000.0));
 	Descriptor.Parameters.Add(PrimitiveAssetBool(TEXT("UseGroundSampleDistance"), TEXT("Use Metres / Pixel"), false));
 	Descriptor.Parameters.Add(PrimitiveAssetNumber(TEXT("GroundSampleDistanceXMetres"), TEXT("Metres / Pixel X"), 1.0, 0.0001, 1000000.0));
 	Descriptor.Parameters.Add(PrimitiveAssetNumber(TEXT("GroundSampleDistanceYMetres"), TEXT("Metres / Pixel Y"), 1.0, 0.0001, 1000000.0));
-	Descriptor.Parameters.Add(PrimitiveAssetNumber(TEXT("HeightScaleMetres"), TEXT("Height Scale (m)"), 80.0, 0.001, 1000000.0));
+
+	// Auto reads TIFF/GeoTIFF BitsPerSample + SampleFormat. The explicit choices
+	// are fallbacks for formats where the container does not expose signedness.
+	Descriptor.Parameters.Add(PrimitiveAssetName(
+		TEXT("ElevationEncoding"),
+		TEXT("Elevation Encoding"),
+		TEXT("Auto"),
+		{ TEXT("Auto"), TEXT("UInt16"), TEXT("Int16"), TEXT("UInt32"), TEXT("Int32"), TEXT("FloatMetres"), TEXT("Normalized") }));
+	Descriptor.Parameters.Add(PrimitiveAssetNumber(TEXT("HeightScaleMetres"), TEXT("Normalized Height Range (m)"), 80.0, 0.001, 1000000.0));
 
 	Descriptor.Parameters.Add(PrimitiveAssetName(TEXT("InformationHoudini"), TEXT("Information Houdini"), NAME_None));
 	Descriptor.Parameters.Add(PrimitiveAssetBool(TEXT("NeverCache"), TEXT("Never Cache"), false));
