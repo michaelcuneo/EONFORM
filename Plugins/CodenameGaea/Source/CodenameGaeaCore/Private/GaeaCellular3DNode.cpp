@@ -8,21 +8,16 @@
 
 namespace
 {
-	FGaeaTerrainPortDescriptor Cellular3DTerrainPort(FName Name, const TCHAR* DisplayName = nullptr)
+	FGaeaTerrainPortDescriptor Cellular3DPort(FName Name, FName DataType, const TCHAR* DisplayName = nullptr)
 	{
 		FGaeaTerrainPortDescriptor Port;
 		Port.Name = Name;
-		Port.DataType = TEXT("Terrain");
+		Port.DataType = DataType;
 		if (DisplayName) Port.DisplayName = DisplayName;
 		return Port;
 	}
 
-	FGaeaTerrainParameterDescriptor Cellular3DNumberParameter(
-		FName Name,
-		const TCHAR* DisplayName,
-		double DefaultValue,
-		double Minimum,
-		double Maximum)
+	FGaeaTerrainParameterDescriptor Cellular3DNumberParameter(FName Name, const TCHAR* DisplayName, double DefaultValue, double Minimum, double Maximum)
 	{
 		FGaeaTerrainParameterDescriptor Parameter;
 		Parameter.Name = Name;
@@ -36,12 +31,7 @@ namespace
 		return Parameter;
 	}
 
-	FGaeaTerrainParameterDescriptor Cellular3DIntegerParameter(
-		FName Name,
-		const TCHAR* DisplayName,
-		int64 DefaultValue,
-		int64 Minimum,
-		int64 Maximum)
+	FGaeaTerrainParameterDescriptor Cellular3DIntegerParameter(FName Name, const TCHAR* DisplayName, int64 DefaultValue, int64 Minimum, int64 Maximum)
 	{
 		FGaeaTerrainParameterDescriptor Parameter;
 		Parameter.Name = Name;
@@ -55,6 +45,16 @@ namespace
 		return Parameter;
 	}
 
+	FGaeaTerrainParameterDescriptor Cellular3DBooleanParameter(FName Name, const TCHAR* DisplayName, bool DefaultValue)
+	{
+		FGaeaTerrainParameterDescriptor Parameter;
+		Parameter.Name = Name;
+		Parameter.DisplayName = DisplayName;
+		Parameter.Type = EGaeaTerrainParameterType::Boolean;
+		Parameter.DefaultBoolean = DefaultValue;
+		return Parameter;
+	}
+
 	uint32 Cellular3DHash(uint32 Value)
 	{
 		Value ^= Value >> 16;
@@ -65,67 +65,77 @@ namespace
 		return Value;
 	}
 
-	float Cellular3DHash01(int32 X, int32 Y, int32 Z, int32 Seed, uint32 Salt)
+	uint32 Cellular3DCellHash(int32 X, int32 Y, int32 Layer, int32 Seed, uint32 Salt)
 	{
 		uint32 H = static_cast<uint32>(X) * 0x9e3779b9U;
 		H ^= static_cast<uint32>(Y) * 0x85ebca6bU;
-		H ^= static_cast<uint32>(Z) * 0xc2b2ae35U;
+		H ^= static_cast<uint32>(Layer) * 0xc2b2ae35U;
 		H ^= static_cast<uint32>(Seed) * 0x27d4eb2fU;
 		H ^= Salt;
-		return static_cast<float>(Cellular3DHash(H) & 0x00ffffffU) / static_cast<float>(0x01000000U);
+		return Cellular3DHash(H);
 	}
 
-	float Cellular3DSample(
-		float X,
-		float Y,
-		float Z,
-		float JitterX,
-		float JitterY,
-		float JitterZ,
-		int32 Seed)
+	float Cellular3DHash01(int32 X, int32 Y, int32 Layer, int32 Seed, uint32 Salt)
 	{
-		const int32 BaseX = FMath::FloorToInt(X);
-		const int32 BaseY = FMath::FloorToInt(Y);
-		const int32 BaseZ = FMath::FloorToInt(Z);
-		float Nearest = TNumericLimits<float>::Max();
+		return static_cast<float>(Cellular3DCellHash(X, Y, Layer, Seed, Salt) & 0x00ffffffU)
+			/ static_cast<float>(0x01000000U);
+	}
 
-		for (int32 CZ = BaseZ - 1; CZ <= BaseZ + 1; ++CZ)
-		{
-			for (int32 CY = BaseY - 1; CY <= BaseY + 1; ++CY)
-			{
-				for (int32 CX = BaseX - 1; CX <= BaseX + 1; ++CX)
-				{
-					const float FeatureX = static_cast<float>(CX) + 0.5f
-						+ (Cellular3DHash01(CX, CY, CZ, Seed, 0x41a7U) - 0.5f) * JitterX;
-					const float FeatureY = static_cast<float>(CY) + 0.5f
-						+ (Cellular3DHash01(CX, CY, CZ, Seed, 0x72b9U) - 0.5f) * JitterY;
-					const float FeatureZ = static_cast<float>(CZ) + 0.5f
-						+ (Cellular3DHash01(CX, CY, CZ, Seed, 0xa3d1U) - 0.5f) * JitterZ;
-
-					const float DX = X - FeatureX;
-					const float DY = Y - FeatureY;
-					const float DZ = Z - FeatureZ;
-					Nearest = FMath::Min(Nearest, FMath::Sqrt(DX * DX + DY * DY + DZ * DZ));
-				}
-			}
-		}
-
-		return Nearest;
+	float Cellular3DFacetDistance(float DX, float DY, float ScaleZ, uint32 Hash)
+	{
+		// Blend several convex distance bases per cell. Each basis is planar, so
+		// the resulting surface has the hard low-poly facets visible in Gaea's
+		// Cellular3D reference rather than rounded radial Worley blobs.
+		const float A = FMath::Lerp(0.65f, 1.35f, static_cast<float>((Hash >> 8) & 0xffU) / 255.0f);
+		const float B = FMath::Lerp(0.65f, 1.35f, static_cast<float>((Hash >> 16) & 0xffU) / 255.0f);
+		const float Manhattan = FMath::Abs(DX) * A + FMath::Abs(DY) * B;
+		const float Chebyshev = FMath::Max(FMath::Abs(DX) * A, FMath::Abs(DY) * B);
+		const float Mix = static_cast<float>((Hash >> 24) & 0xffU) / 255.0f;
+		return FMath::Lerp(Manhattan, Chebyshev * 1.45f, Mix) / FMath::Max(ScaleZ, 0.001f);
 	}
 
 	bool EvaluateCellular3DNode(
 		const FGaeaTerrainNode& Node,
-		const FGaeaTerrainNodeInputs&,
+		const FGaeaTerrainNodeInputs& Inputs,
 		const FGaeaTerrainEvaluationContext&,
 		FGaeaTerrainNodeEvaluation& Out,
 		FString& Error)
 	{
-		// Resolution/world scale are integration details and remain hidden from
-		// the public Gaea-facing descriptor, just as they are for Perlin/Cellular.
-		const int32 Resolution = FMath::Clamp<int32>(static_cast<int32>(Node.GetInteger(TEXT("Resolution"), 257)), 2, 1025);
-		const float WorldSize = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("WorldSize"), 100000.0)), 1.0f, 10000000.0f);
-		const float HeightScale = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("HeightScale"), 8000.0)), 1.0f, 1000000.0f);
+		const FGaeaTerrainValue* Input = nullptr;
+		if (const FGaeaTerrainValue* const* InputPtr = Inputs.Find(TEXT("Input"))) Input = *InputPtr;
 
+		const FGaeaScalarField* InputHeight = nullptr;
+		float HeightScale = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("HeightScale"), 8000.0)), 1.0f, 1000000.0f);
+		FGaeaGridDomain Domain;
+		if (Input && Input->Type == EGaeaTerrainValueType::Terrain && Input->IsValid())
+		{
+			InputHeight = Input->TerrainDataset.FindScalarField(GaeaTerrainFieldNames::Height);
+			if (!InputHeight || !InputHeight->IsValid())
+			{
+				Error = TEXT("Cellular3D Input terrain has no valid Height field.");
+				return false;
+			}
+			Domain = InputHeight->Domain;
+			HeightScale = Input->HeightScale;
+		}
+		else
+		{
+			const int32 Resolution = FMath::Clamp<int32>(static_cast<int32>(Node.GetInteger(TEXT("Resolution"), 257)), 2, 1025);
+			const float WorldSize = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("WorldSize"), 100000.0)), 1.0f, 10000000.0f);
+			const double HalfWorldSize = static_cast<double>(WorldSize) * 0.5;
+			Domain = FGaeaGridDomain::Make(
+				FIntPoint(Resolution, Resolution),
+				FVector2d(-HalfWorldSize, -HalfWorldSize),
+				FVector2d(HalfWorldSize, HalfWorldSize));
+		}
+
+		if (!Domain.IsValid())
+		{
+			Error = TEXT("Cellular3D produced an invalid grid domain.");
+			return false;
+		}
+
+		const float WorldSize = static_cast<float>(FMath::Max(Domain.WorldMax.X - Domain.WorldMin.X, Domain.WorldMax.Y - Domain.WorldMin.Y));
 		const float Size = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Size"), 0.5)), 0.001f, 10.0f);
 		const float Gap = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Gap"), 0.0)), 0.0f, 1.0f);
 		const float JitterX = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("JitterX"), 1.0)), 0.0f, 2.0f);
@@ -135,53 +145,114 @@ namespace
 		const float ScaleY = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("ScaleY"), 1.0)), 0.001f, 10.0f);
 		const float ScaleZ = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("ScaleZ"), 1.0)), 0.001f, 10.0f);
 		const int32 Seed = static_cast<int32>(Node.GetInteger(TEXT("Seed"), 1337));
+		const bool bNormalizeInput = Node.GetBool(TEXT("NormalizeInput"), true);
 
-		const double HalfWorldSize = static_cast<double>(WorldSize) * 0.5;
-		const FGaeaGridDomain Domain = FGaeaGridDomain::Make(
-			FIntPoint(Resolution, Resolution),
-			FVector2d(-HalfWorldSize, -HalfWorldSize),
-			FVector2d(HalfWorldSize, HalfWorldSize));
-		if (!Domain.IsValid())
-		{
-			Error = TEXT("Cellular3D produced an invalid grid domain.");
-			return false;
-		}
-
-		FGaeaFieldDescriptor Descriptor;
-		Descriptor.Name = GaeaTerrainFieldNames::Height;
-		Descriptor.Unit = EGaeaFieldUnit::Normalized;
-		Descriptor.Interpolation = EGaeaInterpolation::Bilinear;
-
+		FGaeaFieldDescriptor HeightDescriptor;
+		HeightDescriptor.Name = GaeaTerrainFieldNames::Height;
+		HeightDescriptor.Unit = EGaeaFieldUnit::Normalized;
+		HeightDescriptor.Interpolation = EGaeaInterpolation::Bilinear;
 		FGaeaScalarField HeightField;
-		HeightField.Initialize(Domain, Descriptor);
+		HeightField.Initialize(Domain, HeightDescriptor);
 
-		const float CellWorldSize = FMath::Max(WorldSize * 0.08f * Size, 1.0f);
-		const float ZSlice = static_cast<float>((Cellular3DHash(static_cast<uint32>(Seed)) & 0xffffU)) / 65535.0f * 8.0f;
-		const float GapThreshold = FMath::Lerp(0.95f, 0.25f, Gap);
+		FGaeaFieldDescriptor HashDescriptor;
+		HashDescriptor.Name = TEXT("Hashmap");
+		HashDescriptor.Unit = EGaeaFieldUnit::Normalized;
+		HashDescriptor.Interpolation = EGaeaInterpolation::Nearest;
+		FGaeaScalarField HashField;
+		HashField.Initialize(Domain, HashDescriptor);
 
-		for (int32 Y = 0; Y < Resolution; ++Y)
+		float InputMin = 0.0f;
+		float InputMax = 1.0f;
+		if (InputHeight && bNormalizeInput)
 		{
-			for (int32 X = 0; X < Resolution; ++X)
+			InputMin = TNumericLimits<float>::Max();
+			InputMax = TNumericLimits<float>::Lowest();
+			for (const float Value : InputHeight->Values)
+			{
+				InputMin = FMath::Min(InputMin, Value);
+				InputMax = FMath::Max(InputMax, Value);
+			}
+		}
+		const float InputRange = FMath::Max(InputMax - InputMin, UE_SMALL_NUMBER);
+
+		// Cellular3D has the opposite Size direction from Cellular: current Gaea
+		// documents larger Size values as larger, more widely spaced 3D cells.
+		const float CellWorldSize = FMath::Max(WorldSize * 0.055f * Size, WorldSize / 256.0f);
+		constexpr int32 Layers = 3;
+
+		for (int32 Y = 0; Y < Domain.Dimensions.Y; ++Y)
+		{
+			for (int32 X = 0; X < Domain.Dimensions.X; ++X)
 			{
 				const FVector2d World = Domain.InteriorSampleToWorld(X, Y);
-				const float NX = static_cast<float>(World.X) / (CellWorldSize * ScaleX);
-				const float NY = static_cast<float>(World.Y) / (CellWorldSize * ScaleY);
-				const float NZ = ZSlice / ScaleZ;
-				const float Distance = Cellular3DSample(NX, NY, NZ, JitterX, JitterY, JitterZ, Seed);
+				const float PX = static_cast<float>(World.X) / (CellWorldSize * ScaleX);
+				const float PY = static_cast<float>(World.Y) / (CellWorldSize * ScaleY);
+				const int32 BaseX = FMath::FloorToInt(PX);
+				const int32 BaseY = FMath::FloorToInt(PY);
 
-				// Convert nearest-cell distance into the exposed heightfield. Gap opens
-				// space between cells while preserving a continuous terrain signal.
-				const float Cell = 1.0f - FMath::Clamp(Distance / FMath::Max(GapThreshold, UE_SMALL_NUMBER), 0.0f, 1.0f);
-				HeightField.AtInterior(X, Y) = Cell * 2.0f - 1.0f;
+				float BestSurface = -1.0f;
+				float BestHashValue = 0.0f;
+				float BestEdgeDistance = 0.0f;
+
+				for (int32 Layer = 0; Layer < Layers; ++Layer)
+				{
+					for (int32 CY = BaseY - 2; CY <= BaseY + 2; ++CY)
+					{
+						for (int32 CX = BaseX - 2; CX <= BaseX + 2; ++CX)
+						{
+							const uint32 CellHash = Cellular3DCellHash(CX, CY, Layer, Seed, 0x3d77U);
+							const float FeatureX = static_cast<float>(CX) + 0.5f
+								+ (Cellular3DHash01(CX, CY, Layer, Seed, 0x41a7U) - 0.5f) * JitterX;
+							const float FeatureY = static_cast<float>(CY) + 0.5f
+								+ (Cellular3DHash01(CX, CY, Layer, Seed, 0x72b9U) - 0.5f) * JitterY;
+							const float DX = PX - FeatureX;
+							const float DY = PY - FeatureY;
+							const float Radial = FMath::Sqrt(DX * DX + DY * DY);
+							if (Radial > 1.75f) continue;
+
+							const float BaseZ = (static_cast<float>(Layer) + 0.35f) / static_cast<float>(Layers);
+							const float ZVariation = (Cellular3DHash01(CX, CY, Layer, Seed, 0xa3d1U) - 0.5f) * 0.8f * JitterZ;
+							const float Peak = FMath::Clamp(BaseZ + ZVariation, 0.05f, 1.35f);
+							const float FacetDistance = Cellular3DFacetDistance(DX, DY, ScaleZ, CellHash);
+							const float Surface = Peak - FacetDistance * 0.65f;
+							if (Surface > BestSurface)
+							{
+								BestSurface = Surface;
+								BestHashValue = static_cast<float>(CellHash & 0x00ffffffU) / static_cast<float>(0x01000000U);
+								BestEdgeDistance = FacetDistance;
+							}
+						}
+					}
+				}
+
+				float InputWeight = 1.0f;
+				if (InputHeight)
+				{
+					const float Source = InputHeight->AtInterior(X, Y);
+					InputWeight = bNormalizeInput ? FMath::Clamp((Source - InputMin) / InputRange, 0.0f, 1.0f) : FMath::Clamp(Source, 0.0f, 1.0f);
+				}
+
+				const float GapCut = Gap * 0.32f;
+				float Value = FMath::Clamp((BestSurface - GapCut) * InputWeight, 0.0f, 1.0f);
+				if (Gap > UE_SMALL_NUMBER)
+				{
+					const float EdgeOpening = FMath::Clamp((BestEdgeDistance - Gap * 0.2f) / FMath::Max(1.0f - Gap * 0.2f, UE_SMALL_NUMBER), 0.0f, 1.0f);
+					Value *= 1.0f - Gap * EdgeOpening;
+				}
+
+				HeightField.AtInterior(X, Y) = Value;
+				HashField.AtInterior(X, Y) = BestHashValue;
 			}
 		}
 
+		FGaeaScalarField HashOutput = HashField;
 		FGaeaTerrainDataset Dataset;
 		if (!Dataset.SetScalarField(MoveTemp(HeightField)))
 		{
 			Error = TEXT("Cellular3D could not publish its Height field.");
 			return false;
 		}
+		Dataset.SetScalarField(MoveTemp(HashField));
 
 		FGaeaTerrainValue Result = FGaeaTerrainValue::MakeTerrain(MoveTemp(Dataset), HeightScale);
 		if (!Result.IsValid())
@@ -191,6 +262,7 @@ namespace
 		}
 
 		Out.Outputs.Add(TEXT("Out"), MoveTemp(Result));
+		Out.Outputs.Add(TEXT("Hashmap"), FGaeaTerrainValue::MakeScalarField(MoveTemp(HashOutput)));
 		return true;
 	}
 }
@@ -201,8 +273,11 @@ void RegisterGaeaCellular3DNode()
 	Descriptor.Type = GaeaTerrainNodeTypes::Cellular3D;
 	Descriptor.DisplayName = TEXT("Cellular3D");
 	Descriptor.Category = TEXT("Primitive");
-	Descriptor.Description = TEXT("Generates a 3D cellular-noise slice with independent axis jitter and scale controls.");
-	Descriptor.Outputs.Add(Cellular3DTerrainPort(TEXT("Out"), TEXT("Out")));
+	Descriptor.Description = TEXT("Generates volumetric-looking faceted cellular forms with independent axis jitter, scale, gap, and hash-map output.");
+	Descriptor.Inputs.Add(Cellular3DPort(TEXT("Input"), TEXT("Terrain"), TEXT("Input")));
+	Descriptor.Inputs.Add(Cellular3DPort(TEXT("Gap"), TEXT("ScalarField"), TEXT("Gap")));
+	Descriptor.Outputs.Add(Cellular3DPort(TEXT("Out"), TEXT("Terrain"), TEXT("Out")));
+	Descriptor.Outputs.Add(Cellular3DPort(TEXT("Hashmap"), TEXT("ScalarField"), TEXT("Hashmap")));
 	Descriptor.Parameters.Add(Cellular3DNumberParameter(TEXT("Size"), TEXT("Size"), 0.5, 0.001, 10.0));
 	Descriptor.Parameters.Add(Cellular3DNumberParameter(TEXT("Gap"), TEXT("Gap"), 0.0, 0.0, 1.0));
 	Descriptor.Parameters.Add(Cellular3DNumberParameter(TEXT("JitterX"), TEXT("Jitter X"), 1.0, 0.0, 2.0));
@@ -212,6 +287,7 @@ void RegisterGaeaCellular3DNode()
 	Descriptor.Parameters.Add(Cellular3DNumberParameter(TEXT("ScaleY"), TEXT("Scale Y"), 1.0, 0.001, 10.0));
 	Descriptor.Parameters.Add(Cellular3DNumberParameter(TEXT("ScaleZ"), TEXT("Scale Z"), 1.0, 0.001, 10.0));
 	Descriptor.Parameters.Add(Cellular3DIntegerParameter(TEXT("Seed"), TEXT("Seed"), 1337, -2147483647, 2147483647));
+	Descriptor.Parameters.Add(Cellular3DBooleanParameter(TEXT("NormalizeInput"), TEXT("Normalize Input"), true));
 
 	FGaeaTerrainNodeDescriptorRegistry::Register(Descriptor);
 	FGaeaTerrainNodeRegistry::Register(GaeaTerrainNodeTypes::Cellular3D, EvaluateCellular3DNode);
