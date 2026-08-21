@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "GaeaColorField.h"
 #include "GaeaScalarField.h"
 #include "GaeaTerrainDataset.h"
 
@@ -8,7 +9,8 @@ enum class EGaeaTerrainValueType : uint8
 {
 	Invalid,
 	Terrain,
-	ScalarField
+	ScalarField,
+	Color
 };
 
 /** A named value traveling across a terrain graph connection. */
@@ -18,6 +20,7 @@ struct CODENAMEGAEACORE_API FGaeaTerrainValue
 	float HeightScale = 1000.0f;
 	FGaeaTerrainDataset TerrainDataset;
 	FGaeaScalarField ScalarField;
+	FGaeaColorField ColorField;
 
 	static FGaeaTerrainValue MakeTerrain(const FGaeaTerrainDataset& Dataset, float InHeightScale)
 	{
@@ -53,6 +56,22 @@ struct CODENAMEGAEACORE_API FGaeaTerrainValue
 		return Value;
 	}
 
+	static FGaeaTerrainValue MakeColor(const FGaeaColorField& Field)
+	{
+		FGaeaTerrainValue Value;
+		Value.Type = EGaeaTerrainValueType::Color;
+		Value.ColorField = Field;
+		return Value;
+	}
+
+	static FGaeaTerrainValue MakeColor(FGaeaColorField&& Field)
+	{
+		FGaeaTerrainValue Value;
+		Value.Type = EGaeaTerrainValueType::Color;
+		Value.ColorField = MoveTemp(Field);
+		return Value;
+	}
+
 	bool IsValid() const
 	{
 		switch (Type)
@@ -61,6 +80,8 @@ struct CODENAMEGAEACORE_API FGaeaTerrainValue
 			return HeightScale > UE_SMALL_NUMBER && !TerrainDataset.IsEmpty();
 		case EGaeaTerrainValueType::ScalarField:
 			return ScalarField.IsValid();
+		case EGaeaTerrainValueType::Color:
+			return ColorField.IsValid();
 		default:
 			return false;
 		}
