@@ -1,28 +1,17 @@
 #include "SGaeaTerrainGraphPanel.h"
 
-#include "Framework/Commands/GenericCommands.h"
-#include "Framework/Commands/UICommandList.h"
 #include "InputCoreTypes.h"
 
 FReply SGaeaTerrainGraphPanel::OnPreviewKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent)
 {
+	// Node deletion is intentionally bound ONLY to the physical Delete key.
+	// Do not use FGenericCommands::Delete here: Unreal's generic delete command
+	// can also resolve Backspace, and preview-key handling runs before child text
+	// controls get a chance to consume it. That made an innocent Backspace while
+	// editing parameters capable of deleting the selected graph node.
 	if (InKeyEvent.GetKey() == EKeys::Delete && CanDeleteSelectedNodes())
 	{
 		DeleteSelectedNodes();
-		return FReply::Handled();
-	}
-
-	if (!GraphCommands.IsValid())
-	{
-		GraphCommands = MakeShared<FUICommandList>();
-		GraphCommands->MapAction(
-			FGenericCommands::Get().Delete,
-			FExecuteAction::CreateSP(SharedThis(this), &SGaeaTerrainGraphPanel::DeleteSelectedNodes),
-			FCanExecuteAction::CreateSP(SharedThis(this), &SGaeaTerrainGraphPanel::CanDeleteSelectedNodes));
-	}
-
-	if (GraphCommands->ProcessCommandBindings(InKeyEvent))
-	{
 		return FReply::Handled();
 	}
 
