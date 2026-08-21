@@ -19,6 +19,7 @@ public:
 	virtual ~SGaeaTerrainMeshPreview() override;
 
 	void Construct(const FArguments& InArgs);
+	virtual void Tick(const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime) override;
 	void SetTerrain(const FGaeaTerrainDatasetSnapshot& Snapshot);
 	void ClearTerrain();
 	FText GetStatusText() const;
@@ -32,5 +33,7 @@ private:
 	FPreviewScene PreviewScene;
 	TSharedPtr<FEditorViewportClient> PreviewViewportClient;
 	UDynamicMeshComponent* PreviewMeshComponent = nullptr;
+	FGaeaTerrainDatasetSnapshot LastSnapshot;
+	uint64 LastOutputSettingsRevision = 0;
 	FText StatusText;
 };
