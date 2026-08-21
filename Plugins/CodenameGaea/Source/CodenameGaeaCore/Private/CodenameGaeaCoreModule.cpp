@@ -3,6 +3,7 @@
 #include "GaeaAngleNode.h"
 #include "GaeaAutoLevelNode.h"
 #include "GaeaBlurNode.h"
+#include "GaeaCellularNode.h"
 #include "GaeaClampNode.h"
 #include "GaeaCombineNode.h"
 #include "GaeaCurvatureNode.h"
@@ -50,6 +51,7 @@ public:
 		FGaeaTerrainNodeDescriptorRegistry::RegisterBuiltIns();
 
 		RegisterGaeaPerlinNode();
+		RegisterGaeaCellularNode();
 		RegisterGaeaErosionNode();
 		RegisterGaeaThermalErosionNode();
 		RegisterGaeaCurvatureNode();
@@ -83,6 +85,7 @@ public:
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::TerrainShape, TEXT("Terrain Shape"), TEXT("Internal"), true);
 
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::PerlinNoise, TEXT("Perlin"), TEXT("Primitive"));
+		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Cellular, TEXT("Cellular"), TEXT("Primitive"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::HydraulicErosion, TEXT("Erosion"), TEXT("Simulate"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::ThermalErosion, TEXT("Thermal"), TEXT("Simulate"));
 
