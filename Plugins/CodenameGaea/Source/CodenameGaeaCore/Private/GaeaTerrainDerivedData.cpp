@@ -64,6 +64,20 @@ namespace
 		}
 	};
 
+	struct FHydrologyDistanceCell
+	{
+		double Distance = 0.0;
+		int32 Index = INDEX_NONE;
+	};
+
+	struct FHydrologyDistanceCellLess
+	{
+		FORCEINLINE bool operator()(const FHydrologyDistanceCell& A, const FHydrologyDistanceCell& B) const
+		{
+			return A.Distance > B.Distance;
+		}
+	};
+
 	FGaeaScalarField MakeHydrologyField(
 		const FGaeaGridDomain& Domain,
 		FName Name,
@@ -112,12 +126,14 @@ namespace
 		Filled.SetNumUninitialized(Num);
 		TArray<uint8> Visited;
 		Visited.Init(0, Num);
-		TArray<int32> FloodRank;
-		FloodRank.Init(MAX_int32, Num);
 		TArray<FHydrologyCell> Heap;
 		Heap.Reserve(Num);
 
 		auto IndexOf = [Width](int32 X, int32 Y) { return Y * Width + X; };
+		auto IsBoundary = [Width, HeightCount](int32 X, int32 Y)
+		{
+			return X == 0 || Y == 0 || X == Width - 1 || Y == HeightCount - 1;
+		};
 		auto PushBoundary = [&](int32 X, int32 Y)
 		{
 			const int32 Index = IndexOf(X, Y);
@@ -141,12 +157,10 @@ namespace
 		static const int32 DX[8] = { 1, 1, 0, -1, -1, -1, 0, 1 };
 		static const int32 DY[8] = { 0, 1, 1, 1, 0, -1, -1, -1 };
 
-		int32 Rank = 0;
 		while (!Heap.IsEmpty())
 		{
 			FHydrologyCell Cell;
 			Heap.HeapPop(Cell, FHydrologyCellLess());
-			FloodRank[Cell.Index] = Rank++;
 			const int32 X = Cell.Index % Width;
 			const int32 Y = Cell.Index / Width;
 
@@ -164,17 +178,21 @@ namespace
 			}
 		}
 
+		// Stage 1: resolve genuine downhill flow from the depression-filled surface.
+		// Prefer the steepest physical descent so rectangular worlds do not bias D8.
 		TArray<int32> Receiver;
 		Receiver.Init(INDEX_NONE, Num);
+		TArray<uint8> HasStrictReceiver;
+		HasStrictReceiver.Init(0, Num);
+
 		for (int32 Y = 0; Y < HeightCount; ++Y)
 		{
 			for (int32 X = 0; X < Width; ++X)
 			{
 				const int32 Index = IndexOf(X, Y);
 				const float CurrentElevation = Filled[Index];
+				double BestSlope = 0.0;
 				int32 BestIndex = INDEX_NONE;
-				float BestElevation = CurrentElevation;
-				int32 BestRank = FloodRank[Index];
 
 				for (int32 Direction = 0; Direction < 8; ++Direction)
 				{
@@ -182,15 +200,98 @@ namespace
 					const int32 NY = Y + DY[Direction];
 					if (NX < 0 || NX >= Width || NY < 0 || NY >= HeightCount) continue;
 					const int32 NIndex = IndexOf(NX, NY);
-					const float NElevation = Filled[NIndex];
-					const bool bStrictlyLower = NElevation < BestElevation - UE_SMALL_NUMBER;
-					const bool bEqualAndCloserToOutlet = FMath::IsNearlyEqual(NElevation, BestElevation)
-						&& FloodRank[NIndex] < BestRank;
-					if (bStrictlyLower || bEqualAndCloserToOutlet)
+					const double Drop = static_cast<double>(CurrentElevation - Filled[NIndex]);
+					if (Drop <= static_cast<double>(UE_SMALL_NUMBER)) continue;
+
+					const double StepX = static_cast<double>(DX[Direction]) * SampleSpacingMeters.X;
+					const double StepY = static_cast<double>(DY[Direction]) * SampleSpacingMeters.Y;
+					const double Distance = FMath::Sqrt(StepX * StepX + StepY * StepY);
+					const double Slope = Drop / FMath::Max(Distance, UE_DOUBLE_SMALL_NUMBER);
+					if (Slope > BestSlope)
 					{
+						BestSlope = Slope;
 						BestIndex = NIndex;
-						BestElevation = NElevation;
-						BestRank = FloodRank[NIndex];
+					}
+				}
+
+				if (BestIndex != INDEX_NONE)
+				{
+					Receiver[Index] = BestIndex;
+					HasStrictReceiver[Index] = 1;
+				}
+			}
+		}
+
+		// Stage 2: route only unresolved filled flats. Seeds are cells that already
+		// spill downhill plus domain-edge outlets. A multi-source physical-distance
+		// solve removes the old priority-flood pop-order / diagonal routing artifact.
+		const double InfiniteDistance = TNumericLimits<double>::Max();
+		TArray<double> FlatDistance;
+		FlatDistance.Init(InfiniteDistance, Num);
+		TArray<FHydrologyDistanceCell> DistanceHeap;
+		DistanceHeap.Reserve(Num);
+
+		for (int32 Y = 0; Y < HeightCount; ++Y)
+		{
+			for (int32 X = 0; X < Width; ++X)
+			{
+				const int32 Index = IndexOf(X, Y);
+				if (HasStrictReceiver[Index] || IsBoundary(X, Y))
+				{
+					FlatDistance[Index] = 0.0;
+					DistanceHeap.HeapPush({ 0.0, Index }, FHydrologyDistanceCellLess());
+				}
+			}
+		}
+
+		while (!DistanceHeap.IsEmpty())
+		{
+			FHydrologyDistanceCell Cell;
+			DistanceHeap.HeapPop(Cell, FHydrologyDistanceCellLess());
+			if (Cell.Distance > FlatDistance[Cell.Index] + UE_DOUBLE_SMALL_NUMBER) continue;
+
+			const int32 X = Cell.Index % Width;
+			const int32 Y = Cell.Index / Width;
+			for (int32 Direction = 0; Direction < 8; ++Direction)
+			{
+				const int32 NX = X + DX[Direction];
+				const int32 NY = Y + DY[Direction];
+				if (NX < 0 || NX >= Width || NY < 0 || NY >= HeightCount) continue;
+				const int32 NIndex = IndexOf(NX, NY);
+				if (!FMath::IsNearlyEqual(Filled[NIndex], Filled[Cell.Index])) continue;
+
+				const double StepX = static_cast<double>(DX[Direction]) * SampleSpacingMeters.X;
+				const double StepY = static_cast<double>(DY[Direction]) * SampleSpacingMeters.Y;
+				const double StepDistance = FMath::Sqrt(StepX * StepX + StepY * StepY);
+				const double CandidateDistance = Cell.Distance + StepDistance;
+				if (CandidateDistance + UE_DOUBLE_SMALL_NUMBER < FlatDistance[NIndex])
+				{
+					FlatDistance[NIndex] = CandidateDistance;
+					DistanceHeap.HeapPush({ CandidateDistance, NIndex }, FHydrologyDistanceCellLess());
+				}
+			}
+		}
+
+		for (int32 Y = 0; Y < HeightCount; ++Y)
+		{
+			for (int32 X = 0; X < Width; ++X)
+			{
+				const int32 Index = IndexOf(X, Y);
+				if (Receiver[Index] != INDEX_NONE || IsBoundary(X, Y)) continue;
+
+				double BestDistance = FlatDistance[Index];
+				int32 BestIndex = INDEX_NONE;
+				for (int32 Direction = 0; Direction < 8; ++Direction)
+				{
+					const int32 NX = X + DX[Direction];
+					const int32 NY = Y + DY[Direction];
+					if (NX < 0 || NX >= Width || NY < 0 || NY >= HeightCount) continue;
+					const int32 NIndex = IndexOf(NX, NY);
+					if (!FMath::IsNearlyEqual(Filled[NIndex], Filled[Index])) continue;
+					if (FlatDistance[NIndex] + UE_DOUBLE_SMALL_NUMBER < BestDistance)
+					{
+						BestDistance = FlatDistance[NIndex];
+						BestIndex = NIndex;
 					}
 				}
 				Receiver[Index] = BestIndex;
@@ -203,7 +304,7 @@ namespace
 		DrainageOrder.Sort([&](int32 A, int32 B)
 		{
 			if (!FMath::IsNearlyEqual(Filled[A], Filled[B])) return Filled[A] > Filled[B];
-			return FloodRank[A] > FloodRank[B];
+			return FlatDistance[A] > FlatDistance[B];
 		});
 
 		TArray<float> Accumulation;
