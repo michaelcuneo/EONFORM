@@ -37,10 +37,20 @@ namespace GaeaTerrainNodeTypes
 	CODENAMEGAEACORE_API extern const FName HydraulicErosion;
 	CODENAMEGAEACORE_API extern const FName Combine;
 	CODENAMEGAEACORE_API extern const FName Clamp;
+	CODENAMEGAEACORE_API extern const FName Adjust;
+	CODENAMEGAEACORE_API extern const FName Aperture;
 	CODENAMEGAEACORE_API extern const FName AutoLevel;
+	CODENAMEGAEACORE_API extern const FName BlobRemover;
 	CODENAMEGAEACORE_API extern const FName Blur;
+	CODENAMEGAEACORE_API extern const FName Clip;
+	CODENAMEGAEACORE_API extern const FName Deflate;
 	CODENAMEGAEACORE_API extern const FName Denoise;
+	CODENAMEGAEACORE_API extern const FName Dilate;
+	CODENAMEGAEACORE_API extern const FName Distance;
+	CODENAMEGAEACORE_API extern const FName Equalize;
+	CODENAMEGAEACORE_API extern const FName Extend;
 	CODENAMEGAEACORE_API extern const FName Flip;
+	CODENAMEGAEACORE_API extern const FName Median;
 	CODENAMEGAEACORE_API extern const FName Invert;
 	CODENAMEGAEACORE_API extern const FName MultiCombine;
 	CODENAMEGAEACORE_API extern const FName Sharpen;
@@ -48,7 +58,6 @@ namespace GaeaTerrainNodeTypes
 	CODENAMEGAEACORE_API extern const FName Threshold;
 	CODENAMEGAEACORE_API extern const FName Transform;
 	CODENAMEGAEACORE_API extern const FName ZeroBorders;
-	CODENAMEGAEACORE_API extern const FName Distance;
 	CODENAMEGAEACORE_API extern const FName FractalTerraces;
 	CODENAMEGAEACORE_API extern const FName Recurve;
 	CODENAMEGAEACORE_API extern const FName Shaper;
