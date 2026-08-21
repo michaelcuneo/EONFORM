@@ -30,6 +30,11 @@ public:
 	UPROPERTY(EditAnywhere, Category="Terrain Graph")
 	TArray<FGaeaTerrainNodeLayout> NodeLayout;
 
+	virtual void PostLoad() override;
+
 	const FGaeaTerrainNodeLayout* FindLayout(const FGuid& NodeId) const;
 	void SetLayout(const FGuid& NodeId, const FVector2D& Position);
+
+private:
+	void MigrateLegacyConnections();
 };
