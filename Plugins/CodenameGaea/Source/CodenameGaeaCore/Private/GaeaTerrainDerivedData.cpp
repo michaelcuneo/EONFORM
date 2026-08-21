@@ -31,6 +31,12 @@ namespace
 			&& Dataset.HasScalarField(GaeaTerrainFieldNames::Evaporation);
 	}
 
+	bool HasHydrologyFields(const FGaeaTerrainDataset& Dataset)
+	{
+		return Dataset.HasScalarField(GaeaTerrainFieldNames::FlowDirection)
+			&& Dataset.HasScalarField(GaeaTerrainFieldNames::FlowAccumulation);
+	}
+
 	const FGaeaScalarField* RequireHeight(const FGaeaTerrainDataset& Dataset, FString* OutError)
 	{
 		const FGaeaScalarField* Height = Dataset.FindScalarField(GaeaTerrainFieldNames::Height);
@@ -39,6 +45,155 @@ namespace
 			*OutError = TEXT("Derived terrain data requires a Height field.");
 		}
 		return Height;
+	}
+
+	struct FHydrologyCell
+	{
+		float Elevation = 0.0f;
+		int32 Index = INDEX_NONE;
+	};
+
+	struct FHydrologyCellLess
+	{
+		FORCEINLINE bool operator()(const FHydrologyCell& A, const FHydrologyCell& B) const
+		{
+			return A.Elevation > B.Elevation;
+		}
+	};
+
+	bool BuildHydrologyFields(
+		const FGaeaScalarField& Height,
+		FGaeaScalarField& OutDirection,
+		FGaeaScalarField& OutAccumulation,
+		FString* OutError)
+	{
+		const FIntPoint Dimensions = Height.Domain.Dimensions;
+		const int32 Width = Dimensions.X;
+		const int32 HeightCount = Dimensions.Y;
+		if (Width < 2 || HeightCount < 2)
+		{
+			if (OutError) *OutError = TEXT("Hydrology requires a terrain grid of at least 2 x 2 samples.");
+			return false;
+		}
+
+		const int32 Num = Width * HeightCount;
+		TArray<float> Filled;
+		Filled.SetNumUninitialized(Num);
+		TArray<uint8> Visited;
+		Visited.Init(0, Num);
+		TArray<int32> Receiver;
+		Receiver.Init(INDEX_NONE, Num);
+		TArray<float> Accumulation;
+		Accumulation.Init(1.0f, Num);
+		TArray<int32> FloodOrder;
+		FloodOrder.Reserve(Num);
+		TArray<FHydrologyCell> Heap;
+		Heap.Reserve(Num);
+
+		auto IndexOf = [Width](int32 X, int32 Y) { return Y * Width + X; };
+		auto PushBoundary = [&](int32 X, int32 Y)
+		{
+			const int32 Index = IndexOf(X, Y);
+			if (Visited[Index]) return;
+			Visited[Index] = 1;
+			Filled[Index] = Height.AtInterior(X, Y);
+			Heap.HeapPush({ Filled[Index], Index }, FHydrologyCellLess());
+		};
+
+		for (int32 X = 0; X < Width; ++X)
+		{
+			PushBoundary(X, 0);
+			PushBoundary(X, HeightCount - 1);
+		}
+		for (int32 Y = 1; Y < HeightCount - 1; ++Y)
+		{
+			PushBoundary(0, Y);
+			PushBoundary(Width - 1, Y);
+		}
+
+		static const int32 DX[8] = { 1, 1, 0, -1, -1, -1, 0, 1 };
+		static const int32 DY[8] = { 0, 1, 1, 1, 0, -1, -1, -1 };
+
+		while (!Heap.IsEmpty())
+		{
+			FHydrologyCell Cell;
+			Heap.HeapPop(Cell, FHydrologyCellLess());
+			FloodOrder.Add(Cell.Index);
+			const int32 X = Cell.Index % Width;
+			const int32 Y = Cell.Index / Width;
+
+			for (int32 Direction = 0; Direction < 8; ++Direction)
+			{
+				const int32 NX = X + DX[Direction];
+				const int32 NY = Y + DY[Direction];
+				if (NX < 0 || NX >= Width || NY < 0 || NY >= HeightCount) continue;
+				const int32 NIndex = IndexOf(NX, NY);
+				if (Visited[NIndex]) continue;
+
+				Visited[NIndex] = 1;
+				const float SourceHeight = Height.AtInterior(NX, NY);
+				Filled[NIndex] = FMath::Max(SourceHeight, Cell.Elevation);
+				Receiver[NIndex] = Cell.Index;
+				Heap.HeapPush({ Filled[NIndex], NIndex }, FHydrologyCellLess());
+			}
+		}
+
+		for (int32 OrderIndex = FloodOrder.Num() - 1; OrderIndex >= 0; --OrderIndex)
+		{
+			const int32 Index = FloodOrder[OrderIndex];
+			const int32 To = Receiver[Index];
+			if (To != INDEX_NONE)
+			{
+				Accumulation[To] += Accumulation[Index];
+			}
+		}
+
+		FGaeaFieldDescriptor DirectionDescriptor;
+		DirectionDescriptor.Name = GaeaTerrainFieldNames::FlowDirection;
+		DirectionDescriptor.Unit = EGaeaFieldUnit::Unitless;
+		DirectionDescriptor.Interpolation = EGaeaInterpolation::Nearest;
+		OutDirection.Initialize(Height.Domain, DirectionDescriptor, -1.0f);
+
+		FGaeaFieldDescriptor AccumulationDescriptor;
+		AccumulationDescriptor.Name = GaeaTerrainFieldNames::FlowAccumulation;
+		AccumulationDescriptor.Unit = EGaeaFieldUnit::Unitless;
+		AccumulationDescriptor.Interpolation = EGaeaInterpolation::Bilinear;
+		OutAccumulation.Initialize(Height.Domain, AccumulationDescriptor, 1.0f);
+
+		for (int32 Y = 0; Y < HeightCount; ++Y)
+		{
+			for (int32 X = 0; X < Width; ++X)
+			{
+				const int32 Index = IndexOf(X, Y);
+				const int32 To = Receiver[Index];
+				float DirectionCode = -1.0f;
+				if (To != INDEX_NONE)
+				{
+					const int32 TX = To % Width;
+					const int32 TY = To / Width;
+					const int32 StepX = FMath::Clamp(TX - X, -1, 1);
+					const int32 StepY = FMath::Clamp(TY - Y, -1, 1);
+					for (int32 Direction = 0; Direction < 8; ++Direction)
+					{
+						if (DX[Direction] == StepX && DY[Direction] == StepY)
+						{
+							DirectionCode = static_cast<float>(Direction);
+							break;
+						}
+					}
+				}
+				OutDirection.AtInterior(X, Y) = DirectionCode;
+				OutAccumulation.AtInterior(X, Y) = Accumulation[Index];
+			}
+		}
+
+		if (!OutDirection.IsValid() || !OutAccumulation.IsValid())
+		{
+			if (OutError) *OutError = TEXT("Hydrology produced invalid drainage fields.");
+			return false;
+		}
+		if (OutError) OutError->Reset();
+		return true;
 	}
 }
 
@@ -127,6 +282,41 @@ bool FGaeaTerrainDerivedData::EnsureProcessMasks(
 		OutError);
 }
 
+bool FGaeaTerrainDerivedData::EnsureHydrology(
+	FGaeaTerrainDataset& InOutDataset,
+	float HeightScale,
+	FString* OutError)
+{
+	if (HasHydrologyFields(InOutDataset))
+	{
+		if (OutError) OutError->Reset();
+		return true;
+	}
+
+	const FGaeaScalarField* Height = RequireHeight(InOutDataset, OutError);
+	if (!Height || !Height->IsValid())
+	{
+		return false;
+	}
+
+	FGaeaScalarField FlowDirection;
+	FGaeaScalarField FlowAccumulation;
+	if (!BuildHydrologyFields(*Height, FlowDirection, FlowAccumulation, OutError))
+	{
+		return false;
+	}
+
+	if (!InOutDataset.SetScalarField(MoveTemp(FlowDirection))
+		|| !InOutDataset.SetScalarField(MoveTemp(FlowAccumulation)))
+	{
+		if (OutError) *OutError = TEXT("Could not publish EONFORM hydrology fields.");
+		return false;
+	}
+
+	if (OutError) OutError->Reset();
+	return true;
+}
+
 bool FGaeaTerrainDerivedData::EnsureHydraulicInputs(
 	FGaeaTerrainDataset& InOutDataset,
 	float HeightScale,
@@ -137,6 +327,9 @@ bool FGaeaTerrainDerivedData::EnsureHydraulicInputs(
 	{
 		return false;
 	}
-
+	if (!EnsureHydrology(InOutDataset, HeightScale, OutError))
+	{
+		return false;
+	}
 	return EnsureProcessMasks(InOutDataset, HeightScale, Settings, OutError);
 }
