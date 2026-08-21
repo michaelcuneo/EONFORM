@@ -4,7 +4,6 @@
 #include "EditorViewportClient.h"
 #include "GaeaTerrainMeshMaterializer.h"
 #include "Materials/Material.h"
-#include "Widgets/SNullWidget.h"
 
 SGaeaTerrainMeshPreview::SGaeaTerrainMeshPreview()
 	: PreviewScene(FPreviewScene::ConstructionValues())
@@ -45,11 +44,6 @@ TSharedRef<FEditorViewportClient> SGaeaTerrainMeshPreview::MakeEditorViewportCli
 	PreviewViewportClient->SetRealtime(true);
 	PreviewViewportClient->SetViewMode(VMI_Lit);
 	return PreviewViewportClient.ToSharedRef();
-}
-
-TSharedPtr<SWidget> SGaeaTerrainMeshPreview::MakeViewportToolbar()
-{
-	return SNullWidget::NullWidget;
 }
 
 void SGaeaTerrainMeshPreview::ClearTerrain()
