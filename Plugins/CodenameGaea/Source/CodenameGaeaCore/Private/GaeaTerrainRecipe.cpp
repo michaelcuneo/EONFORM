@@ -32,6 +32,11 @@ namespace GaeaTerrainNodeTypes
 	const FName ProcessMasks(TEXT("ProcessMasks"));
 	const FName ThermalErosion(TEXT("ThermalErosion"));
 	const FName HydraulicErosion(TEXT("HydraulicErosion"));
+	const FName HydroFix(TEXT("HydroFix"));
+	const FName Rivers(TEXT("Rivers"));
+	const FName Sediments(TEXT("Sediments"));
+	const FName Debris(TEXT("Debris"));
+	const FName Scree(TEXT("Scree"));
 	const FName Combine(TEXT("Combine"));
 	const FName Clamp(TEXT("Clamp"));
 	const FName Adjust(TEXT("Adjust"));
@@ -194,7 +199,7 @@ bool FGaeaTerrainRecipe::Validate(FString* OutError) const
 	{
 		if (!Connection.IsValid()) return Fail(TEXT("Recipe contains an invalid connection."));
 		if (!NodeIds.Contains(Connection.FromNode) || !NodeIds.Contains(Connection.ToNode)) return Fail(TEXT("Connection references a missing node."));
-		const FString Key = Connection.ToNode.ToString(EGuidFormats::Digits) + TEXT(":" ) + Connection.ToInput.ToString();
+		const FString Key = Connection.ToNode.ToString(EGuidFormats::Digits) + TEXT(":") + Connection.ToInput.ToString();
 		if (InputKeys.Contains(Key)) return Fail(TEXT("More than one connection targets the same node input."));
 		InputKeys.Add(Key);
 	}
