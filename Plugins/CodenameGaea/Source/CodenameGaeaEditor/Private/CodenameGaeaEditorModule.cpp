@@ -433,46 +433,52 @@ private:
 		return SNew(SDockTab)
 			.TabRole(ETabRole::NomadTab)
 			[
-				SNew(SVerticalBox)
-				+ SVerticalBox::Slot()
-				.AutoHeight()
-				.Padding(10.0f, 8.0f, 10.0f, 0.0f)
-				[
-					MakeOutputSettingsPanel()
-				]
-				+ SVerticalBox::Slot()
-				.AutoHeight()
-				.Padding(10.0f, 6.0f, 10.0f, 0.0f)
-				[
-					SNew(SHorizontalBox)
-					+ SHorizontalBox::Slot().FillWidth(1.0f)
-					[
-						SNew(SButton)
-						.Text(LOCTEXT("PreviewTerrainLabel", "Preview Mesh"))
-						.ToolTipText(LOCTEXT("PreviewTerrainTooltip", "Build or refresh the lightweight Dynamic Mesh preview using the current EONFORM scale and resolution settings."))
-						.OnClicked_Lambda([this]()
-						{
-							BuildPreviewMesh();
-							return FReply::Handled();
-						})
-					]
-					+ SHorizontalBox::Slot().FillWidth(1.0f).Padding(8.0f, 0.0f, 0.0f, 0.0f)
-					[
-						SNew(SButton)
-						.Text(LOCTEXT("GenerateTerrainLabel", "Generate Terrain"))
-						.ToolTipText(LOCTEXT("GenerateTerrainTooltip", "Build or refresh the committed UE 5.8 Mesh Terrain using the current output and streaming settings."))
-						.OnClicked_Lambda([this]()
-						{
-							BuildMeshTerrain();
-							return FReply::Handled();
-						})
-					]
-				]
-				+ SVerticalBox::Slot()
-				.FillHeight(1.0f)
-				.Padding(0.0f, 6.0f, 0.0f, 0.0f)
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot()
+				.FillWidth(1.0f)
+				.Padding(0.0f, 6.0f, 6.0f, 0.0f)
 				[
 					SNew(SGaeaTerrainInspector)
+				]
+				+ SHorizontalBox::Slot()
+				.FillWidth(0.42f)
+				.VAlign(VAlign_Bottom)
+				.Padding(6.0f, 6.0f, 10.0f, 10.0f)
+				[
+					SNew(SVerticalBox)
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					[
+						MakeOutputSettingsPanel()
+					]
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					.Padding(0.0f, 6.0f, 0.0f, 0.0f)
+					[
+						SNew(SHorizontalBox)
+						+ SHorizontalBox::Slot().FillWidth(1.0f)
+						[
+							SNew(SButton)
+							.Text(LOCTEXT("PreviewTerrainLabel", "Preview Mesh"))
+							.ToolTipText(LOCTEXT("PreviewTerrainTooltip", "Build or refresh the lightweight Dynamic Mesh preview using the current EONFORM scale and resolution settings."))
+							.OnClicked_Lambda([this]()
+							{
+								BuildPreviewMesh();
+								return FReply::Handled();
+							})
+						]
+						+ SHorizontalBox::Slot().FillWidth(1.0f).Padding(8.0f, 0.0f, 0.0f, 0.0f)
+						[
+							SNew(SButton)
+							.Text(LOCTEXT("GenerateTerrainLabel", "Generate Terrain"))
+							.ToolTipText(LOCTEXT("GenerateTerrainTooltip", "Build or refresh the committed UE 5.8 Mesh Terrain using the current output and streaming settings."))
+							.OnClicked_Lambda([this]()
+							{
+								BuildMeshTerrain();
+								return FReply::Handled();
+							})
+						]
+					]
 				]
 			];
 	}
