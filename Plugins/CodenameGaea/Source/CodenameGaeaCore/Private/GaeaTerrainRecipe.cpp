@@ -19,6 +19,7 @@ namespace GaeaTerrainNodeTypes
 	const FName Invert(TEXT("Invert"));
 	const FName MultiCombine(TEXT("MultiCombine"));
 	const FName Sharpen(TEXT("Sharpen"));
+	const FName Sine(TEXT("Sine"));
 	const FName Slope(TEXT("Slope"));
 	const FName Angle(TEXT("Angle"));
 	const FName Curvature(TEXT("Curvature"));
