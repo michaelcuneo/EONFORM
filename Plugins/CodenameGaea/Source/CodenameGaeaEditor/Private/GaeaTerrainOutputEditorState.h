@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GaeaTerrainGraphAsset.h"
+#include "GaeaTerrainPhysicalMetrics.h"
 
 /** Shared editor-session state for the Terrain Output pane and the active graph asset. */
 class FGaeaTerrainOutputEditorState
@@ -22,18 +23,20 @@ public:
 	{
 		Settings = InSettings;
 		Sanitize();
+		PublishPhysicalContext();
 		++Revision;
 	}
 
 	void Reset()
 	{
 		Settings = FGaeaTerrainGraphOutputSettings();
+		PublishPhysicalContext();
 		++Revision;
 	}
 
-	void SetWorldWidthKilometers(double Value) { Settings.WorldWidthKilometers = FMath::Max(Value, 0.001); ++Revision; }
-	void SetWorldDepthKilometers(double Value) { Settings.WorldDepthKilometers = FMath::Max(Value, 0.001); ++Revision; }
-	void SetElevationScaleMeters(double Value) { Settings.ElevationScaleMeters = FMath::Max(Value, 0.001); ++Revision; }
+	void SetWorldWidthKilometers(double Value) { Settings.WorldWidthKilometers = FMath::Max(Value, 0.001); PublishPhysicalContext(); ++Revision; }
+	void SetWorldDepthKilometers(double Value) { Settings.WorldDepthKilometers = FMath::Max(Value, 0.001); PublishPhysicalContext(); ++Revision; }
+	void SetElevationScaleMeters(double Value) { Settings.ElevationScaleMeters = FMath::Max(Value, 0.001); PublishPhysicalContext(); ++Revision; }
 	void SetOutputResolution(int32 Value) { Settings.OutputResolution = FMath::Max(Value, 0); ++Revision; }
 	void SetSectionLayout(EGaeaTerrainOutputSectionLayout Value) { Settings.SectionLayout = Value; ++Revision; }
 	void SetSectionComplexity(EGaeaTerrainOutputComplexity Value) { Settings.SectionComplexity = Value; ++Revision; }
@@ -44,6 +47,11 @@ public:
 	uint64 GetRevision() const { return Revision; }
 
 private:
+	FGaeaTerrainOutputEditorState()
+	{
+		PublishPhysicalContext();
+	}
+
 	void Sanitize()
 	{
 		Settings.WorldWidthKilometers = FMath::Max(Settings.WorldWidthKilometers, 0.001);
@@ -52,6 +60,16 @@ private:
 		Settings.OutputResolution = FMath::Max(Settings.OutputResolution, 0);
 		Settings.SectionsX = FMath::Max(Settings.SectionsX, 1);
 		Settings.SectionsY = FMath::Max(Settings.SectionsY, 1);
+	}
+
+	void PublishPhysicalContext() const
+	{
+		FGaeaTerrainPhysicalMetrics Metrics;
+		Metrics.WorldWidthMeters = Settings.WorldWidthKilometers * 1000.0;
+		Metrics.WorldDepthMeters = Settings.WorldDepthKilometers * 1000.0;
+		Metrics.ElevationScaleMeters = Settings.ElevationScaleMeters;
+		Metrics.SeaLevelMeters = 0.0;
+		FGaeaTerrainPhysicalContext::SetActive(Metrics);
 	}
 
 	FGaeaTerrainGraphOutputSettings Settings;
