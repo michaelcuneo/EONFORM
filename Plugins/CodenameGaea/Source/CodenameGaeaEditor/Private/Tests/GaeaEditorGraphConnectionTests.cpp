@@ -40,6 +40,8 @@ bool FGaeaEditorGraphConnectionContractTest::RunTest(const FString& Parameters)
 	UGaeaEditorGraphNode* Cellular = AddConnectionTestNode(*Graph, GaeaTerrainNodeTypes::Cellular);
 	UGaeaEditorGraphNode* Cellular3D = AddConnectionTestNode(*Graph, GaeaTerrainNodeTypes::Cellular3D);
 	UGaeaEditorGraphNode* Cone = AddConnectionTestNode(*Graph, GaeaTerrainNodeTypes::Cone);
+	UGaeaEditorGraphNode* Cracks = AddConnectionTestNode(*Graph, GaeaTerrainNodeTypes::Cracks);
+	UGaeaEditorGraphNode* DotNoise = AddConnectionTestNode(*Graph, GaeaTerrainNodeTypes::DotNoise);
 	UGaeaEditorGraphNode* Erosion = AddConnectionTestNode(*Graph, GaeaTerrainNodeTypes::HydraulicErosion);
 	UGaeaEditorGraphNode* Slope = AddConnectionTestNode(*Graph, GaeaTerrainNodeTypes::Slope);
 	UGaeaEditorGraphNode* Blur = AddConnectionTestNode(*Graph, GaeaTerrainNodeTypes::Blur);
@@ -50,6 +52,8 @@ bool FGaeaEditorGraphConnectionContractTest::RunTest(const FString& Parameters)
 	UEdGraphPin* CellularOut = FindConnectionTestPin(Cellular, TEXT("Terrain"), EGPD_Output);
 	UEdGraphPin* Cellular3DOut = FindConnectionTestPin(Cellular3D, TEXT("Terrain"), EGPD_Output);
 	UEdGraphPin* ConeOut = FindConnectionTestPin(Cone, TEXT("Terrain"), EGPD_Output);
+	UEdGraphPin* CracksOut = FindConnectionTestPin(Cracks, TEXT("Terrain"), EGPD_Output);
+	UEdGraphPin* DotNoiseOut = FindConnectionTestPin(DotNoise, TEXT("Terrain"), EGPD_Output);
 	UEdGraphPin* ErosionIn = FindConnectionTestPin(Erosion, TEXT("Terrain"), EGPD_Input);
 	UEdGraphPin* ErosionArea = FindConnectionTestPin(Erosion, TEXT("Area"), EGPD_Input);
 	UEdGraphPin* SlopeMask = FindConnectionTestPin(Slope, TEXT("Mask"), EGPD_Output);
@@ -62,6 +66,8 @@ bool FGaeaEditorGraphConnectionContractTest::RunTest(const FString& Parameters)
 	TestNotNull(TEXT("Cellular exposes terrain output"), CellularOut);
 	TestNotNull(TEXT("Cellular3D exposes terrain output"), Cellular3DOut);
 	TestNotNull(TEXT("Cone exposes terrain output"), ConeOut);
+	TestNotNull(TEXT("Cracks exposes terrain output"), CracksOut);
+	TestNotNull(TEXT("DotNoise exposes terrain output"), DotNoiseOut);
 	TestNotNull(TEXT("Erosion terrain input exists"), ErosionIn);
 	TestNotNull(TEXT("Erosion Area heightfield input exists"), ErosionArea);
 	TestNotNull(TEXT("Slope mask output exists"), SlopeMask);
@@ -69,10 +75,10 @@ bool FGaeaEditorGraphConnectionContractTest::RunTest(const FString& Parameters)
 	TestNotNull(TEXT("Blur public Out uses stable internal terrain pin"), BlurOut);
 	TestNotNull(TEXT("Thermal terrain input exists"), ThermalIn);
 	TestNotNull(TEXT("Terrain Output input exists"), OutputIn);
-	if (!PerlinOut || !CellularOut || !Cellular3DOut || !ConeOut || !ErosionIn || !ErosionArea || !SlopeMask || !BlurIn || !BlurOut || !ThermalIn || !OutputIn) return false;
+	if (!PerlinOut || !CellularOut || !Cellular3DOut || !ConeOut || !CracksOut || !DotNoiseOut || !ErosionIn || !ErosionArea || !SlopeMask || !BlurIn || !BlurOut || !ThermalIn || !OutputIn) return false;
 
-	TestEqual(TEXT("Primitive visible output remains Out"), ConeOut->PinFriendlyName.ToString(), FString(TEXT("Out")));
-	TestEqual(TEXT("Primitive output category is terrain"), ConeOut->PinType.PinCategory, GaeaEditorGraphPins::Terrain);
+	TestEqual(TEXT("Primitive visible output remains Out"), CracksOut->PinFriendlyName.ToString(), FString(TEXT("Out")));
+	TestEqual(TEXT("Primitive output category is terrain"), CracksOut->PinType.PinCategory, GaeaEditorGraphPins::Terrain);
 	TestEqual(TEXT("Slope output category is scalar field"), SlopeMask->PinType.PinCategory, GaeaEditorGraphPins::ScalarField);
 	TestEqual(TEXT("Blur input is wildcard Any"), BlurIn->PinType.PinCategory, GaeaEditorGraphPins::Any);
 
@@ -81,10 +87,18 @@ bool FGaeaEditorGraphConnectionContractTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Cellular Out connects to Erosion Input"), Schema->TryCreateConnection(CellularOut, ErosionIn));
 	ErosionIn->BreakAllPinLinks();
 	TestTrue(TEXT("Cellular3D Out connects to Erosion Input"), Schema->TryCreateConnection(Cellular3DOut, ErosionIn));
+	ErosionIn->BreakAllPinLinks();
+	TestTrue(TEXT("Cracks Out connects to Erosion Input"), Schema->TryCreateConnection(CracksOut, ErosionIn));
+	ErosionIn->BreakAllPinLinks();
+	TestTrue(TEXT("DotNoise Out connects to Erosion Input"), Schema->TryCreateConnection(DotNoiseOut, ErosionIn));
 
 	TestTrue(TEXT("Slope Mask connects to Erosion Area"), Schema->TryCreateConnection(SlopeMask, ErosionArea));
 	ErosionArea->BreakAllPinLinks();
 	TestTrue(TEXT("Cone heightfield connects directly to Erosion Area"), Schema->TryCreateConnection(ConeOut, ErosionArea));
+	ErosionArea->BreakAllPinLinks();
+	TestTrue(TEXT("Cracks heightfield connects directly to Erosion Area"), Schema->TryCreateConnection(CracksOut, ErosionArea));
+	ErosionArea->BreakAllPinLinks();
+	TestTrue(TEXT("DotNoise heightfield connects directly to Erosion Area"), Schema->TryCreateConnection(DotNoiseOut, ErosionArea));
 
 	const FPinConnectionResponse MaskToTerrain = Schema->CanCreateConnection(SlopeMask, ThermalIn);
 	TestTrue(TEXT("Derived scalar mask does not yet promote to a terrain dataset"), MaskToTerrain.Response == CONNECT_RESPONSE_DISALLOW);
@@ -93,7 +107,9 @@ bool FGaeaEditorGraphConnectionContractTest::RunTest(const FString& Parameters)
 	BlurIn->BreakAllPinLinks();
 	TestTrue(TEXT("Mask can connect to Any input"), Schema->TryCreateConnection(SlopeMask, BlurIn));
 
-	TestTrue(TEXT("Cone connects to Terrain Output"), Schema->TryCreateConnection(ConeOut, OutputIn));
+	TestTrue(TEXT("Cracks connects to Terrain Output"), Schema->TryCreateConnection(CracksOut, OutputIn));
+	OutputIn->BreakAllPinLinks();
+	TestTrue(TEXT("DotNoise connects to Terrain Output"), Schema->TryCreateConnection(DotNoiseOut, OutputIn));
 	OutputIn->BreakAllPinLinks();
 	TestTrue(TEXT("Terrain-valued Any node Out connects to Terrain Output"), Schema->TryCreateConnection(BlurOut, OutputIn));
 
