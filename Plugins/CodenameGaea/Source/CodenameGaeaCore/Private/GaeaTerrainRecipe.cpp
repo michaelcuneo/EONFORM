@@ -16,6 +16,7 @@ namespace GaeaTerrainNodeTypes
 	const FName Blur(TEXT("Blur"));
 	const FName Denoise(TEXT("Denoise"));
 	const FName Flip(TEXT("Flip"));
+	const FName Invert(TEXT("Invert"));
 	const FName Slope(TEXT("Slope"));
 	const FName Angle(TEXT("Angle"));
 	const FName Curvature(TEXT("Curvature"));
