@@ -1,5 +1,6 @@
 #include "GaeaTerrainDatasetRegistry.h"
 
+#include "GaeaTerrainFieldNames.h"
 #include "HAL/CriticalSection.h"
 #include "Misc/ScopeLock.h"
 
@@ -81,6 +82,39 @@ bool FGaeaTerrainDatasetRegistry::GetLatest(FGaeaTerrainDatasetSnapshot& OutSnap
 
 	OutSnapshot = *Snapshot;
 	return true;
+}
+
+bool FGaeaTerrainDatasetRegistry::GetHeightResolution(FName SourceId, FIntPoint& OutResolution, uint64* OutRevision)
+{
+	OutResolution = FIntPoint::ZeroValue;
+	if (OutRevision)
+	{
+		*OutRevision = 0;
+	}
+
+	FScopeLock Lock(&RegistryMutex);
+	const FGaeaTerrainDatasetSnapshot* Snapshot = Registry.Find(SourceId);
+	if (!Snapshot || !Snapshot->IsValid())
+	{
+		return false;
+	}
+
+	const FGaeaScalarField* HeightField = Snapshot->Dataset.FindScalarField(GaeaTerrainFieldNames::Height);
+	if (!HeightField)
+	{
+		HeightField = Snapshot->Dataset.FindScalarField(GaeaTerrainFieldNames::Elevation);
+	}
+	if (!HeightField || !HeightField->IsValid())
+	{
+		return false;
+	}
+
+	OutResolution = HeightField->Domain.Dimensions;
+	if (OutRevision)
+	{
+		*OutRevision = Snapshot->Revision;
+	}
+	return OutResolution.X > 1 && OutResolution.Y > 1;
 }
 
 bool FGaeaTerrainDatasetRegistry::Remove(FName SourceId)
