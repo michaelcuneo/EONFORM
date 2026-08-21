@@ -145,7 +145,6 @@ uint32 FGaeaTerrainRecipe::GetDeterministicHash() const
 	}
 
 	TArray<const FGaeaTerrainConnection*> SortedConnections;
-	for (const FGaeaTerrainConnection& Connection : Recipe.Connections) {}
 	for (const FGaeaTerrainConnection& Connection : Connections) SortedConnections.Add(&Connection);
 	SortedConnections.Sort([](const FGaeaTerrainConnection& A, const FGaeaTerrainConnection& B)
 	{
