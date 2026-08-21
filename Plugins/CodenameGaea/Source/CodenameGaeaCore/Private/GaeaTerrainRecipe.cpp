@@ -8,6 +8,7 @@ namespace GaeaTerrainNodeTypes
 	const FName Cellular3D(TEXT("Cellular3D"));
 	const FName Cone(TEXT("Cone"));
 	const FName Constant(TEXT("Constant"));
+	const FName Cracks(TEXT("Cracks"));
 	const FName TerrainShape(TEXT("TerrainShape"));
 	const FName TerrainContext(TEXT("TerrainContext"));
 	const FName Geology(TEXT("Geology"));
