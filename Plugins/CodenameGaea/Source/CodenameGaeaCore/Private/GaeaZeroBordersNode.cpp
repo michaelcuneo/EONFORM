@@ -90,13 +90,9 @@ namespace
 			const float Radius = FMath::Sqrt(NX * NX + NY * NY);
 			return FMath::Max(0.0f, 1.0f - Radius) * FMath::Min(CenterX, CenterY);
 		}
-		if (Mode == TEXT("Precise"))
-		{
-			const float Horizontal = FMath::Min(Left, Right);
-			const float Vertical = FMath::Min(Bottom, Top);
-			return FMath::Min(Horizontal, Vertical);
-		}
-		return FMath::Min4(Left, Right, Bottom, Top);
+		const float Horizontal = FMath::Min(Left, Right);
+		const float Vertical = FMath::Min(Bottom, Top);
+		return FMath::Min(Horizontal, Vertical);
 	}
 
 	void ZeroBordersBlurWeights(TArray<float>& Weights, int32 Width, int32 Height, int32 Iterations, int32 Radius)
