@@ -72,10 +72,19 @@ struct CODENAMEGAEACORE_API FGaeaTerrainPhysicalMetrics
 		return FMath::Max(FMath::Min(Spacing.X, Spacing.Y), UE_DOUBLE_SMALL_NUMBER);
 	}
 
+	/** Equal contributing area per hydrology sample; sums exactly to the configured world area. */
 	double ResolveCellAreaSquareMeters(
 		const FIntPoint& Resolution,
 		const FVector2d& FallbackCellSizeCentimeters) const
 	{
+		if (HasWorldDimensions() && Resolution.X > 0 && Resolution.Y > 0)
+		{
+			return FMath::Max(
+				(WorldWidthMeters * WorldDepthMeters)
+					/ static_cast<double>(Resolution.X * Resolution.Y),
+				UE_DOUBLE_SMALL_NUMBER);
+		}
+
 		const FVector2d Spacing = ResolveSampleSpacingMeters(Resolution, FallbackCellSizeCentimeters);
 		return FMath::Max(Spacing.X * Spacing.Y, UE_DOUBLE_SMALL_NUMBER);
 	}
