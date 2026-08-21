@@ -44,16 +44,6 @@ namespace
 		return Parameter;
 	}
 
-	FGaeaTerrainParameterDescriptor TerraceBooleanParameter(FName Name, const TCHAR* DisplayName, bool DefaultValue)
-	{
-		FGaeaTerrainParameterDescriptor Parameter;
-		Parameter.Name = Name;
-		Parameter.DisplayName = DisplayName;
-		Parameter.Type = EGaeaTerrainParameterType::Boolean;
-		Parameter.DefaultBoolean = DefaultValue;
-		return Parameter;
-	}
-
 	float TerraceHash01(int32 X, int32 Y, int32 Seed)
 	{
 		uint32 H = static_cast<uint32>(X) * 374761393u;
@@ -64,7 +54,7 @@ namespace
 		return static_cast<float>(H & 0x00ffffffu) / static_cast<float>(0x00ffffffu);
 	}
 
-	float TerraceShapeValue(float Value, int32 TerraceCount, float Uniformity, float Steepness, float SoftFalloff, float Variation)
+	float TerraceShapeValue(float Value, int32 TerraceCount, float Uniformity, float Steepness, float Variation)
 	{
 		const float Steps = static_cast<float>(FMath::Max(2, TerraceCount));
 		const float Phase = Variation * (1.0f - Uniformity) / Steps;
@@ -72,12 +62,7 @@ namespace
 		const float Base = FMath::FloorToFloat(Scaled);
 		const float Fraction = FMath::Frac(Scaled);
 		const float Sharpness = FMath::Lerp(1.0f, 12.0f, Steepness);
-		float Edge = FMath::Pow(Fraction, Sharpness);
-		if (SoftFalloff > 0.0f)
-		{
-			const float Smooth = Fraction * Fraction * (3.0f - 2.0f * Fraction);
-			Edge = FMath::Lerp(Edge, Smooth, SoftFalloff);
-		}
+		const float Edge = FMath::Pow(Fraction, Sharpness);
 		return FMath::Clamp((Base + Edge) / Steps, 0.0f, 1.0f);
 	}
 
@@ -85,7 +70,7 @@ namespace
 	{
 		if (!Source.IsValid())
 		{
-			Error = TEXT("Terrace received an invalid Height field.");
+			Error = TEXT("Terraces received an invalid Height field.");
 			return false;
 		}
 
@@ -93,9 +78,6 @@ namespace
 		const float Uniformity = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Uniformity"), 1.0)), 0.0f, 1.0f);
 		const float Steepness = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Steepness"), 0.65)), 0.0f, 1.0f);
 		const float Intensity = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Intensity"), 1.0)), 0.0f, 1.0f);
-		const float SoftFalloff = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("SoftFalloff"), 0.0)), 0.0f, 1.0f);
-		const bool bReprocess = Node.GetBool(TEXT("Reprocess"), false);
-		const float Process = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Process"), 1.0)), 0.0f, 1.0f);
 		const int32 Seed = static_cast<int32>(Node.GetInteger(TEXT("Seed"), 1337));
 
 		OutField = Source;
@@ -106,14 +88,8 @@ namespace
 				const float OriginalSigned = FMath::Clamp(Source.AtInterior(X, Y), -1.0f, 1.0f);
 				const float Original = OriginalSigned * 0.5f + 0.5f;
 				const float Variation = TerraceHash01(X, Y, Seed) - 0.5f;
-				float Terraced = TerraceShapeValue(Original, TerraceCount, Uniformity, Steepness, SoftFalloff, Variation);
-				if (bReprocess)
-				{
-					const float Variation2 = TerraceHash01(X, Y, Seed ^ 0x5bd1e995) - 0.5f;
-					Terraced = TerraceShapeValue(Terraced, TerraceCount, Uniformity, Steepness, SoftFalloff, Variation2);
-				}
-				const float Strength = FMath::Clamp(Intensity * Process, 0.0f, 1.0f);
-				const float Result = FMath::Lerp(Original, Terraced, Strength);
+				const float Terraced = TerraceShapeValue(Original, TerraceCount, Uniformity, Steepness, Variation);
+				const float Result = FMath::Lerp(Original, Terraced, Intensity);
 				OutField.AtInterior(X, Y) = FMath::Clamp(Result * 2.0f - 1.0f, -1.0f, 1.0f);
 			}
 		}
@@ -126,14 +102,14 @@ namespace
 		const FGaeaTerrainValue* Input = InputPtr ? *InputPtr : nullptr;
 		if (!Input || Input->Type != EGaeaTerrainValueType::Terrain || !Input->IsValid())
 		{
-			Error = TEXT("Terrace requires a valid terrain input 'Terrain'.");
+			Error = TEXT("Terraces requires a valid terrain input 'Terrain'.");
 			return false;
 		}
 
 		const FGaeaScalarField* Height = Input->TerrainDataset.FindScalarField(GaeaTerrainFieldNames::Height);
 		if (!Height || !Height->IsValid())
 		{
-			Error = TEXT("Terrace terrain input has no valid Height field.");
+			Error = TEXT("Terraces terrain input has no valid Height field.");
 			return false;
 		}
 
@@ -144,14 +120,14 @@ namespace
 		FGaeaTerrainDataset Dataset = Input->TerrainDataset;
 		if (!Dataset.SetScalarField(MoveTemp(ResultHeight)))
 		{
-			Error = TEXT("Terrace could not publish its Height field.");
+			Error = TEXT("Terraces could not publish its Height field.");
 			return false;
 		}
 
 		FGaeaTerrainValue Result = FGaeaTerrainValue::MakeTerrain(MoveTemp(Dataset), Input->HeightScale);
 		if (!Result.IsValid())
 		{
-			Error = TEXT("Terrace produced an invalid terrain value.");
+			Error = TEXT("Terraces produced an invalid terrain value.");
 			return false;
 		}
 		Out.Outputs.Add(TEXT("Out"), MoveTemp(Result));
@@ -163,18 +139,15 @@ void RegisterGaeaTerraceNode()
 {
 	FGaeaTerrainNodeDescriptor Descriptor;
 	Descriptor.Type = GaeaTerrainNodeTypes::Terrace;
-	Descriptor.DisplayName = TEXT("Terrace");
-	Descriptor.Category = TEXT("Profile");
-	Descriptor.Description = TEXT("Adds even stratification to terrain using configurable terrace count, uniformity, steepness, and intensity.");
+	Descriptor.DisplayName = TEXT("Terraces");
+	Descriptor.Category = TEXT("Surface");
+	Descriptor.Description = TEXT("Creates evenly controlled terrain terraces with adjustable uniformity, steepness, intensity, and seed.");
 	Descriptor.Inputs.Add(TerraceTerrainPort(TEXT("Terrain"), TEXT("Input")));
 	Descriptor.Outputs.Add(TerraceTerrainPort(TEXT("Out"), TEXT("Out")));
 	Descriptor.Parameters.Add(TerraceIntegerParameter(TEXT("Terraces"), TEXT("Terraces"), 12, 2, 256));
 	Descriptor.Parameters.Add(TerraceNumberParameter(TEXT("Uniformity"), TEXT("Uniformity"), 1.0, 0.0, 1.0));
 	Descriptor.Parameters.Add(TerraceNumberParameter(TEXT("Steepness"), TEXT("Steepness"), 0.65, 0.0, 1.0));
 	Descriptor.Parameters.Add(TerraceNumberParameter(TEXT("Intensity"), TEXT("Intensity"), 1.0, 0.0, 1.0));
-	Descriptor.Parameters.Add(TerraceNumberParameter(TEXT("SoftFalloff"), TEXT("Soft Falloff"), 0.0, 0.0, 1.0));
-	Descriptor.Parameters.Add(TerraceBooleanParameter(TEXT("Reprocess"), TEXT("Reprocess"), false));
-	Descriptor.Parameters.Add(TerraceNumberParameter(TEXT("Process"), TEXT("Process"), 1.0, 0.0, 1.0));
 	Descriptor.Parameters.Add(TerraceIntegerParameter(TEXT("Seed"), TEXT("Seed"), 1337, -2147483647, 2147483647));
 
 	FGaeaTerrainNodeDescriptorRegistry::Register(Descriptor);
