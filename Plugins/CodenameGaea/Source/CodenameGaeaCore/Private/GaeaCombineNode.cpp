@@ -25,11 +25,7 @@ namespace
 		return Port;
 	}
 
-	FGaeaTerrainParameterDescriptor CombineNameParameter(
-		FName Name,
-		const TCHAR* DisplayName,
-		FName DefaultValue,
-		std::initializer_list<FName> Options)
+	FGaeaTerrainParameterDescriptor CombineNameParameter(FName Name, const TCHAR* DisplayName, FName DefaultValue, std::initializer_list<FName> Options)
 	{
 		FGaeaTerrainParameterDescriptor Parameter;
 		Parameter.Name = Name;
@@ -40,12 +36,7 @@ namespace
 		return Parameter;
 	}
 
-	FGaeaTerrainParameterDescriptor CombineNumberParameter(
-		FName Name,
-		const TCHAR* DisplayName,
-		double DefaultValue,
-		double Minimum,
-		double Maximum)
+	FGaeaTerrainParameterDescriptor CombineNumberParameter(FName Name, const TCHAR* DisplayName, double DefaultValue, double Minimum, double Maximum)
 	{
 		FGaeaTerrainParameterDescriptor Parameter;
 		Parameter.Name = Name;
@@ -59,242 +50,137 @@ namespace
 		return Parameter;
 	}
 
-	FGaeaTerrainParameterDescriptor CombineBooleanParameter(FName Name, const TCHAR* DisplayName, bool DefaultValue)
-	{
-		FGaeaTerrainParameterDescriptor Parameter;
-		Parameter.Name = Name;
-		Parameter.DisplayName = DisplayName;
-		Parameter.Type = EGaeaTerrainParameterType::Boolean;
-		Parameter.DefaultBoolean = DefaultValue;
-		return Parameter;
-	}
+	float CombineTo01(float V) { return FMath::Clamp(V * 0.5f + 0.5f, 0.0f, 1.0f); }
+	float CombineFrom01(float V) { return FMath::Clamp(V, 0.0f, 1.0f) * 2.0f - 1.0f; }
 
-	float CombineApplyMethod(float A, float B, FName Method, float Threshold, float Flatten)
+	float CombineMode01(float A, float B, FName Mode)
 	{
-		if (Method == TEXT("Add")) return A + B;
-		if (Method == TEXT("Screen")) return 1.0f - (1.0f - A) * (1.0f - B);
-		if (Method == TEXT("Subtract")) return A - B;
-		if (Method == TEXT("Multiply")) return A * B;
-		if (Method == TEXT("Divide")) return FMath::Abs(B) > UE_SMALL_NUMBER ? A / B : A;
-		if (Method == TEXT("Max")) return FMath::Max(A, B);
-		if (Method == TEXT("Min")) return FMath::Min(A, B);
-		if (Method == TEXT("SqRt")) return FMath::Sqrt(FMath::Abs(A * B));
-		if (Method == TEXT("Power"))
-		{
-			const float Magnitude = FMath::Pow(FMath::Max(FMath::Abs(A), UE_SMALL_NUMBER), B);
-			return FMath::Sign(A) * Magnitude;
-		}
-		if (Method == TEXT("Difference")) return FMath::Abs(A - B);
-		if (Method == TEXT("Insert"))
-		{
-			const float InsertWeight = FMath::Clamp((B - Threshold) / FMath::Max(1.0f - Threshold, UE_SMALL_NUMBER), 0.0f, 1.0f);
-			const float FlattenedBase = FMath::Lerp(A, FMath::Min(A, B), FMath::Clamp(Flatten, 0.0f, 1.0f));
-			return FMath::Lerp(FlattenedBase, B, InsertWeight);
-		}
-		if (Method == TEXT("Embed"))
-		{
-			const float EmbedWeight = FMath::Clamp((B - Threshold) / FMath::Max(1.0f - Threshold, UE_SMALL_NUMBER), 0.0f, 1.0f);
-			return A + B * EmbedWeight;
-		}
+		if (Mode == TEXT("Blend")) return B;
+		if (Mode == TEXT("Add")) return A + B;
+		if (Mode == TEXT("Screen")) return 1.0f - (1.0f - A) * (1.0f - B);
+		if (Mode == TEXT("Subtract")) return A - B;
+		if (Mode == TEXT("Difference")) return FMath::Abs(A - B);
+		if (Mode == TEXT("Multiply")) return A * B;
+		if (Mode == TEXT("Divide")) return FMath::Abs(B) > UE_SMALL_NUMBER ? A / B : A;
+		if (Mode == TEXT("Divide 2")) return FMath::Abs(A) > UE_SMALL_NUMBER ? B / A : B;
+		if (Mode == TEXT("Max")) return FMath::Max(A, B);
+		if (Mode == TEXT("Min")) return FMath::Min(A, B);
+		if (Mode == TEXT("Hypotenuse")) return FMath::Sqrt(A * A + B * B);
+		if (Mode == TEXT("Overlay")) return A < 0.5f ? 2.0f * A * B : 1.0f - 2.0f * (1.0f - A) * (1.0f - B);
+		if (Mode == TEXT("Power")) return FMath::Pow(FMath::Max(A, UE_SMALL_NUMBER), B);
+		if (Mode == TEXT("Exclusion")) return A + B - 2.0f * A * B;
+		if (Mode == TEXT("Dodge")) return B >= 1.0f ? 1.0f : A / FMath::Max(1.0f - B, UE_SMALL_NUMBER);
+		if (Mode == TEXT("Burn")) return B <= 0.0f ? 0.0f : 1.0f - (1.0f - A) / FMath::Max(B, UE_SMALL_NUMBER);
+		if (Mode == TEXT("Soft Light")) return (1.0f - 2.0f * B) * A * A + 2.0f * B * A;
+		if (Mode == TEXT("Hard Light")) return B < 0.5f ? 2.0f * A * B : 1.0f - 2.0f * (1.0f - A) * (1.0f - B);
+		if (Mode == TEXT("Pin Light")) return B < 0.5f ? FMath::Min(A, 2.0f * B) : FMath::Max(A, 2.0f * B - 1.0f);
+		if (Mode == TEXT("Grain Merge")) return A + B - 0.5f;
+		if (Mode == TEXT("Grain Extract")) return A - B + 0.5f;
+		if (Mode == TEXT("Reflect")) return B >= 1.0f ? 1.0f : A * A / FMath::Max(1.0f - B, UE_SMALL_NUMBER);
+		if (Mode == TEXT("Glow")) return A >= 1.0f ? 1.0f : B * B / FMath::Max(1.0f - A, UE_SMALL_NUMBER);
+		if (Mode == TEXT("Phoenix")) return FMath::Min(A, B) - FMath::Max(A, B) + 1.0f;
 		return B;
 	}
 
-	float CombineFinalizeValue(float A, float B, float Candidate, FName Method, float Ratio, float MaskValue, bool bClampOutput, bool bAbs, float Threshold, bool bTerrain)
+	float CombineEnhance(float V, FName Enhance)
 	{
-		float Value = Method == TEXT("Blend")
-			? FMath::Lerp(A, B, Ratio)
-			: FMath::Lerp(A, Candidate, Ratio);
-
-		Value = FMath::Lerp(B, Value, FMath::Clamp(MaskValue, 0.0f, 1.0f));
-		if (bAbs)
-		{
-			Value = Value > Threshold ? 1.0f : 0.0f;
-		}
-		if (bClampOutput)
-		{
-			Value = bTerrain ? FMath::Clamp(Value, -1.0f, 1.0f) : FMath::Clamp(Value, 0.0f, 1.0f);
-		}
-		return Value;
+		if (Enhance == TEXT("Equalize")) return V * V * (3.0f - 2.0f * V);
+		return V;
 	}
 
-	bool CombineEvaluateScalar(
-		const FGaeaTerrainNode& Node,
-		const FGaeaTerrainValue& Primary,
-		const FGaeaTerrainValue& Secondary,
-		const FGaeaScalarField* AreaMask,
-		FGaeaTerrainNodeEvaluation& Out,
-		FString& Error)
+	float CombineOutput(float V, FName Output)
 	{
-		if (!Primary.ScalarField.IsValid() || !Secondary.ScalarField.IsValid())
+		if (Output == TEXT("Clamp")) return FMath::Clamp(V, 0.0f, 1.0f);
+		if (Output == TEXT("Extend")) return 0.5f + 0.5f * FMath::Tanh((V - 0.5f) * 2.0f);
+		return V;
+	}
+
+	bool CombineProcess(const FGaeaTerrainNode& Node, const FGaeaScalarField& AField, const FGaeaScalarField& BField, const FGaeaScalarField* Mask, bool bTerrain, FGaeaScalarField& OutField, FString& Error)
+	{
+		if (!AField.IsValid() || !BField.IsValid() || AField.Domain != BField.Domain)
 		{
-			Error = TEXT("Combine requires valid scalar fields.");
+			Error = TEXT("Combine inputs must be valid and use the same grid domain.");
 			return false;
 		}
-		if (Primary.ScalarField.Domain != Secondary.ScalarField.Domain)
-		{
-			Error = TEXT("Combine scalar inputs must use the same grid domain.");
-			return false;
-		}
-		if (AreaMask && AreaMask->Domain != Primary.ScalarField.Domain)
+		if (Mask && (!Mask->IsValid() || Mask->Domain != AField.Domain))
 		{
 			Error = TEXT("Combine Mask must use the same grid domain as its inputs.");
 			return false;
 		}
 
-		const FName Method = Node.GetName(TEXT("Method"), TEXT("Blend"));
 		const float Ratio = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Ratio"), 0.5)), 0.0f, 1.0f);
-		const bool bClampOutput = Node.GetBool(TEXT("ClampOutput"), true);
-		const bool bAbs = Node.GetBool(TEXT("Abs"), false);
-		const float Threshold = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Threshold"), 0.5)), 0.0f, 1.0f);
-		const float Flatten = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Flatten"), 0.0)), 0.0f, 1.0f);
-		const bool bSeparationMask = Node.GetBool(TEXT("SeparationMask"), false);
-
-		FGaeaScalarField Result = Primary.ScalarField;
-		Result.Descriptor.Name = TEXT("Combine");
-		Result.Descriptor.Unit = EGaeaFieldUnit::Normalized;
-		FGaeaScalarField Separation = Primary.ScalarField;
-		Separation.Descriptor.Name = TEXT("Separation");
-		Separation.Descriptor.Unit = EGaeaFieldUnit::Normalized;
-
-		const FIntPoint Dimensions = Result.Domain.Dimensions;
-		for (int32 Y = 0; Y < Dimensions.Y; ++Y)
+		const FName Mode = Node.GetName(TEXT("Mode"), TEXT("Blend"));
+		const FName Output = Node.GetName(TEXT("Output"), TEXT("None"));
+		const FName Enhance = Node.GetName(TEXT("Enhance"), TEXT("None"));
+		OutField = AField;
+		for (int32 Y = 0; Y < AField.Domain.Dimensions.Y; ++Y)
 		{
-			for (int32 X = 0; X < Dimensions.X; ++X)
+			for (int32 X = 0; X < AField.Domain.Dimensions.X; ++X)
 			{
-				const float A = Primary.ScalarField.AtInterior(X, Y);
-				const float B = Secondary.ScalarField.AtInterior(X, Y);
-				const float Candidate = CombineApplyMethod(A, B, Method, Threshold, Flatten);
-				const float MaskValue = AreaMask ? AreaMask->AtInterior(X, Y) : 1.0f;
-				Result.AtInterior(X, Y) = CombineFinalizeValue(A, B, Candidate, Method, Ratio, MaskValue, bClampOutput, bAbs, Threshold, false);
-				Separation.AtInterior(X, Y) = bSeparationMask ? FMath::Clamp(FMath::Abs(A - B), 0.0f, 1.0f) : 0.0f;
+				const float RawA = AField.AtInterior(X, Y);
+				const float RawB = BField.AtInterior(X, Y);
+				const float A = bTerrain ? CombineTo01(RawA) : FMath::Clamp(RawA, 0.0f, 1.0f);
+				const float B = bTerrain ? CombineTo01(RawB) : FMath::Clamp(RawB, 0.0f, 1.0f);
+				float Combined = FMath::Lerp(A, CombineMode01(A, B, Mode), Ratio);
+				Combined = CombineOutput(Combined, Output);
+				Combined = CombineEnhance(Combined, Enhance);
+				if (Mask) Combined = FMath::Lerp(A, Combined, FMath::Clamp(Mask->AtInterior(X, Y), 0.0f, 1.0f));
+				OutField.AtInterior(X, Y) = bTerrain ? CombineFrom01(Combined) : FMath::Clamp(Combined, 0.0f, 1.0f);
 			}
 		}
-
-		if (!Result.IsValid() || !Separation.IsValid())
-		{
-			Error = TEXT("Combine produced an invalid scalar result.");
-			return false;
-		}
-		Out.Outputs.Add(TEXT("Out"), FGaeaTerrainValue::MakeScalarField(MoveTemp(Result)));
-		Out.Outputs.Add(TEXT("Separation"), FGaeaTerrainValue::MakeScalarField(MoveTemp(Separation)));
-		return true;
+		return OutField.IsValid();
 	}
 
-	bool CombineEvaluateTerrain(
-		const FGaeaTerrainNode& Node,
-		const FGaeaTerrainValue& Primary,
-		const FGaeaTerrainValue& Secondary,
-		const FGaeaScalarField* AreaMask,
-		FGaeaTerrainNodeEvaluation& Out,
-		FString& Error)
+	bool EvaluateCombineNode(const FGaeaTerrainNode& Node, const FGaeaTerrainNodeInputs& Inputs, const FGaeaTerrainEvaluationContext&, FGaeaTerrainNodeEvaluation& Out, FString& Error)
 	{
-		const FGaeaScalarField* PrimaryHeight = Primary.TerrainDataset.FindScalarField(GaeaTerrainFieldNames::Height);
-		const FGaeaScalarField* SecondaryHeight = Secondary.TerrainDataset.FindScalarField(GaeaTerrainFieldNames::Height);
-		if (!PrimaryHeight || !PrimaryHeight->IsValid() || !SecondaryHeight || !SecondaryHeight->IsValid())
+		const FGaeaTerrainValue* const* Input1Ptr = Inputs.Find(TEXT("Input1"));
+		const FGaeaTerrainValue* const* Input2Ptr = Inputs.Find(TEXT("Input2"));
+		const FGaeaTerrainValue* Input1 = Input1Ptr ? *Input1Ptr : nullptr;
+		const FGaeaTerrainValue* Input2 = Input2Ptr ? *Input2Ptr : nullptr;
+		if (!Input1 || !Input2 || !Input1->IsValid() || !Input2->IsValid() || Input1->Type != Input2->Type)
 		{
-			Error = TEXT("Combine terrain inputs require valid Height fields.");
-			return false;
-		}
-		if (PrimaryHeight->Domain != SecondaryHeight->Domain)
-		{
-			Error = TEXT("Combine terrain inputs must use the same grid domain.");
-			return false;
-		}
-		if (AreaMask && AreaMask->Domain != PrimaryHeight->Domain)
-		{
-			Error = TEXT("Combine Mask must use the same grid domain as its terrain inputs.");
-			return false;
-		}
-
-		const FName Method = Node.GetName(TEXT("Method"), TEXT("Blend"));
-		const float Ratio = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Ratio"), 0.5)), 0.0f, 1.0f);
-		const bool bClampOutput = Node.GetBool(TEXT("ClampOutput"), true);
-		const bool bAbs = Node.GetBool(TEXT("Abs"), false);
-		const float Threshold = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Threshold"), 0.5)), 0.0f, 1.0f);
-		const float Flatten = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Flatten"), 0.0)), 0.0f, 1.0f);
-		const bool bSeparationMask = Node.GetBool(TEXT("SeparationMask"), false);
-		const float PrimaryScale = FMath::Max(Primary.HeightScale, 1.0f);
-		const float SecondaryScale = FMath::Max(Secondary.HeightScale, 1.0f);
-		const float SecondaryToPrimaryScale = SecondaryScale / PrimaryScale;
-
-		FGaeaScalarField ResultHeight = *PrimaryHeight;
-		FGaeaScalarField Separation = *PrimaryHeight;
-		Separation.Descriptor.Name = TEXT("Separation");
-		Separation.Descriptor.Unit = EGaeaFieldUnit::Normalized;
-		const FIntPoint Dimensions = ResultHeight.Domain.Dimensions;
-		for (int32 Y = 0; Y < Dimensions.Y; ++Y)
-		{
-			for (int32 X = 0; X < Dimensions.X; ++X)
-			{
-				const float A = PrimaryHeight->AtInterior(X, Y);
-				const float B = SecondaryHeight->AtInterior(X, Y) * SecondaryToPrimaryScale;
-				const float Candidate = CombineApplyMethod(A, B, Method, Threshold, Flatten);
-				const float MaskValue = AreaMask ? AreaMask->AtInterior(X, Y) : 1.0f;
-				ResultHeight.AtInterior(X, Y) = CombineFinalizeValue(A, B, Candidate, Method, Ratio, MaskValue, bClampOutput, bAbs, Threshold, true);
-				Separation.AtInterior(X, Y) = bSeparationMask ? FMath::Clamp(FMath::Abs(A - B), 0.0f, 1.0f) : 0.0f;
-			}
-		}
-
-		FGaeaTerrainDataset ResultDataset = Primary.TerrainDataset;
-		if (!ResultDataset.SetScalarField(MoveTemp(ResultHeight)))
-		{
-			Error = TEXT("Combine could not publish its terrain Height field.");
-			return false;
-		}
-		Out.Outputs.Add(TEXT("Out"), FGaeaTerrainValue::MakeTerrain(MoveTemp(ResultDataset), PrimaryScale));
-		Out.Outputs.Add(TEXT("Separation"), FGaeaTerrainValue::MakeScalarField(MoveTemp(Separation)));
-		return true;
-	}
-
-	bool EvaluateCombineNode(
-		const FGaeaTerrainNode& Node,
-		const FGaeaTerrainNodeInputs& Inputs,
-		const FGaeaTerrainEvaluationContext&,
-		FGaeaTerrainNodeEvaluation& Out,
-		FString& Error)
-	{
-		const FGaeaTerrainValue* const* PrimaryPtr = Inputs.Find(TEXT("Primary"));
-		const FGaeaTerrainValue* const* SecondaryPtr = Inputs.Find(TEXT("Secondary"));
-		const FGaeaTerrainValue* Primary = PrimaryPtr ? *PrimaryPtr : nullptr;
-		const FGaeaTerrainValue* Secondary = SecondaryPtr ? *SecondaryPtr : nullptr;
-		if (!Primary || !Secondary || !Primary->IsValid() || !Secondary->IsValid())
-		{
-			Error = TEXT("Combine requires valid Primary and Secondary inputs.");
-			return false;
-		}
-
-		if (Node.GetBool(TEXT("SwapInputs"), false))
-		{
-			Swap(Primary, Secondary);
-		}
-		if (Primary->Type != Secondary->Type)
-		{
-			Error = TEXT("Combine currently requires Primary and Secondary to be the same graph value type.");
+			Error = TEXT("Combine requires valid Input1 and Input2 values of the same type.");
 			return false;
 		}
 
 		const FGaeaTerrainValue* const* MaskPtr = Inputs.Find(TEXT("Mask"));
 		const FGaeaTerrainValue* MaskValue = MaskPtr ? *MaskPtr : nullptr;
-		const FGaeaScalarField* AreaMask = nullptr;
+		const FGaeaScalarField* Mask = nullptr;
 		if (MaskValue)
 		{
 			if (MaskValue->Type != EGaeaTerrainValueType::ScalarField || !MaskValue->ScalarField.IsValid())
 			{
-				Error = TEXT("Combine Mask input must be a valid scalar field.");
+				Error = TEXT("Combine Mask must be a scalar field.");
 				return false;
 			}
-			AreaMask = &MaskValue->ScalarField;
+			Mask = &MaskValue->ScalarField;
 		}
 
-		if (Primary->Type == EGaeaTerrainValueType::ScalarField)
+		if (Input1->Type == EGaeaTerrainValueType::ScalarField)
 		{
-			return CombineEvaluateScalar(Node, *Primary, *Secondary, AreaMask, Out, Error);
-		}
-		if (Primary->Type == EGaeaTerrainValueType::Terrain)
-		{
-			return CombineEvaluateTerrain(Node, *Primary, *Secondary, AreaMask, Out, Error);
+			FGaeaScalarField Result;
+			if (!CombineProcess(Node, Input1->ScalarField, Input2->ScalarField, Mask, false, Result, Error)) return false;
+			Out.Outputs.Add(TEXT("Out"), FGaeaTerrainValue::MakeScalarField(MoveTemp(Result)));
+			return true;
 		}
 
+		if (Input1->Type == EGaeaTerrainValueType::Terrain)
+		{
+			const FGaeaScalarField* A = Input1->TerrainDataset.FindScalarField(GaeaTerrainFieldNames::Height);
+			const FGaeaScalarField* B = Input2->TerrainDataset.FindScalarField(GaeaTerrainFieldNames::Height);
+			if (!A || !B)
+			{
+				Error = TEXT("Combine terrain inputs require Height fields.");
+				return false;
+			}
+			FGaeaScalarField ResultHeight;
+			if (!CombineProcess(Node, *A, *B, Mask, true, ResultHeight, Error)) return false;
+			ResultHeight.Descriptor.Name = GaeaTerrainFieldNames::Height;
+			FGaeaTerrainDataset Dataset = Input1->TerrainDataset;
+			if (!Dataset.SetScalarField(MoveTemp(ResultHeight))) return false;
+			Out.Outputs.Add(TEXT("Out"), FGaeaTerrainValue::MakeTerrain(MoveTemp(Dataset), Input1->HeightScale));
+			return true;
+		}
 		Error = TEXT("Combine received an unsupported input type.");
 		return false;
 	}
@@ -305,26 +191,16 @@ void RegisterGaeaCombineNode()
 	FGaeaTerrainNodeDescriptor Descriptor;
 	Descriptor.Type = GaeaTerrainNodeTypes::Combine;
 	Descriptor.DisplayName = TEXT("Combine");
-	Descriptor.Category = TEXT("Adjustments");
-	Descriptor.Description = TEXT("Combines two terrain or mask outputs using Gaea-style blend methods, ratio, masking, and separation output.");
-	Descriptor.Inputs.Add(CombineAnyPort(TEXT("Primary"), TEXT("Input1")));
-	Descriptor.Inputs.Add(CombineAnyPort(TEXT("Secondary"), TEXT("Input2")));
+	Descriptor.Category = TEXT("Utility");
+	Descriptor.Description = TEXT("Combines two terrain or mask inputs using Gaea's current blend modes, ratio, output handling, enhancement, and optional mask.");
+	Descriptor.Inputs.Add(CombineAnyPort(TEXT("Input1"), TEXT("Input1")));
+	Descriptor.Inputs.Add(CombineAnyPort(TEXT("Input2"), TEXT("Input2")));
 	Descriptor.Inputs.Add(CombineScalarPort(TEXT("Mask"), TEXT("Mask")));
 	Descriptor.Outputs.Add(CombineAnyPort(TEXT("Out"), TEXT("Out")));
-	Descriptor.Outputs.Add(CombineScalarPort(TEXT("Separation"), TEXT("Separation")));
-	Descriptor.Parameters.Add(CombineNameParameter(
-		TEXT("Method"),
-		TEXT("Method"),
-		TEXT("Blend"),
-		{ TEXT("Blend"), TEXT("Add"), TEXT("Screen"), TEXT("Subtract"), TEXT("Multiply"), TEXT("Divide"), TEXT("Max"), TEXT("Min"), TEXT("SqRt"), TEXT("Power"), TEXT("Difference"), TEXT("Insert"), TEXT("Embed") }));
 	Descriptor.Parameters.Add(CombineNumberParameter(TEXT("Ratio"), TEXT("Ratio"), 0.5, 0.0, 1.0));
-	Descriptor.Parameters.Add(CombineBooleanParameter(TEXT("SwapInputs"), TEXT("Swap Inputs"), false));
-	Descriptor.Parameters.Add(CombineBooleanParameter(TEXT("SeparationMask"), TEXT("Separation Mask"), false));
-	Descriptor.Parameters.Add(CombineBooleanParameter(TEXT("ClampOutput"), TEXT("Clamp Output"), true));
-	Descriptor.Parameters.Add(CombineBooleanParameter(TEXT("Abs"), TEXT("Abs"), false));
-	Descriptor.Parameters.Add(CombineNumberParameter(TEXT("Threshold"), TEXT("Threshold"), 0.5, 0.0, 1.0));
-	Descriptor.Parameters.Add(CombineNumberParameter(TEXT("Flatten"), TEXT("Flatten"), 0.0, 0.0, 1.0));
+	Descriptor.Parameters.Add(CombineNameParameter(TEXT("Mode"), TEXT("Mode"), TEXT("Blend"), { TEXT("Blend"), TEXT("Add"), TEXT("Screen"), TEXT("Subtract"), TEXT("Difference"), TEXT("Multiply"), TEXT("Divide"), TEXT("Divide 2"), TEXT("Max"), TEXT("Min"), TEXT("Hypotenuse"), TEXT("Overlay"), TEXT("Power"), TEXT("Exclusion"), TEXT("Dodge"), TEXT("Burn"), TEXT("Soft Light"), TEXT("Hard Light"), TEXT("Pin Light"), TEXT("Grain Merge"), TEXT("Grain Extract"), TEXT("Reflect"), TEXT("Glow"), TEXT("Phoenix") }));
+	Descriptor.Parameters.Add(CombineNameParameter(TEXT("Output"), TEXT("Output"), TEXT("None"), { TEXT("None"), TEXT("Clamp"), TEXT("Extend") }));
+	Descriptor.Parameters.Add(CombineNameParameter(TEXT("Enhance"), TEXT("Enhance"), TEXT("None"), { TEXT("None"), TEXT("Autolevel"), TEXT("Equalize") }));
 	FGaeaTerrainNodeDescriptorRegistry::Register(Descriptor);
-
 	FGaeaTerrainNodeRegistry::Register(GaeaTerrainNodeTypes::Combine, EvaluateCombineNode);
 }
