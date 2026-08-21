@@ -26,6 +26,16 @@ namespace
 		return Path;
 	}
 
+	bool HasValidCoordinateBounds(const FGaeaTerrainNode& Node)
+	{
+		const double XMin = Node.GetNumber(TEXT("XMin"), 0.0);
+		const double YMin = Node.GetNumber(TEXT("YMin"), 0.0);
+		const double XMax = Node.GetNumber(TEXT("XMax"), 0.0);
+		const double YMax = Node.GetNumber(TEXT("YMax"), 0.0);
+		return FMath::IsFinite(XMin) && FMath::IsFinite(YMin) && FMath::IsFinite(XMax) && FMath::IsFinite(YMax)
+			&& XMax > XMin && YMax > YMin;
+	}
+
 	bool MakeFileNodeDomain(
 		int32 Width,
 		int32 Height,
@@ -70,14 +80,9 @@ namespace
 		const double YMin = Node.GetNumber(TEXT("YMin"), 0.0);
 		const double XMax = Node.GetNumber(TEXT("XMax"), 0.0);
 		const double YMax = Node.GetNumber(TEXT("YMax"), 0.0);
-		if (!FMath::IsFinite(XMin) || !FMath::IsFinite(YMin) || !FMath::IsFinite(XMax) || !FMath::IsFinite(YMax))
+		if (!HasValidCoordinateBounds(Node))
 		{
-			Error = TEXT("File coordinate bounds must be finite.");
-			return false;
-		}
-		if (XMax <= XMin || YMax <= YMin)
-		{
-			Error = TEXT("File coordinate bounds require XMax > XMin and YMax > YMin.");
+			Error = TEXT("File coordinate bounds require finite values with XMax > XMin and YMax > YMin.");
 			return false;
 		}
 
@@ -89,9 +94,6 @@ namespace
 				return false;
 			}
 
-			// Convert the WGS84 angular span to a local metric span at the centre
-			// latitude. This equirectangular approximation is extremely accurate for
-			// terrain-sized regions and avoids treating longitude/latitude degrees as metres.
 			const double MidLatitudeRadians = FMath::DegreesToRadians((YMin + YMax) * 0.5);
 			const double DeltaLongitudeRadians = FMath::DegreesToRadians(XMax - XMin);
 			const double DeltaLatitudeRadians = FMath::DegreesToRadians(YMax - YMin);
@@ -100,7 +102,6 @@ namespace
 		}
 		else
 		{
-			// Projected bounds are expected to already be expressed in metres.
 			OutExtentXMetres = XMax - XMin;
 			OutExtentYMetres = YMax - YMin;
 		}
@@ -131,7 +132,7 @@ namespace
 		}
 
 		const double XYScale = FMath::Clamp(Node.GetNumber(TEXT("XYScale"), 1.0), 0.0001, 10000.0);
-		const bool bUseCoordinateBounds = Node.GetBool(TEXT("UseCoordinateBounds"), false);
+		const bool bUseCoordinateBounds = HasValidCoordinateBounds(Node) || Node.GetBool(TEXT("UseCoordinateBounds"), false);
 		const bool bUseGroundSampleDistance = Node.GetBool(TEXT("UseGroundSampleDistance"), false);
 
 		double SourceExtentXMetres = 0.0;
@@ -143,49 +144,27 @@ namespace
 		else if (bUseGroundSampleDistance)
 		{
 			const double GroundSampleDistanceXMetres = FMath::Clamp(
-				Node.GetNumber(TEXT("GroundSampleDistanceXMetres"), 1.0),
-				0.0001,
-				1000000.0);
+				Node.GetNumber(TEXT("GroundSampleDistanceXMetres"), 1.0), 0.0001, 1000000.0);
 			const double GroundSampleDistanceYMetres = FMath::Clamp(
-				Node.GetNumber(TEXT("GroundSampleDistanceYMetres"), GroundSampleDistanceXMetres),
-				0.0001,
-				1000000.0);
-
-			// Terrain rasters are sampled on a grid. The physical distance from the
-			// first sample to the last is (sample count - 1) * sample spacing.
+				Node.GetNumber(TEXT("GroundSampleDistanceYMetres"), GroundSampleDistanceXMetres), 0.0001, 1000000.0);
 			SourceExtentXMetres = static_cast<double>(SourceWidth - 1) * GroundSampleDistanceXMetres;
 			SourceExtentYMetres = static_cast<double>(SourceHeight - 1) * GroundSampleDistanceYMetres;
 		}
 		else
 		{
-			// WorldSize was the original File-node control and was expressed in UE
-			// units. Keep it as a fallback so existing graphs retain their scale.
 			const double LegacyWorldSizeUnrealUnits = FMath::Clamp(
-				Node.GetNumber(TEXT("WorldSize"), 100000.0),
-				1.0,
-				10000000000.0);
+				Node.GetNumber(TEXT("WorldSize"), 100000.0), 1.0, 10000000000.0);
 			const double LegacyWorldSizeMetres = LegacyWorldSizeUnrealUnits / UnrealUnitsPerMetre;
-
 			SourceExtentXMetres = FMath::Clamp(
-				Node.GetNumber(TEXT("ExtentXMetres"), LegacyWorldSizeMetres),
-				0.001,
-				100000000.0);
+				Node.GetNumber(TEXT("ExtentXMetres"), LegacyWorldSizeMetres), 0.001, 100000000.0);
 			SourceExtentYMetres = FMath::Clamp(
-				Node.GetNumber(TEXT("ExtentYMetres"), LegacyWorldSizeMetres),
-				0.001,
-				100000000.0);
+				Node.GetNumber(TEXT("ExtentYMetres"), LegacyWorldSizeMetres), 0.001, 100000000.0);
 		}
 
-		// If CropToSquare removed samples, preserve the original ground sample
-		// distance rather than stretching the cropped raster back over the full
-		// source extent.
 		const double OutputFractionX = static_cast<double>(OutputWidth - 1) / static_cast<double>(SourceWidth - 1);
 		const double OutputFractionY = static_cast<double>(OutputHeight - 1) / static_cast<double>(SourceHeight - 1);
-		const double OutputExtentXMetres = SourceExtentXMetres * OutputFractionX * XYScale;
-		const double OutputExtentYMetres = SourceExtentYMetres * OutputFractionY * XYScale;
-
-		OutExtentXUnrealUnits = OutputExtentXMetres * UnrealUnitsPerMetre;
-		OutExtentYUnrealUnits = OutputExtentYMetres * UnrealUnitsPerMetre;
+		OutExtentXUnrealUnits = SourceExtentXMetres * OutputFractionX * XYScale * UnrealUnitsPerMetre;
+		OutExtentYUnrealUnits = SourceExtentYMetres * OutputFractionY * XYScale * UnrealUnitsPerMetre;
 		return true;
 	}
 
@@ -207,10 +186,68 @@ namespace
 			FModuleManager::LoadModuleChecked<IImageWrapperModule>(TEXT("ImageWrapper"));
 		if (!ImageWrapperModule.DecompressImage(Compressed.GetData(), Compressed.Num(), OutImage))
 		{
-			Error = FString::Printf(TEXT("File could not decode '%s'. Supported raster formats include TIFF/GeoTIFF, PNG, JPEG, BMP, and EXR."), *Path);
+			Error = FString::Printf(
+				TEXT("File could not decode '%s'. Supported raster formats include TIFF/GeoTIFF, PNG, JPEG, BMP, and EXR."),
+				*Path);
 			return false;
 		}
 		return true;
+	}
+
+	FName ResolveElevationEncoding(const FGaeaTerrainNode& Node, ERawImageFormat::Type SourceFormat)
+	{
+		const FName Requested = Node.GetName(TEXT("ElevationEncoding"), TEXT("Auto"));
+		if (Requested != TEXT("Auto")) return Requested;
+
+		switch (SourceFormat)
+		{
+		case ERawImageFormat::G16:
+			return TEXT("UInt16");
+		case ERawImageFormat::R16F:
+		case ERawImageFormat::R32F:
+		case ERawImageFormat::RGBA16F:
+		case ERawImageFormat::RGBA32F:
+			return TEXT("FloatMetres");
+		default:
+			return TEXT("Normalized");
+		}
+	}
+
+	bool SourceFormatIsNormalizedInteger(ERawImageFormat::Type SourceFormat)
+	{
+		return SourceFormat == ERawImageFormat::G8
+			|| SourceFormat == ERawImageFormat::G16
+			|| SourceFormat == ERawImageFormat::BGRA8
+			|| SourceFormat == ERawImageFormat::RGBA16;
+	}
+
+	double DecodeElevationMetres(float Raw, FName Encoding, bool bNormalizedIntegerSource, double NormalizedHeightRangeMetres)
+	{
+		if (!FMath::IsFinite(Raw)) return 0.0;
+
+		const double V = static_cast<double>(Raw);
+		if (Encoding == TEXT("FloatMetres")) return V;
+		if (Encoding == TEXT("Normalized")) return FMath::Clamp(V, 0.0, 1.0) * NormalizedHeightRangeMetres;
+
+		if (Encoding == TEXT("UInt16"))
+		{
+			return bNormalizedIntegerSource ? FMath::Clamp(V, 0.0, 1.0) * 65535.0 : V;
+		}
+		if (Encoding == TEXT("Int16"))
+		{
+			if (!bNormalizedIntegerSource) return V;
+			return FMath::RoundToDouble(FMath::Clamp(V, 0.0, 1.0) * 65535.0) - 32768.0;
+		}
+		if (Encoding == TEXT("UInt32"))
+		{
+			return bNormalizedIntegerSource ? FMath::Clamp(V, 0.0, 1.0) * 4294967295.0 : V;
+		}
+		if (Encoding == TEXT("Int32"))
+		{
+			if (!bNormalizedIntegerSource) return V;
+			return FMath::RoundToDouble(FMath::Clamp(V, 0.0, 1.0) * 4294967295.0) - 2147483648.0;
+		}
+		return V;
 	}
 
 	bool EvaluateFileNodeDecoded(
@@ -235,6 +272,7 @@ namespace
 		FImage Image;
 		if (!DecodeFileNodeImage(Path, Image, Error)) return false;
 
+		const ERawImageFormat::Type SourceFormat = Image.Format;
 		Image.ChangeFormat(ERawImageFormat::RGBA32F, EGammaSpace::Linear);
 		const TArrayView64<const FLinearColor> Pixels = Image.AsRGBA32F();
 		const int32 SourceWidth = Image.SizeX;
@@ -294,49 +332,38 @@ namespace
 			return true;
 		}
 
-		float MinElevation = TNumericLimits<float>::Max();
-		float MaxElevation = TNumericLimits<float>::Lowest();
+		const double LegacyHeightScaleUnrealUnits = Context.HeightScale > UE_SMALL_NUMBER
+			? static_cast<double>(Context.HeightScale)
+			: 8000.0;
+		const double NormalizedHeightRangeMetres = FMath::Clamp(
+			Node.GetNumber(TEXT("HeightScaleMetres"), LegacyHeightScaleUnrealUnits / UnrealUnitsPerMetre),
+			0.001,
+			1000000.0);
+		const FName ElevationEncoding = ResolveElevationEncoding(Node, SourceFormat);
+		const bool bNormalizedIntegerSource = SourceFormatIsNormalizedInteger(SourceFormat);
+
+		double MaxAbsElevationMetres = 0.0;
 		for (int32 Y = 0; Y < OutputHeight; ++Y)
 		{
 			for (int32 X = 0; X < OutputWidth; ++X)
 			{
-				const float V = Pixels[static_cast<int64>(Y + CropY) * SourceWidth + (X + CropX)].R;
-				if (!FMath::IsFinite(V)) continue;
-				MinElevation = FMath::Min(MinElevation, V);
-				MaxElevation = FMath::Max(MaxElevation, V);
+				const float Raw = Pixels[static_cast<int64>(Y + CropY) * SourceWidth + (X + CropX)].R;
+				const double ElevationMetres = DecodeElevationMetres(
+					Raw,
+					ElevationEncoding,
+					bNormalizedIntegerSource,
+					NormalizedHeightRangeMetres);
+				if (!FMath::IsFinite(ElevationMetres)) continue;
+				MaxAbsElevationMetres = FMath::Max(MaxAbsElevationMetres, FMath::Abs(ElevationMetres));
 			}
 		}
-		if (!FMath::IsFinite(MinElevation) || !FMath::IsFinite(MaxElevation))
+
+		if (!FMath::IsFinite(MaxAbsElevationMetres))
 		{
 			Error = TEXT("File contains no finite elevation samples.");
 			return false;
 		}
-
-		const FString Extension = FPaths::GetExtension(Path, false).ToLower();
-		const bool bTiff = Extension == TEXT("tif") || Extension == TEXT("tiff");
-		const bool bLooksLikeAbsoluteElevation = bTiff && (MinElevation < -UE_KINDA_SMALL_NUMBER || MaxElevation > 1.0001f);
-
-		const double LegacyHeightScaleUnrealUnits = Context.HeightScale > UE_SMALL_NUMBER
-			? static_cast<double>(Context.HeightScale)
-			: 8000.0;
-		const double HeightScaleMetres = FMath::Clamp(
-			Node.GetNumber(TEXT("HeightScaleMetres"), LegacyHeightScaleUnrealUnits / UnrealUnitsPerMetre),
-			0.001,
-			1000000.0);
-		float OutputHeightScaleUnrealUnits = static_cast<float>(HeightScaleMetres * UnrealUnitsPerMetre);
-		float AbsoluteElevationNormalizationMetres = 1.0f;
-
-		if (bLooksLikeAbsoluteElevation)
-		{
-			// GeoTIFF DEMs commonly store signed/float elevations directly in
-			// metres. Keep zero exactly at sea level, normalize only for storage,
-			// then convert the physical vertical range to UE centimetres.
-			AbsoluteElevationNormalizationMetres = FMath::Max(
-				FMath::Max(FMath::Abs(MinElevation), FMath::Abs(MaxElevation)),
-				1.0f);
-			OutputHeightScaleUnrealUnits = static_cast<float>(
-				static_cast<double>(AbsoluteElevationNormalizationMetres) * UnrealUnitsPerMetre);
-		}
+		MaxAbsElevationMetres = FMath::Max(MaxAbsElevationMetres, 0.01);
 
 		FGaeaFieldDescriptor Descriptor;
 		Descriptor.Name = GaeaTerrainFieldNames::Height;
@@ -350,16 +377,13 @@ namespace
 			for (int32 X = 0; X < OutputWidth; ++X)
 			{
 				const float Raw = Pixels[static_cast<int64>(Y + CropY) * SourceWidth + (X + CropX)].R;
-				float Value = FMath::IsFinite(Raw) ? Raw : 0.0f;
-				if (bLooksLikeAbsoluteElevation)
-				{
-					Value /= AbsoluteElevationNormalizationMetres;
-				}
-				else if (!bAllowUnclamped)
-				{
-					Value = FMath::Clamp(Value, 0.0f, 1.0f);
-				}
-				Height.AtInterior(X, Y) = FMath::Clamp(Value, -1.0f, 1.0f);
+				const double ElevationMetres = DecodeElevationMetres(
+					Raw,
+					ElevationEncoding,
+					bNormalizedIntegerSource,
+					NormalizedHeightRangeMetres);
+				const double NormalizedElevation = ElevationMetres / MaxAbsElevationMetres;
+				Height.AtInterior(X, Y) = static_cast<float>(FMath::Clamp(NormalizedElevation, -1.0, 1.0));
 			}
 		}
 
@@ -369,6 +393,8 @@ namespace
 			Error = TEXT("File could not publish its Height field.");
 			return false;
 		}
+
+		const float OutputHeightScaleUnrealUnits = static_cast<float>(MaxAbsElevationMetres * UnrealUnitsPerMetre);
 		Out.Outputs.Add(TEXT("Out"), FGaeaTerrainValue::MakeTerrain(MoveTemp(Dataset), OutputHeightScaleUnrealUnits));
 		return true;
 	}
