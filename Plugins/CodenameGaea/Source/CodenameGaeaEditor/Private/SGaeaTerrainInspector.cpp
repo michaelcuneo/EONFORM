@@ -1,20 +1,23 @@
 #include "SGaeaTerrainInspector.h"
 
+#include "Engine/Texture2D.h"
 #include "GaeaScalarField.h"
 #include "SGaeaTerrainGraphPanel.h"
 #include "Styling/AppStyle.h"
+#include "Widgets/Images/SImage.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Layout/SSplitter.h"
-#include "Widgets/Layout/SUniformGridPanel.h"
 #include "Widgets/Text/STextBlock.h"
 #include "Widgets/Views/SListView.h"
 #include "Widgets/Views/STableRow.h"
 
 namespace
 {
-	FString FieldUnitToString(EGaeaFieldUnit Unit)
+	constexpr int32 TerrainInspectorPreviewResolution = 256;
+
+	FString TerrainInspectorFieldUnitToString(EGaeaFieldUnit Unit)
 	{
 		switch (Unit)
 		{
@@ -28,7 +31,7 @@ namespace
 		}
 	}
 
-	FString InterpolationToString(EGaeaInterpolation Interpolation)
+	FString TerrainInspectorInterpolationToString(EGaeaInterpolation Interpolation)
 	{
 		switch (Interpolation)
 		{
@@ -37,10 +40,31 @@ namespace
 		default: return TEXT("Unknown");
 		}
 	}
+
+	float TerrainInspectorSampleBilinear(const FGaeaScalarField& Field, double X, double Y)
+	{
+		const int32 Width = Field.Domain.Dimensions.X;
+		const int32 Height = Field.Domain.Dimensions.Y;
+		const double ClampedX = FMath::Clamp(X, 0.0, static_cast<double>(Width - 1));
+		const double ClampedY = FMath::Clamp(Y, 0.0, static_cast<double>(Height - 1));
+		const int32 X0 = FMath::FloorToInt(ClampedX);
+		const int32 Y0 = FMath::FloorToInt(ClampedY);
+		const int32 X1 = FMath::Min(X0 + 1, Width - 1);
+		const int32 Y1 = FMath::Min(Y0 + 1, Height - 1);
+		const float TX = static_cast<float>(ClampedX - static_cast<double>(X0));
+		const float TY = static_cast<float>(ClampedY - static_cast<double>(Y0));
+
+		const float A = FMath::Lerp(Field.AtInterior(X0, Y0), Field.AtInterior(X1, Y0), TX);
+		const float B = FMath::Lerp(Field.AtInterior(X0, Y1), Field.AtInterior(X1, Y1), TX);
+		return FMath::Lerp(A, B, TY);
+	}
 }
 
 void SGaeaTerrainInspector::Construct(const FArguments& InArgs)
 {
+	PreviewBrush.DrawAs = ESlateBrushDrawType::Image;
+	PreviewBrush.ImageSize = FVector2D(TerrainInspectorPreviewResolution, TerrainInspectorPreviewResolution);
+
 	ChildSlot
 	[
 		SNew(SBorder)
@@ -126,17 +150,32 @@ void SGaeaTerrainInspector::Construct(const FArguments& InArgs)
 						]
 						+ SVerticalBox::Slot()
 						.FillHeight(1.0f)
+						.HAlign(HAlign_Center)
+						.VAlign(VAlign_Center)
 						[
 							SNew(SBorder)
 							.Padding(4.0f)
 							.BorderImage(FAppStyle::GetBrush("ToolPanel.DarkGroupBorder"))
 							[
-								SAssignNew(PreviewGrid, SUniformGridPanel)
+								SNew(SBox)
+								.WidthOverride(512.0f)
+								.HeightOverride(512.0f)
+								[
+									SAssignNew(PreviewImage, SImage)
+									.Image(&PreviewBrush)
+								]
 							]
 						]
 						+ SVerticalBox::Slot()
 						.AutoHeight()
 						.Padding(0.0f, 8.0f, 0.0f, 0.0f)
+						[
+							SNew(STextBlock)
+							.Text(this, &SGaeaTerrainInspector::GetPreviewStatsText)
+						]
+						+ SVerticalBox::Slot()
+						.AutoHeight()
+						.Padding(0.0f, 4.0f, 0.0f, 0.0f)
 						[
 							SNew(STextBlock)
 							.Text(this, &SGaeaTerrainInspector::GetEmptyStateText)
@@ -169,6 +208,7 @@ void SGaeaTerrainInspector::RefreshFromRegistry()
 	{
 		TArray<FName> Names;
 		Snapshot.Dataset.GetScalarFieldNames(Names);
+		Names.Sort(FNameLexicalLess());
 		for (const FName Name : Names)
 		{
 			FieldItems.Add(MakeShared<FName>(Name));
@@ -219,59 +259,113 @@ const FGaeaScalarField* SGaeaTerrainInspector::GetSelectedField() const
 	return Snapshot.Dataset.FindScalarField(SelectedFieldName);
 }
 
+void SGaeaTerrainInspector::ClearPreview()
+{
+	PreviewTexture.Reset();
+	PreviewBrush.SetResourceObject(nullptr);
+	PreviewMinValue = 0.0f;
+	PreviewMaxValue = 0.0f;
+	PreviewMeanValue = 0.0f;
+	PreviewStdDev = 0.0f;
+	PreviewSampleCount = 0;
+	if (PreviewImage.IsValid())
+	{
+		PreviewImage->Invalidate(EInvalidateWidgetReason::Paint);
+	}
+}
+
 void SGaeaTerrainInspector::RebuildPreview()
 {
-	if (!PreviewGrid.IsValid())
-	{
-		return;
-	}
+	ClearPreview();
 
-	PreviewGrid->ClearChildren();
 	const FGaeaScalarField* Field = GetSelectedField();
 	if (!Field || !Field->IsValid())
 	{
 		return;
 	}
 
-	float MinValue = TNumericLimits<float>::Max();
-	float MaxValue = TNumericLimits<float>::Lowest();
-	for (const float Value : Field->Values)
-	{
-		MinValue = FMath::Min(MinValue, Value);
-		MaxValue = FMath::Max(MaxValue, Value);
-	}
-	const float Range = FMath::Max(MaxValue - MinValue, UE_SMALL_NUMBER);
+	PreviewMinValue = TNumericLimits<float>::Max();
+	PreviewMaxValue = TNumericLimits<float>::Lowest();
+	double Sum = 0.0;
+	double SumSquares = 0.0;
+	PreviewSampleCount = 0;
 
-	constexpr int32 PreviewResolution = 32;
 	const FIntPoint Dimensions = Field->Domain.Dimensions;
-	for (int32 PreviewY = 0; PreviewY < PreviewResolution; ++PreviewY)
+	for (int32 Y = 0; Y < Dimensions.Y; ++Y)
 	{
-		const int32 SourceY = FMath::RoundToInt(
-			static_cast<double>(PreviewY) / static_cast<double>(PreviewResolution - 1)
-			* static_cast<double>(Dimensions.Y - 1));
-
-		for (int32 PreviewX = 0; PreviewX < PreviewResolution; ++PreviewX)
+		for (int32 X = 0; X < Dimensions.X; ++X)
 		{
-			const int32 SourceX = FMath::RoundToInt(
-				static_cast<double>(PreviewX) / static_cast<double>(PreviewResolution - 1)
-				* static_cast<double>(Dimensions.X - 1));
-
-			const float Value = Field->AtInterior(SourceX, SourceY);
-			const float Normalized = FMath::Clamp((Value - MinValue) / Range, 0.0f, 1.0f);
-
-			PreviewGrid->AddSlot(PreviewX, PreviewY)
-			[
-				SNew(SBox)
-				.WidthOverride(8.0f)
-				.HeightOverride(8.0f)
-				[
-					SNew(SBorder)
-					.Padding(0.0f)
-					.BorderImage(FAppStyle::GetBrush("WhiteBrush"))
-					.BorderBackgroundColor(FLinearColor(Normalized, Normalized, Normalized, 1.0f))
-				]
-			];
+			const float Value = Field->AtInterior(X, Y);
+			PreviewMinValue = FMath::Min(PreviewMinValue, Value);
+			PreviewMaxValue = FMath::Max(PreviewMaxValue, Value);
+			Sum += static_cast<double>(Value);
+			SumSquares += static_cast<double>(Value) * static_cast<double>(Value);
+			++PreviewSampleCount;
 		}
+	}
+
+	if (PreviewSampleCount <= 0)
+	{
+		ClearPreview();
+		return;
+	}
+
+	PreviewMeanValue = static_cast<float>(Sum / static_cast<double>(PreviewSampleCount));
+	const double Variance = FMath::Max(
+		0.0,
+		SumSquares / static_cast<double>(PreviewSampleCount)
+			- static_cast<double>(PreviewMeanValue) * static_cast<double>(PreviewMeanValue));
+	PreviewStdDev = static_cast<float>(FMath::Sqrt(Variance));
+
+	const float Range = FMath::Max(PreviewMaxValue - PreviewMinValue, UE_SMALL_NUMBER);
+	TArray<FColor> Pixels;
+	Pixels.SetNumUninitialized(TerrainInspectorPreviewResolution * TerrainInspectorPreviewResolution);
+
+	for (int32 PreviewY = 0; PreviewY < TerrainInspectorPreviewResolution; ++PreviewY)
+	{
+		const double SourceY = static_cast<double>(PreviewY)
+			/ static_cast<double>(TerrainInspectorPreviewResolution - 1)
+			* static_cast<double>(Dimensions.Y - 1);
+
+		for (int32 PreviewX = 0; PreviewX < TerrainInspectorPreviewResolution; ++PreviewX)
+		{
+			const double SourceX = static_cast<double>(PreviewX)
+				/ static_cast<double>(TerrainInspectorPreviewResolution - 1)
+				* static_cast<double>(Dimensions.X - 1);
+			const float Value = TerrainInspectorSampleBilinear(*Field, SourceX, SourceY);
+			const float Normalized = FMath::Clamp((Value - PreviewMinValue) / Range, 0.0f, 1.0f);
+			const uint8 Gray = static_cast<uint8>(FMath::RoundToInt(Normalized * 255.0f));
+			Pixels[PreviewY * TerrainInspectorPreviewResolution + PreviewX] = FColor(Gray, Gray, Gray, 255);
+		}
+	}
+
+	UTexture2D* Texture = UTexture2D::CreateTransient(
+		TerrainInspectorPreviewResolution,
+		TerrainInspectorPreviewResolution,
+		PF_B8G8R8A8);
+	if (!Texture || !Texture->GetPlatformData() || Texture->GetPlatformData()->Mips.IsEmpty())
+	{
+		ClearPreview();
+		return;
+	}
+
+	Texture->SRGB = false;
+	Texture->Filter = TF_Bilinear;
+	Texture->AddressX = TA_Clamp;
+	Texture->AddressY = TA_Clamp;
+	Texture->NeverStream = true;
+
+	FTexture2DMipMap& Mip = Texture->GetPlatformData()->Mips[0];
+	void* Data = Mip.BulkData.Lock(LOCK_READ_WRITE);
+	FMemory::Memcpy(Data, Pixels.GetData(), Pixels.Num() * sizeof(FColor));
+	Mip.BulkData.Unlock();
+	Texture->UpdateResource();
+
+	PreviewTexture.Reset(Texture);
+	PreviewBrush.SetResourceObject(Texture);
+	if (PreviewImage.IsValid())
+	{
+		PreviewImage->Invalidate(EInvalidateWidgetReason::Paint);
 	}
 }
 
@@ -301,10 +395,10 @@ FText SGaeaTerrainInspector::GetFieldMetadataText() const
 	const FGaeaGridDomain& Domain = Field->Domain;
 	const FVector2d CellSize = Domain.GetCellSize();
 	return FText::FromString(FString::Printf(
-		TEXT("%s\nUnit: %s   Interpolation: %s\nResolution: %d x %d   Border: %d\nWorld: [%.1f, %.1f] to [%.1f, %.1f]\nCell size: %.2f x %.2f"),
+		TEXT("%s\nUnit: %s   Interpolation: %s\nResolution: %d x %d   Border: %d\nWorld: [%.1f, %.1f] to [%.1f, %.1f]\nCell size: %.2f x %.2f\nPreview: %d x %d, bilinear"),
 		*Field->Descriptor.Name.ToString(),
-		*FieldUnitToString(Field->Descriptor.Unit),
-		*InterpolationToString(Field->Descriptor.Interpolation),
+		*TerrainInspectorFieldUnitToString(Field->Descriptor.Unit),
+		*TerrainInspectorInterpolationToString(Field->Descriptor.Interpolation),
 		Domain.Dimensions.X,
 		Domain.Dimensions.Y,
 		Domain.BorderSamples,
@@ -313,7 +407,25 @@ FText SGaeaTerrainInspector::GetFieldMetadataText() const
 		Domain.WorldMax.X,
 		Domain.WorldMax.Y,
 		CellSize.X,
-		CellSize.Y));
+		CellSize.Y,
+		TerrainInspectorPreviewResolution,
+		TerrainInspectorPreviewResolution));
+}
+
+FText SGaeaTerrainInspector::GetPreviewStatsText() const
+{
+	if (PreviewSampleCount <= 0)
+	{
+		return FText::GetEmpty();
+	}
+
+	return FText::FromString(FString::Printf(
+		TEXT("Min %.6g   Max %.6g   Mean %.6g   StdDev %.6g   Samples %lld"),
+		PreviewMinValue,
+		PreviewMaxValue,
+		PreviewMeanValue,
+		PreviewStdDev,
+		static_cast<long long>(PreviewSampleCount)));
 }
 
 FText SGaeaTerrainInspector::GetEmptyStateText() const
@@ -321,6 +433,10 @@ FText SGaeaTerrainInspector::GetEmptyStateText() const
 	if (!Snapshot.IsValid())
 	{
 		return FText::FromString(TEXT("Generate terrain, then press Refresh to inspect the latest published dataset."));
+	}
+	if (!GetSelectedField())
+	{
+		return FText::FromString(TEXT("Select a terrain field to inspect it."));
 	}
 	return FText::GetEmpty();
 }
