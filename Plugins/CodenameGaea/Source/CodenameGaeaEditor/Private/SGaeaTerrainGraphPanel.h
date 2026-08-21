@@ -43,6 +43,7 @@ private:
 	FReply OpenGraphAsset();
 	FReply SaveGraphAsset();
 	FReply EvaluateGraph();
+	bool EvaluateSelectedNodePreview();
 	uint32 ComputeAutoPreviewHash() const;
 	FText GetAssetText() const;
 	FText GetStatusText() const;
