@@ -13,6 +13,8 @@
 
 namespace
 {
+	constexpr double UnrealUnitsPerMetre = 100.0;
+
 	FString ResolveFileNodePath(const FGaeaTerrainNode& Node)
 	{
 		FString Path = Node.GetName(TEXT("File"), NAME_None).ToString();
@@ -23,24 +25,107 @@ namespace
 		return Path;
 	}
 
-	bool MakeFileNodeDomain(int32 Width, int32 Height, float WorldSize, FGaeaGridDomain& OutDomain, FString& Error)
+	bool MakeFileNodeDomain(
+		int32 Width,
+		int32 Height,
+		double ExtentXUnrealUnits,
+		double ExtentYUnrealUnits,
+		FGaeaGridDomain& OutDomain,
+		FString& Error)
 	{
 		if (Width < 2 || Height < 2)
 		{
 			Error = TEXT("File image must be at least 2x2 pixels.");
 			return false;
 		}
+		if (!FMath::IsFinite(ExtentXUnrealUnits) || !FMath::IsFinite(ExtentYUnrealUnits)
+			|| ExtentXUnrealUnits <= UE_DOUBLE_SMALL_NUMBER || ExtentYUnrealUnits <= UE_DOUBLE_SMALL_NUMBER)
+		{
+			Error = TEXT("File spatial extents must be finite and greater than zero.");
+			return false;
+		}
 
-		const double Half = static_cast<double>(WorldSize) * 0.5;
+		const double HalfX = ExtentXUnrealUnits * 0.5;
+		const double HalfY = ExtentYUnrealUnits * 0.5;
 		OutDomain = FGaeaGridDomain::Make(
 			FIntPoint(Width, Height),
-			FVector2d(-Half, -Half),
-			FVector2d(Half, Half));
+			FVector2d(-HalfX, -HalfY),
+			FVector2d(HalfX, HalfY));
 		if (!OutDomain.IsValid())
 		{
 			Error = TEXT("File produced an invalid grid domain.");
 			return false;
 		}
+		return true;
+	}
+
+	bool ResolveFileNodeSpatialExtents(
+		const FGaeaTerrainNode& Node,
+		int32 SourceWidth,
+		int32 SourceHeight,
+		int32 OutputWidth,
+		int32 OutputHeight,
+		double& OutExtentXUnrealUnits,
+		double& OutExtentYUnrealUnits,
+		FString& Error)
+	{
+		if (SourceWidth < 2 || SourceHeight < 2 || OutputWidth < 2 || OutputHeight < 2)
+		{
+			Error = TEXT("File image dimensions are invalid for spatial scaling.");
+			return false;
+		}
+
+		const double XYScale = FMath::Clamp(Node.GetNumber(TEXT("XYScale"), 1.0), 0.0001, 10000.0);
+		const bool bUseGroundSampleDistance = Node.GetBool(TEXT("UseGroundSampleDistance"), false);
+
+		double SourceExtentXMetres = 0.0;
+		double SourceExtentYMetres = 0.0;
+		if (bUseGroundSampleDistance)
+		{
+			const double GroundSampleDistanceXMetres = FMath::Clamp(
+				Node.GetNumber(TEXT("GroundSampleDistanceXMetres"), 1.0),
+				0.0001,
+				1000000.0);
+			const double GroundSampleDistanceYMetres = FMath::Clamp(
+				Node.GetNumber(TEXT("GroundSampleDistanceYMetres"), GroundSampleDistanceXMetres),
+				0.0001,
+				1000000.0);
+
+			// Terrain rasters are sampled on a grid. The physical distance from the
+			// first sample to the last is (sample count - 1) * sample spacing.
+			SourceExtentXMetres = static_cast<double>(SourceWidth - 1) * GroundSampleDistanceXMetres;
+			SourceExtentYMetres = static_cast<double>(SourceHeight - 1) * GroundSampleDistanceYMetres;
+		}
+		else
+		{
+			// WorldSize was the original File-node control and was expressed in UE
+			// units. Keep it as a fallback so existing graphs retain their scale.
+			const double LegacyWorldSizeUnrealUnits = FMath::Clamp(
+				Node.GetNumber(TEXT("WorldSize"), 100000.0),
+				1.0,
+				10000000000.0);
+			const double LegacyWorldSizeMetres = LegacyWorldSizeUnrealUnits / UnrealUnitsPerMetre;
+
+			SourceExtentXMetres = FMath::Clamp(
+				Node.GetNumber(TEXT("ExtentXMetres"), LegacyWorldSizeMetres),
+				0.001,
+				100000000.0);
+			SourceExtentYMetres = FMath::Clamp(
+				Node.GetNumber(TEXT("ExtentYMetres"), LegacyWorldSizeMetres),
+				0.001,
+				100000000.0);
+		}
+
+		// If CropToSquare removed samples, preserve the original ground sample
+		// distance rather than stretching the cropped raster back over the full
+		// source extent.
+		const double OutputFractionX = static_cast<double>(OutputWidth - 1) / static_cast<double>(SourceWidth - 1);
+		const double OutputFractionY = static_cast<double>(OutputHeight - 1) / static_cast<double>(SourceHeight - 1);
+		const double OutputExtentXMetres = SourceExtentXMetres * OutputFractionX * XYScale;
+		const double OutputExtentYMetres = SourceExtentYMetres * OutputFractionY * XYScale;
+
+		OutExtentXUnrealUnits = OutputExtentXMetres * UnrealUnitsPerMetre;
+		OutExtentYUnrealUnits = OutputExtentYMetres * UnrealUnitsPerMetre;
 		return true;
 	}
 
@@ -58,10 +143,6 @@ namespace
 			return false;
 		}
 
-		// UE 5.8: decode through the module-level FImage API. Do not call
-		// IImageWrapper::GetRawImage(FImage&) directly; keeping the wrapper
-		// implementation behind IImageWrapperModule avoids the unresolved
-		// GetRawImage symbol that can otherwise appear when linking this module.
 		IImageWrapperModule& ImageWrapperModule =
 			FModuleManager::LoadModuleChecked<IImageWrapperModule>(TEXT("ImageWrapper"));
 		if (!ImageWrapperModule.DecompressImage(Compressed.GetData(), Compressed.Num(), OutImage))
@@ -109,10 +190,24 @@ namespace
 		const int32 OutputHeight = bCropSquare ? FMath::Min(SourceWidth, SourceHeight) : SourceHeight;
 		const int32 CropX = bCropSquare ? (SourceWidth - OutputWidth) / 2 : 0;
 		const int32 CropY = bCropSquare ? (SourceHeight - OutputHeight) / 2 : 0;
-		const float WorldSize = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("WorldSize"), 100000.0)), 1.0f, 10000000.0f);
+
+		double ExtentXUnrealUnits = 0.0;
+		double ExtentYUnrealUnits = 0.0;
+		if (!ResolveFileNodeSpatialExtents(
+			Node,
+			SourceWidth,
+			SourceHeight,
+			OutputWidth,
+			OutputHeight,
+			ExtentXUnrealUnits,
+			ExtentYUnrealUnits,
+			Error))
+		{
+			return false;
+		}
 
 		FGaeaGridDomain Domain;
-		if (!MakeFileNodeDomain(OutputWidth, OutputHeight, WorldSize, Domain, Error)) return false;
+		if (!MakeFileNodeDomain(OutputWidth, OutputHeight, ExtentXUnrealUnits, ExtentYUnrealUnits, Domain, Error)) return false;
 
 		const bool bRGB = Node.GetBool(TEXT("IsRGB"), false);
 		const bool bAllowUnclamped = Node.GetBool(TEXT("AllowUnclamped"), false);
@@ -160,16 +255,27 @@ namespace
 		const FString Extension = FPaths::GetExtension(Path, false).ToLower();
 		const bool bTiff = Extension == TEXT("tif") || Extension == TEXT("tiff");
 		const bool bLooksLikeAbsoluteElevation = bTiff && (MinElevation < -UE_KINDA_SMALL_NUMBER || MaxElevation > 1.0001f);
-		float OutputHeightScale = FMath::Clamp(
-			static_cast<float>(Node.GetNumber(TEXT("HeightScale"), Context.HeightScale > UE_SMALL_NUMBER ? Context.HeightScale : 8000.0f)),
-			1.0f,
-			1000000.0f);
+
+		const double LegacyHeightScaleUnrealUnits = Context.HeightScale > UE_SMALL_NUMBER
+			? static_cast<double>(Context.HeightScale)
+			: 8000.0;
+		const double HeightScaleMetres = FMath::Clamp(
+			Node.GetNumber(TEXT("HeightScaleMetres"), LegacyHeightScaleUnrealUnits / UnrealUnitsPerMetre),
+			0.001,
+			1000000.0);
+		float OutputHeightScaleUnrealUnits = static_cast<float>(HeightScaleMetres * UnrealUnitsPerMetre);
+		float AbsoluteElevationNormalizationMetres = 1.0f;
 
 		if (bLooksLikeAbsoluteElevation)
 		{
-			// GeoTIFF DEMs commonly store signed/float elevations directly. Preserve
-			// zero as sea level by normalizing around zero rather than min/max shifting.
-			OutputHeightScale = FMath::Clamp(FMath::Max(FMath::Abs(MinElevation), FMath::Abs(MaxElevation)), 1.0f, 1000000.0f);
+			// GeoTIFF DEMs commonly store signed/float elevations directly in
+			// metres. Keep zero exactly at sea level, normalize only for storage,
+			// then convert the physical vertical range to UE centimetres.
+			AbsoluteElevationNormalizationMetres = FMath::Max(
+				FMath::Max(FMath::Abs(MinElevation), FMath::Abs(MaxElevation)),
+				1.0f);
+			OutputHeightScaleUnrealUnits = static_cast<float>(
+				static_cast<double>(AbsoluteElevationNormalizationMetres) * UnrealUnitsPerMetre);
 		}
 
 		FGaeaFieldDescriptor Descriptor;
@@ -187,7 +293,7 @@ namespace
 				float Value = FMath::IsFinite(Raw) ? Raw : 0.0f;
 				if (bLooksLikeAbsoluteElevation)
 				{
-					Value /= OutputHeightScale;
+					Value /= AbsoluteElevationNormalizationMetres;
 				}
 				else if (!bAllowUnclamped)
 				{
@@ -203,7 +309,7 @@ namespace
 			Error = TEXT("File could not publish its Height field.");
 			return false;
 		}
-		Out.Outputs.Add(TEXT("Out"), FGaeaTerrainValue::MakeTerrain(MoveTemp(Dataset), OutputHeightScale));
+		Out.Outputs.Add(TEXT("Out"), FGaeaTerrainValue::MakeTerrain(MoveTemp(Dataset), OutputHeightScaleUnrealUnits));
 		return true;
 	}
 }
