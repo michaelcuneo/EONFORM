@@ -3,9 +3,16 @@
 #include "GaeaEditorGraph.h"
 #include "Widgets/SNullWidget.h"
 
-namespace GaeaEditorGraphPins
+namespace
 {
-	const FName Terrain(TEXT("GaeaTerrain"));
+	bool IsEonformGraphPin(const UEdGraphPin* Pin)
+	{
+		if (!Pin) return false;
+		const FName Category = Pin->PinType.PinCategory;
+		return Category == GaeaEditorGraphPins::Terrain
+			|| Category == GaeaEditorGraphPins::ScalarField
+			|| Category == GaeaEditorGraphPins::Any;
+	}
 }
 
 void SGaeaTerrainGraphPin::Construct(const FArguments& InArgs, UEdGraphPin* InPin)
@@ -21,7 +28,7 @@ TSharedRef<SWidget> SGaeaTerrainGraphPin::GetDefaultValueWidget()
 
 TSharedPtr<SGraphPin> FGaeaTerrainGraphPinFactory::CreatePin(UEdGraphPin* Pin) const
 {
-	if (!Pin || Pin->PinType.PinCategory != GaeaEditorGraphPins::Terrain)
+	if (!IsEonformGraphPin(Pin))
 	{
 		return nullptr;
 	}
