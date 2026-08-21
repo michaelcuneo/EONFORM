@@ -10,6 +10,7 @@
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Layout/SSplitter.h"
+#include "Widgets/SNullWidget.h"
 #include "Widgets/Text/STextBlock.h"
 #include "Widgets/Views/SListView.h"
 #include "Widgets/Views/STableRow.h"
@@ -339,6 +340,9 @@ void SGaeaTerrainInspector::Construct(const FArguments& InArgs)
 {
 	PreviewBrush.DrawAs = ESlateBrushDrawType::Image;
 	PreviewBrush.ImageSize = FVector2D(TerrainInspectorPreviewResolution, TerrainInspectorPreviewResolution);
+	const TSharedRef<SWidget> OutputPanel = InArgs._OutputPanel.IsValid()
+		? InArgs._OutputPanel.ToSharedRef()
+		: SNullWidget::NullWidget;
 
 	ChildSlot
 	[
@@ -382,7 +386,7 @@ void SGaeaTerrainInspector::Construct(const FArguments& InArgs)
 			[
 				SNew(SSplitter)
 				+ SSplitter::Slot()
-				.Value(0.28f)
+				.Value(0.22f)
 				[
 					SNew(SBorder)
 					.Padding(6.0f)
@@ -408,7 +412,7 @@ void SGaeaTerrainInspector::Construct(const FArguments& InArgs)
 				]
 
 				+ SSplitter::Slot()
-				.Value(0.72f)
+				.Value(0.52f)
 				[
 					SNew(SBorder)
 					.Padding(8.0f)
@@ -456,6 +460,12 @@ void SGaeaTerrainInspector::Construct(const FArguments& InArgs)
 							.Text(this, &SGaeaTerrainInspector::GetEmptyStateText)
 						]
 					]
+				]
+
+				+ SSplitter::Slot()
+				.Value(0.26f)
+				[
+					OutputPanel
 				]
 			]
 		]
