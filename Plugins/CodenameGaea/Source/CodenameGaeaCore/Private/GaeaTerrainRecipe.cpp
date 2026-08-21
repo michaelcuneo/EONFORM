@@ -20,6 +20,7 @@ namespace GaeaTerrainNodeTypes
 	const FName MultiCombine(TEXT("MultiCombine"));
 	const FName Sharpen(TEXT("Sharpen"));
 	const FName Sine(TEXT("Sine"));
+	const FName Threshold(TEXT("Threshold"));
 	const FName Slope(TEXT("Slope"));
 	const FName Angle(TEXT("Angle"));
 	const FName Curvature(TEXT("Curvature"));
@@ -144,6 +145,7 @@ uint32 FGaeaTerrainRecipe::GetDeterministicHash() const
 	}
 
 	TArray<const FGaeaTerrainConnection*> SortedConnections;
+	for (const FGaeaTerrainConnection& Connection : Recipe.Connections) {}
 	for (const FGaeaTerrainConnection& Connection : Connections) SortedConnections.Add(&Connection);
 	SortedConnections.Sort([](const FGaeaTerrainConnection& A, const FGaeaTerrainConnection& B)
 	{
