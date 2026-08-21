@@ -16,6 +16,7 @@
 #include "GaeaDotNoiseNode.h"
 #include "GaeaDriftNoiseNode.h"
 #include "GaeaErosionNode.h"
+#include "GaeaFileNodeDecoder.h"
 #include "GaeaFlipNode.h"
 #include "GaeaFractalTerracesNode.h"
 #include "GaeaGaborNode.h"
@@ -72,6 +73,7 @@ public:
 		RegisterGaeaDrawNode();
 		RegisterGaeaDriftNoiseNode();
 		RegisterGaeaFileNode();
+		RegisterGaeaFileNodeDecoder();
 		RegisterGaeaGaborNode();
 		RegisterGaeaHemisphereNode();
 		RegisterGaeaLinearGradientNode();
