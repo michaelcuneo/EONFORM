@@ -7,7 +7,8 @@ enum class EGaeaTerrainParameterType : uint8
 	Number,
 	Integer,
 	Boolean,
-	Name
+	Name,
+	Range
 };
 
 struct CODENAMEGAEACORE_API FGaeaTerrainPortDescriptor
@@ -29,6 +30,11 @@ struct CODENAMEGAEACORE_API FGaeaTerrainParameterDescriptor
 	bool DefaultBoolean = false;
 	FName DefaultName = NAME_None;
 	TArray<FName> NameOptions;
+
+	// Range parameters are stored in the node's NumericParameters map as
+	// <Name>Min and <Name>Max so recipes remain runtime/editor independent.
+	double DefaultRangeMin = 0.0;
+	double DefaultRangeMax = 1.0;
 
 	bool bHasMinimum = false;
 	double Minimum = 0.0;
