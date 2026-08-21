@@ -11,5 +11,10 @@ public class CodenameGaeaCore : ModuleRules
             "Core",
             "CoreUObject"
         });
+
+        PrivateDependencyModuleNames.AddRange(new string[]
+        {
+            "ImageWrapper"
+        });
     }
 }
