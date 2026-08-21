@@ -60,6 +60,7 @@ private:
 
 	uint32 LastAutoPreviewHash = 0;
 	float AutoPreviewPollAccumulator = 0.0f;
+	FGuid LastPreviewNodeId;
 	bool bAutoPreviewInitialized = false;
 	bool bAutoPreviewEvaluating = false;
 	bool bLegacyEvaluateButtonHidden = false;
