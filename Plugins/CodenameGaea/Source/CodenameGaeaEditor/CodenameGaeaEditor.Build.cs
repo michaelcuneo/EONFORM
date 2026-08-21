@@ -20,6 +20,7 @@ public class CodenameGaeaEditor : ModuleRules
             "AssetRegistry",
             "AssetTools",
             "ContentBrowser",
+            "DesktopPlatform",
             "GraphEditor",
             "InputCore",
             "UnrealEd",
