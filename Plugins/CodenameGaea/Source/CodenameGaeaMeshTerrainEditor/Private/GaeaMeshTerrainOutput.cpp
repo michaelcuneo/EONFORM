@@ -2,6 +2,7 @@
 
 #include "DynamicMesh/DynamicMesh3.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 #include "GaeaTerrainMeshMaterializer.h"
 #include "MeshPartition.h"
 #include "MeshPartitionDefinition.h"
