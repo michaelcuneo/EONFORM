@@ -23,6 +23,7 @@
 #include "Widgets/Input/SNumericEntryBox.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SBox.h"
+#include "Widgets/Layout/SScrollBox.h"
 #include "Widgets/Layout/SSplitter.h"
 #include "Widgets/SNullWidget.h"
 #include "Widgets/Text/STextBlock.h"
@@ -183,9 +184,13 @@ void SGaeaTerrainGraphPanel::Construct(const FArguments& InArgs)
 					.Padding(8.0f)
 					.BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
 					[
-						SAssignNew(ParameterPanel, SVerticalBox)
+						SNew(SScrollBox)
+						.Orientation(Orient_Vertical)
+						+ SScrollBox::Slot()
+						[
+							SAssignNew(ParameterPanel, SVerticalBox)
+						]
 					]
-				]
 			]
 
 			+ SVerticalBox::Slot()
@@ -381,7 +386,7 @@ bool SGaeaTerrainGraphPanel::BuildRecipeFromEditorGraph(
 	UGaeaEditorGraphNode* OutputSourceNode = Cast<UGaeaEditorGraphNode>(TerrainOutputInput->LinkedTo[0]->GetOwningNode());
 	if (!OutputSourceNode || OutputSourceNode->RecipeNodeType == GaeaEditorNodeTypes::TerrainOutput)
 	{
-		OutError = TEXT("Terrain Output is not connected to a valid terrain node.");
+		OutError = TEXT("Terrain Output is not connected to a valid terrain node."));
 		return false;
 	}
 	OutRecipe.OutputNode = OutputSourceNode->RecipeNodeId;
