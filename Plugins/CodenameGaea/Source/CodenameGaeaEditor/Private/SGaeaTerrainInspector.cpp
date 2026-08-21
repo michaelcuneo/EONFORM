@@ -2,6 +2,7 @@
 
 #include "Engine/Texture2D.h"
 #include "GaeaScalarField.h"
+#include "GaeaTerrainFieldNames.h"
 #include "SGaeaTerrainGraphPanel.h"
 #include "Styling/AppStyle.h"
 #include "Widgets/Images/SImage.h"
@@ -16,6 +17,34 @@
 namespace
 {
 	constexpr int32 TerrainInspectorPreviewResolution = 256;
+
+	enum class ETerrainInspectorPalette : uint8
+	{
+		Grayscale,
+		Height,
+		Slope,
+		Flow,
+		Rainfall,
+		Erosion,
+		Deposition,
+		Evaporation,
+		RockHardness,
+		Weathering,
+		SoilDepth,
+		Thermal,
+		Mountain,
+		Foothill,
+		Plains,
+		Concavity,
+		Convexity
+	};
+
+	struct FTerrainInspectorVisualisation
+	{
+		ETerrainInspectorPalette Palette = ETerrainInspectorPalette::Grayscale;
+		const TCHAR* Name = TEXT("Grayscale");
+		const TCHAR* Legend = TEXT("Low -> High");
+	};
 
 	FString TerrainInspectorFieldUnitToString(EGaeaFieldUnit Unit)
 	{
@@ -57,6 +86,252 @@ namespace
 		const float A = FMath::Lerp(Field.AtInterior(X0, Y0), Field.AtInterior(X1, Y0), TX);
 		const float B = FMath::Lerp(Field.AtInterior(X0, Y1), Field.AtInterior(X1, Y1), TX);
 		return FMath::Lerp(A, B, TY);
+	}
+
+	FLinearColor TerrainInspectorLerpColor(const FLinearColor& A, const FLinearColor& B, float T)
+	{
+		return FLinearColor(
+			FMath::Lerp(A.R, B.R, T),
+			FMath::Lerp(A.G, B.G, T),
+			FMath::Lerp(A.B, B.B, T),
+			1.0f);
+	}
+
+	FLinearColor TerrainInspectorThreeStop(
+		float T,
+		const FLinearColor& A,
+		const FLinearColor& B,
+		const FLinearColor& C)
+	{
+		T = FMath::Clamp(T, 0.0f, 1.0f);
+		return T < 0.5f
+			? TerrainInspectorLerpColor(A, B, T * 2.0f)
+			: TerrainInspectorLerpColor(B, C, (T - 0.5f) * 2.0f);
+	}
+
+	FLinearColor TerrainInspectorFourStop(
+		float T,
+		const FLinearColor& A,
+		const FLinearColor& B,
+		const FLinearColor& C,
+		const FLinearColor& D)
+	{
+		T = FMath::Clamp(T, 0.0f, 1.0f);
+		if (T < 1.0f / 3.0f)
+		{
+			return TerrainInspectorLerpColor(A, B, T * 3.0f);
+		}
+		if (T < 2.0f / 3.0f)
+		{
+			return TerrainInspectorLerpColor(B, C, (T - 1.0f / 3.0f) * 3.0f);
+		}
+		return TerrainInspectorLerpColor(C, D, (T - 2.0f / 3.0f) * 3.0f);
+	}
+
+	FTerrainInspectorVisualisation TerrainInspectorGetVisualisation(FName FieldName)
+	{
+		if (FieldName == GaeaTerrainFieldNames::Height || FieldName == GaeaTerrainFieldNames::Elevation)
+		{
+			return { ETerrainInspectorPalette::Height, TEXT("Hypsometric"), TEXT("Deep water -> shallow water -> sea level 0 -> lowland -> highland -> peak") };
+		}
+		if (FieldName == GaeaTerrainFieldNames::SlopeDegrees)
+		{
+			return { ETerrainInspectorPalette::Slope, TEXT("Slope"), TEXT("Flat -> rolling -> steep -> near-vertical") };
+		}
+		if (FieldName == GaeaTerrainFieldNames::Flow)
+		{
+			return { ETerrainInspectorPalette::Flow, TEXT("Drainage Flow"), TEXT("Low flow -> channel -> major drainage") };
+		}
+		if (FieldName == GaeaTerrainFieldNames::Rainfall)
+		{
+			return { ETerrainInspectorPalette::Rainfall, TEXT("Rainfall"), TEXT("Dry -> moderate precipitation -> high precipitation") };
+		}
+		if (FieldName == GaeaTerrainFieldNames::HydraulicErosion || FieldName == GaeaTerrainFieldNames::Wear)
+		{
+			return { ETerrainInspectorPalette::Erosion, TEXT("Erosion"), TEXT("Stable -> active erosion -> severe incision/wear") };
+		}
+		if (FieldName == GaeaTerrainFieldNames::Deposition || FieldName == GaeaTerrainFieldNames::Deposits)
+		{
+			return { ETerrainInspectorPalette::Deposition, TEXT("Deposition"), TEXT("No deposition -> accumulating sediment -> major deposit") };
+		}
+		if (FieldName == GaeaTerrainFieldNames::Evaporation)
+		{
+			return { ETerrainInspectorPalette::Evaporation, TEXT("Evaporation"), TEXT("Low evaporation -> drying -> high evaporation") };
+		}
+		if (FieldName == GaeaTerrainFieldNames::RockHardness)
+		{
+			return { ETerrainInspectorPalette::RockHardness, TEXT("Rock Hardness"), TEXT("Soft material -> competent rock -> very hard rock") };
+		}
+		if (FieldName == GaeaTerrainFieldNames::Weathering)
+		{
+			return { ETerrainInspectorPalette::Weathering, TEXT("Weathering"), TEXT("Fresh rock -> weathered -> heavily weathered") };
+		}
+		if (FieldName == GaeaTerrainFieldNames::SoilDepth)
+		{
+			return { ETerrainInspectorPalette::SoilDepth, TEXT("Soil Depth"), TEXT("Exposed substrate -> shallow soil -> deep soil") };
+		}
+		if (FieldName == GaeaTerrainFieldNames::Thermal)
+		{
+			return { ETerrainInspectorPalette::Thermal, TEXT("Thermal Process"), TEXT("Low thermal activity -> active -> high activity") };
+		}
+		if (FieldName == GaeaTerrainFieldNames::Mountain)
+		{
+			return { ETerrainInspectorPalette::Mountain, TEXT("Mountain Region"), TEXT("Outside region -> mountain influence") };
+		}
+		if (FieldName == GaeaTerrainFieldNames::Foothill)
+		{
+			return { ETerrainInspectorPalette::Foothill, TEXT("Foothill Region"), TEXT("Outside region -> foothill influence") };
+		}
+		if (FieldName == GaeaTerrainFieldNames::Plains)
+		{
+			return { ETerrainInspectorPalette::Plains, TEXT("Plains Region"), TEXT("Outside region -> plains influence") };
+		}
+		if (FieldName == GaeaTerrainFieldNames::Concavity)
+		{
+			return { ETerrainInspectorPalette::Concavity, TEXT("Concavity"), TEXT("Low concavity -> strongly concave terrain") };
+		}
+		if (FieldName == GaeaTerrainFieldNames::Convexity)
+		{
+			return { ETerrainInspectorPalette::Convexity, TEXT("Convexity"), TEXT("Low convexity -> strongly convex terrain") };
+		}
+		return {};
+	}
+
+	FLinearColor TerrainInspectorColorForValue(
+		const FTerrainInspectorVisualisation& Visualisation,
+		float Value,
+		float Minimum,
+		float Maximum)
+	{
+		const float Range = FMath::Max(Maximum - Minimum, UE_SMALL_NUMBER);
+		float T = FMath::Clamp((Value - Minimum) / Range, 0.0f, 1.0f);
+
+		switch (Visualisation.Palette)
+		{
+		case ETerrainInspectorPalette::Height:
+		{
+			if (Minimum < 0.0f && Maximum > 0.0f)
+			{
+				if (Value < 0.0f)
+				{
+					const float WaterT = FMath::Clamp((Value - Minimum) / FMath::Max(-Minimum, UE_SMALL_NUMBER), 0.0f, 1.0f);
+					return TerrainInspectorThreeStop(
+						WaterT,
+						FLinearColor(0.005f, 0.015f, 0.08f),
+						FLinearColor(0.015f, 0.16f, 0.42f),
+						FLinearColor(0.05f, 0.55f, 0.78f));
+				}
+
+				const float LandT = FMath::Clamp(Value / FMath::Max(Maximum, UE_SMALL_NUMBER), 0.0f, 1.0f);
+				if (LandT < 0.12f)
+				{
+					return TerrainInspectorLerpColor(
+						FLinearColor(0.76f, 0.70f, 0.46f),
+						FLinearColor(0.18f, 0.46f, 0.18f),
+						LandT / 0.12f);
+				}
+				return TerrainInspectorFourStop(
+					(LandT - 0.12f) / 0.88f,
+					FLinearColor(0.18f, 0.46f, 0.18f),
+					FLinearColor(0.42f, 0.36f, 0.18f),
+					FLinearColor(0.42f, 0.40f, 0.38f),
+					FLinearColor(0.95f, 0.97f, 1.0f));
+			}
+
+			return TerrainInspectorFourStop(
+				T,
+				FLinearColor(0.12f, 0.30f, 0.12f),
+				FLinearColor(0.42f, 0.42f, 0.18f),
+				FLinearColor(0.42f, 0.38f, 0.34f),
+				FLinearColor(0.96f, 0.98f, 1.0f));
+		}
+		case ETerrainInspectorPalette::Slope:
+			return TerrainInspectorFourStop(
+				T,
+				FLinearColor(0.05f, 0.25f, 0.08f),
+				FLinearColor(0.75f, 0.72f, 0.08f),
+				FLinearColor(0.92f, 0.28f, 0.03f),
+				FLinearColor(0.98f, 0.95f, 0.90f));
+		case ETerrainInspectorPalette::Flow:
+			T = FMath::Pow(T, 0.35f);
+			return TerrainInspectorFourStop(
+				T,
+				FLinearColor(0.005f, 0.008f, 0.025f),
+				FLinearColor(0.015f, 0.12f, 0.42f),
+				FLinearColor(0.02f, 0.70f, 0.92f),
+				FLinearColor(0.92f, 1.0f, 1.0f));
+		case ETerrainInspectorPalette::Rainfall:
+			return TerrainInspectorFourStop(
+				T,
+				FLinearColor(0.35f, 0.20f, 0.06f),
+				FLinearColor(0.62f, 0.55f, 0.18f),
+				FLinearColor(0.08f, 0.48f, 0.34f),
+				FLinearColor(0.08f, 0.42f, 0.90f));
+		case ETerrainInspectorPalette::Erosion:
+			T = FMath::Pow(T, 0.65f);
+			return TerrainInspectorFourStop(
+				T,
+				FLinearColor(0.025f, 0.025f, 0.035f),
+				FLinearColor(0.55f, 0.42f, 0.03f),
+				FLinearColor(0.92f, 0.28f, 0.015f),
+				FLinearColor(1.0f, 0.92f, 0.32f));
+		case ETerrainInspectorPalette::Deposition:
+			T = FMath::Pow(T, 0.65f);
+			return TerrainInspectorFourStop(
+				T,
+				FLinearColor(0.025f, 0.02f, 0.015f),
+				FLinearColor(0.28f, 0.14f, 0.045f),
+				FLinearColor(0.72f, 0.48f, 0.12f),
+				FLinearColor(0.98f, 0.88f, 0.55f));
+		case ETerrainInspectorPalette::Evaporation:
+			return TerrainInspectorFourStop(
+				T,
+				FLinearColor(0.06f, 0.03f, 0.16f),
+				FLinearColor(0.42f, 0.08f, 0.34f),
+				FLinearColor(0.94f, 0.26f, 0.03f),
+				FLinearColor(1.0f, 0.88f, 0.18f));
+		case ETerrainInspectorPalette::RockHardness:
+			return TerrainInspectorFourStop(
+				T,
+				FLinearColor(0.24f, 0.10f, 0.04f),
+				FLinearColor(0.46f, 0.32f, 0.20f),
+				FLinearColor(0.42f, 0.44f, 0.47f),
+				FLinearColor(0.90f, 0.92f, 0.94f));
+		case ETerrainInspectorPalette::Weathering:
+			return TerrainInspectorFourStop(
+				T,
+				FLinearColor(0.10f, 0.07f, 0.05f),
+				FLinearColor(0.38f, 0.18f, 0.06f),
+				FLinearColor(0.72f, 0.38f, 0.10f),
+				FLinearColor(0.92f, 0.75f, 0.48f));
+		case ETerrainInspectorPalette::SoilDepth:
+			return TerrainInspectorFourStop(
+				T,
+				FLinearColor(0.035f, 0.025f, 0.02f),
+				FLinearColor(0.18f, 0.08f, 0.025f),
+				FLinearColor(0.42f, 0.22f, 0.08f),
+				FLinearColor(0.68f, 0.50f, 0.28f));
+		case ETerrainInspectorPalette::Thermal:
+			return TerrainInspectorFourStop(
+				T,
+				FLinearColor(0.04f, 0.025f, 0.12f),
+				FLinearColor(0.35f, 0.04f, 0.50f),
+				FLinearColor(0.90f, 0.12f, 0.28f),
+				FLinearColor(1.0f, 0.72f, 0.12f));
+		case ETerrainInspectorPalette::Mountain:
+			return TerrainInspectorLerpColor(FLinearColor(0.01f, 0.01f, 0.012f), FLinearColor(0.94f, 0.94f, 0.98f), T);
+		case ETerrainInspectorPalette::Foothill:
+			return TerrainInspectorLerpColor(FLinearColor(0.01f, 0.01f, 0.012f), FLinearColor(0.76f, 0.48f, 0.12f), T);
+		case ETerrainInspectorPalette::Plains:
+			return TerrainInspectorLerpColor(FLinearColor(0.01f, 0.01f, 0.012f), FLinearColor(0.28f, 0.72f, 0.20f), T);
+		case ETerrainInspectorPalette::Concavity:
+			return TerrainInspectorThreeStop(T, FLinearColor(0.01f, 0.01f, 0.015f), FLinearColor(0.02f, 0.20f, 0.34f), FLinearColor(0.04f, 0.92f, 0.94f));
+		case ETerrainInspectorPalette::Convexity:
+			return TerrainInspectorThreeStop(T, FLinearColor(0.01f, 0.01f, 0.015f), FLinearColor(0.32f, 0.05f, 0.32f), FLinearColor(0.96f, 0.20f, 0.78f));
+		case ETerrainInspectorPalette::Grayscale:
+		default:
+			return FLinearColor(T, T, T, 1.0f);
+		}
 	}
 }
 
@@ -119,7 +394,7 @@ void SGaeaTerrainInspector::Construct(const FArguments& InArgs)
 						.Padding(0.0f, 0.0f, 0.0f, 4.0f)
 						[
 							SNew(STextBlock)
-							.Text(FText::FromString(TEXT("Terrain Fields")))
+							.Text(FText::FromString(TEXT("Analysis Fields")))
 						]
 						+ SVerticalBox::Slot()
 						.FillHeight(1.0f)
@@ -317,7 +592,7 @@ void SGaeaTerrainInspector::RebuildPreview()
 			- static_cast<double>(PreviewMeanValue) * static_cast<double>(PreviewMeanValue));
 	PreviewStdDev = static_cast<float>(FMath::Sqrt(Variance));
 
-	const float Range = FMath::Max(PreviewMaxValue - PreviewMinValue, UE_SMALL_NUMBER);
+	const FTerrainInspectorVisualisation Visualisation = TerrainInspectorGetVisualisation(SelectedFieldName);
 	TArray<FColor> Pixels;
 	Pixels.SetNumUninitialized(TerrainInspectorPreviewResolution * TerrainInspectorPreviewResolution);
 
@@ -333,9 +608,12 @@ void SGaeaTerrainInspector::RebuildPreview()
 				/ static_cast<double>(TerrainInspectorPreviewResolution - 1)
 				* static_cast<double>(Dimensions.X - 1);
 			const float Value = TerrainInspectorSampleBilinear(*Field, SourceX, SourceY);
-			const float Normalized = FMath::Clamp((Value - PreviewMinValue) / Range, 0.0f, 1.0f);
-			const uint8 Gray = static_cast<uint8>(FMath::RoundToInt(Normalized * 255.0f));
-			Pixels[PreviewY * TerrainInspectorPreviewResolution + PreviewX] = FColor(Gray, Gray, Gray, 255);
+			const FLinearColor Color = TerrainInspectorColorForValue(
+				Visualisation,
+				Value,
+				PreviewMinValue,
+				PreviewMaxValue);
+			Pixels[PreviewY * TerrainInspectorPreviewResolution + PreviewX] = Color.ToFColor(true);
 		}
 	}
 
@@ -349,7 +627,7 @@ void SGaeaTerrainInspector::RebuildPreview()
 		return;
 	}
 
-	Texture->SRGB = false;
+	Texture->SRGB = true;
 	Texture->Filter = TF_Bilinear;
 	Texture->AddressX = TA_Clamp;
 	Texture->AddressY = TA_Clamp;
@@ -394,8 +672,9 @@ FText SGaeaTerrainInspector::GetFieldMetadataText() const
 
 	const FGaeaGridDomain& Domain = Field->Domain;
 	const FVector2d CellSize = Domain.GetCellSize();
+	const FTerrainInspectorVisualisation Visualisation = TerrainInspectorGetVisualisation(SelectedFieldName);
 	return FText::FromString(FString::Printf(
-		TEXT("%s\nUnit: %s   Interpolation: %s\nResolution: %d x %d   Border: %d\nWorld: [%.1f, %.1f] to [%.1f, %.1f]\nCell size: %.2f x %.2f\nPreview: %d x %d, bilinear"),
+		TEXT("%s\nUnit: %s   Interpolation: %s\nResolution: %d x %d   Border: %d\nWorld: [%.1f, %.1f] to [%.1f, %.1f]\nCell size: %.2f x %.2f\nVisualisation: %s\nLegend: %s\nPreview: %d x %d, bilinear"),
 		*Field->Descriptor.Name.ToString(),
 		*TerrainInspectorFieldUnitToString(Field->Descriptor.Unit),
 		*TerrainInspectorInterpolationToString(Field->Descriptor.Interpolation),
@@ -408,6 +687,8 @@ FText SGaeaTerrainInspector::GetFieldMetadataText() const
 		Domain.WorldMax.Y,
 		CellSize.X,
 		CellSize.Y,
+		Visualisation.Name,
+		Visualisation.Legend,
 		TerrainInspectorPreviewResolution,
 		TerrainInspectorPreviewResolution));
 }
