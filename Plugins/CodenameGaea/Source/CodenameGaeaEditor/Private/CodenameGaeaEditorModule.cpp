@@ -9,6 +9,7 @@
 #include "GaeaTerrainDatasetRegistry.h"
 #include "GaeaTerrainDynamicMeshActor.h"
 #include "GaeaTerrainGraphNode.h"
+#include "GaeaTerrainGraphPin.h"
 #include "Misc/MessageDialog.h"
 #include "SGaeaTerrainInspector.h"
 #include "ToolMenus.h"
@@ -33,6 +34,9 @@ public:
 		TerrainGraphNodeFactory = MakeShared<FGaeaTerrainGraphNodeFactory>();
 		FEdGraphUtilities::RegisterVisualNodeFactory(TerrainGraphNodeFactory);
 
+		TerrainGraphPinFactory = MakeShared<FGaeaTerrainGraphPinFactory>();
+		FEdGraphUtilities::RegisterVisualPinFactory(TerrainGraphPinFactory);
+
 		FGlobalTabmanager::Get()->RegisterNomadTabSpawner(
 			CodenameGaeaTabName,
 			FOnSpawnTab::CreateRaw(this, &FCodenameGaeaEditorModule::SpawnCodenameGaeaTab))
@@ -46,6 +50,12 @@ public:
 
 	virtual void ShutdownModule() override
 	{
+		if (TerrainGraphPinFactory.IsValid())
+		{
+			FEdGraphUtilities::UnregisterVisualPinFactory(TerrainGraphPinFactory);
+			TerrainGraphPinFactory.Reset();
+		}
+
 		if (TerrainGraphNodeFactory.IsValid())
 		{
 			FEdGraphUtilities::UnregisterVisualNodeFactory(TerrainGraphNodeFactory);
@@ -179,6 +189,7 @@ private:
 	}
 
 	TSharedPtr<FGaeaTerrainGraphNodeFactory> TerrainGraphNodeFactory;
+	TSharedPtr<FGaeaTerrainGraphPinFactory> TerrainGraphPinFactory;
 };
 
 IMPLEMENT_MODULE(FCodenameGaeaEditorModule, CodenameGaeaEditor)
