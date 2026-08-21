@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GaeaMeshTerrainOutput.h"
 #include "GaeaTerrainGraphAsset.h"
+#include "Widgets/Layout/SBox.h"
 #include "Widgets/SCompoundWidget.h"
 
 class STextBlock;
