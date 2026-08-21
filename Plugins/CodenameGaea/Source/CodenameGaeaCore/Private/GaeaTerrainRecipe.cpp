@@ -34,10 +34,20 @@ namespace GaeaTerrainNodeTypes
 	const FName HydraulicErosion(TEXT("HydraulicErosion"));
 	const FName Combine(TEXT("Combine"));
 	const FName Clamp(TEXT("Clamp"));
+	const FName Adjust(TEXT("Adjust"));
+	const FName Aperture(TEXT("Aperture"));
 	const FName AutoLevel(TEXT("AutoLevel"));
+	const FName BlobRemover(TEXT("BlobRemover"));
 	const FName Blur(TEXT("Blur"));
+	const FName Clip(TEXT("Clip"));
+	const FName Deflate(TEXT("Deflate"));
 	const FName Denoise(TEXT("Denoise"));
+	const FName Dilate(TEXT("Dilate"));
+	const FName Distance(TEXT("Distance"));
+	const FName Equalize(TEXT("Equalize"));
+	const FName Extend(TEXT("Extend"));
 	const FName Flip(TEXT("Flip"));
+	const FName Median(TEXT("Median"));
 	const FName Invert(TEXT("Invert"));
 	const FName MultiCombine(TEXT("MultiCombine"));
 	const FName Sharpen(TEXT("Sharpen"));
@@ -45,7 +55,6 @@ namespace GaeaTerrainNodeTypes
 	const FName Threshold(TEXT("Threshold"));
 	const FName Transform(TEXT("Transform"));
 	const FName ZeroBorders(TEXT("ZeroBorders"));
-	const FName Distance(TEXT("Distance"));
 	const FName FractalTerraces(TEXT("FractalTerraces"));
 	const FName Recurve(TEXT("Recurve"));
 	const FName Shaper(TEXT("Shaper"));
