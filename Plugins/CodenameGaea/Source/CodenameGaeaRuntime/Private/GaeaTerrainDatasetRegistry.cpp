@@ -8,19 +8,80 @@ namespace
 {
 	FCriticalSection RegistryMutex;
 	TMap<FName, FGaeaTerrainDatasetSnapshot> Registry;
+	TMap<FName, FGaeaTerrainHeightStatistics> HeightStatistics;
 	uint64 NextRevision = 1;
 	FName LatestSourceId = NAME_None;
+
+	FGaeaTerrainHeightStatistics BuildHeightStatistics(const FGaeaTerrainDataset& Dataset)
+	{
+		FGaeaTerrainHeightStatistics Statistics;
+		const FGaeaScalarField* HeightField = Dataset.FindScalarField(GaeaTerrainFieldNames::Height);
+		if (!HeightField)
+		{
+			HeightField = Dataset.FindScalarField(GaeaTerrainFieldNames::Elevation);
+		}
+		if (!HeightField || !HeightField->IsValid())
+		{
+			return Statistics;
+		}
+
+		Statistics.Resolution = HeightField->Domain.Dimensions;
+		Statistics.Minimum = TNumericLimits<double>::Max();
+		Statistics.Maximum = TNumericLimits<double>::Lowest();
+		double Sum = 0.0;
+		constexpr double SeaTolerance = 1.0e-6;
+
+		for (int32 Y = 0; Y < HeightField->Domain.Dimensions.Y; ++Y)
+		{
+			for (int32 X = 0; X < HeightField->Domain.Dimensions.X; ++X)
+			{
+				const double Value = static_cast<double>(HeightField->AtInterior(X, Y));
+				Statistics.Minimum = FMath::Min(Statistics.Minimum, Value);
+				Statistics.Maximum = FMath::Max(Statistics.Maximum, Value);
+				Sum += Value;
+				++Statistics.SampleCount;
+
+				if (Value > SeaTolerance)
+				{
+					++Statistics.LandSampleCount;
+				}
+				else if (Value < -SeaTolerance)
+				{
+					++Statistics.UnderwaterSampleCount;
+				}
+				else
+				{
+					++Statistics.SeaLevelSampleCount;
+				}
+			}
+		}
+
+		if (Statistics.SampleCount > 0)
+		{
+			Statistics.Mean = Sum / static_cast<double>(Statistics.SampleCount);
+		}
+		else
+		{
+			Statistics.Minimum = 0.0;
+			Statistics.Maximum = 0.0;
+		}
+		return Statistics;
+	}
 
 	uint64 PublishInternal(
 		FName SourceId,
 		FGaeaTerrainDataset&& Dataset,
 		const FGaeaTerrainDatasetMetadata& Metadata)
 	{
-		if (SourceId.IsNone() || Dataset.IsEmpty() || Metadata.HeightScale <= UE_SMALL_NUMBER)
+		if (SourceId.IsNone()
+			|| Dataset.IsEmpty()
+			|| Metadata.HeightScale <= UE_SMALL_NUMBER
+			|| !FMath::IsNearlyZero(Metadata.SeaLevelNormalized))
 		{
 			return 0;
 		}
 
+		const FGaeaTerrainHeightStatistics Statistics = BuildHeightStatistics(Dataset);
 		FScopeLock Lock(&RegistryMutex);
 
 		FGaeaTerrainDatasetSnapshot Snapshot;
@@ -31,6 +92,14 @@ namespace
 
 		const uint64 Revision = Snapshot.Revision;
 		Registry.Add(SourceId, MoveTemp(Snapshot));
+		if (Statistics.IsValid())
+		{
+			HeightStatistics.Add(SourceId, Statistics);
+		}
+		else
+		{
+			HeightStatistics.Remove(SourceId);
+		}
 		LatestSourceId = SourceId;
 		return Revision;
 	}
@@ -99,28 +168,52 @@ bool FGaeaTerrainDatasetRegistry::GetHeightResolution(FName SourceId, FIntPoint&
 		return false;
 	}
 
-	const FGaeaScalarField* HeightField = Snapshot->Dataset.FindScalarField(GaeaTerrainFieldNames::Height);
-	if (!HeightField)
-	{
-		HeightField = Snapshot->Dataset.FindScalarField(GaeaTerrainFieldNames::Elevation);
-	}
-	if (!HeightField || !HeightField->IsValid())
+	const FGaeaTerrainHeightStatistics* Statistics = HeightStatistics.Find(SourceId);
+	if (!Statistics || !Statistics->IsValid())
 	{
 		return false;
 	}
 
-	OutResolution = HeightField->Domain.Dimensions;
+	OutResolution = Statistics->Resolution;
 	if (OutRevision)
 	{
 		*OutRevision = Snapshot->Revision;
 	}
-	return OutResolution.X > 1 && OutResolution.Y > 1;
+	return true;
+}
+
+bool FGaeaTerrainDatasetRegistry::GetHeightStatistics(
+	FName SourceId,
+	FGaeaTerrainHeightStatistics& OutStatistics,
+	uint64* OutRevision)
+{
+	OutStatistics = FGaeaTerrainHeightStatistics();
+	if (OutRevision)
+	{
+		*OutRevision = 0;
+	}
+
+	FScopeLock Lock(&RegistryMutex);
+	const FGaeaTerrainDatasetSnapshot* Snapshot = Registry.Find(SourceId);
+	const FGaeaTerrainHeightStatistics* Statistics = HeightStatistics.Find(SourceId);
+	if (!Snapshot || !Snapshot->IsValid() || !Statistics || !Statistics->IsValid())
+	{
+		return false;
+	}
+
+	OutStatistics = *Statistics;
+	if (OutRevision)
+	{
+		*OutRevision = Snapshot->Revision;
+	}
+	return true;
 }
 
 bool FGaeaTerrainDatasetRegistry::Remove(FName SourceId)
 {
 	FScopeLock Lock(&RegistryMutex);
 	const bool bRemoved = Registry.Remove(SourceId) > 0;
+	HeightStatistics.Remove(SourceId);
 	if (bRemoved && LatestSourceId == SourceId)
 	{
 		LatestSourceId = NAME_None;
@@ -141,6 +234,7 @@ void FGaeaTerrainDatasetRegistry::Reset()
 {
 	FScopeLock Lock(&RegistryMutex);
 	Registry.Reset();
+	HeightStatistics.Reset();
 	LatestSourceId = NAME_None;
 	NextRevision = 1;
 }
