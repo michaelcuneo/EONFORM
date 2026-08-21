@@ -33,7 +33,7 @@ bool FGaeaCurrentNodeContractTest::RunTest(const FString& Parameters)
 	CheckNode(*this, GaeaTerrainNodeTypes::DotNoise, TEXT("DotNoise"), TEXT("Primitive"), 7);
 	CheckNode(*this, GaeaTerrainNodeTypes::Draw, TEXT("Draw"), TEXT("Primitive"), 3);
 	CheckNode(*this, GaeaTerrainNodeTypes::DriftNoise, TEXT("DriftNoise"), TEXT("Primitive"), 10);
-	CheckNode(*this, GaeaTerrainNodeTypes::File, TEXT("File"), TEXT("Primitive"), 8);
+	CheckNode(*this, GaeaTerrainNodeTypes::File, TEXT("File"), TEXT("Primitive"), 6);
 	CheckNode(*this, GaeaTerrainNodeTypes::Gabor, TEXT("Gabor"), TEXT("Primitive"), 6);
 	CheckNode(*this, GaeaTerrainNodeTypes::Hemisphere, TEXT("Hemisphere"), TEXT("Primitive"), 5);
 	CheckNode(*this, GaeaTerrainNodeTypes::LinearGradient, TEXT("LinearGradient"), TEXT("Primitive"), 3);
