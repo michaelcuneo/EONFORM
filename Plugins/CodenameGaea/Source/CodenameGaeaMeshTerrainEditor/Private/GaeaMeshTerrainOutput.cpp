@@ -102,7 +102,8 @@ FGaeaMeshTerrainBuildResult FGaeaMeshTerrainOutput::Build(
 	Partition->Modify();
 	Partition->SetMeshPartitionDefinition(Definition);
 
-	TInlineComponentArray<UMeshProviderModifier*> ExistingProviders(Partition);
+	TInlineComponentArray<UMeshProviderModifier*> ExistingProviders;
+	Partition->GetComponents(ExistingProviders);
 	for (UMeshProviderModifier* Existing : ExistingProviders)
 	{
 		if (Existing && Existing->GetName().StartsWith(TEXT("EONFORMMeshProvider_")))
@@ -169,7 +170,7 @@ FGaeaMeshTerrainBuildResult FGaeaMeshTerrainOutput::Build(
 	Result.bSuccess = true;
 	Result.TerrainActor = Partition;
 	Result.Message = FString::Printf(
-		TEXT("Built EONFORM Mesh Terrain: %d sections, %d vertices, %d triangles at %dx%d samples (XY x%.3f, Z x%.3f)."),
+		TEXT("Built EONFORM Mesh Terrain: %d base regions, %d vertices, %d triangles at %dx%d samples (XY x%.3f, Z x%.3f)."),
 		Result.SectionCount,
 		Result.VertexCount,
 		Result.TriangleCount,
