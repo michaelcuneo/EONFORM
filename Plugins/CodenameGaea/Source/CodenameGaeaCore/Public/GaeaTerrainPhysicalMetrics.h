@@ -98,3 +98,16 @@ struct CODENAMEGAEACORE_API FGaeaTerrainPhysicalMetrics
 		return CellCount * ResolveCellAreaSquareMeters(Resolution, FallbackCellSizeCentimeters) / 1000000.0;
 	}
 };
+
+/**
+ * Optional active physical contract for editor-driven graph evaluation.
+ * Runtime callers do not need this: if nothing publishes an active contract,
+ * GetActive() returns zero/default metrics and all solvers keep their legacy behaviour.
+ */
+class CODENAMEGAEACORE_API FGaeaTerrainPhysicalContext
+{
+public:
+	static void SetActive(const FGaeaTerrainPhysicalMetrics& Metrics);
+	static FGaeaTerrainPhysicalMetrics GetActive();
+	static uint64 GetRevision();
+};
