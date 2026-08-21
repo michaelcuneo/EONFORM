@@ -10,6 +10,11 @@ namespace GaeaTerrainNodeTypes
 	const FName Constant(TEXT("Constant"));
 	const FName Cracks(TEXT("Cracks"));
 	const FName DotNoise(TEXT("DotNoise"));
+	const FName DriftNoise(TEXT("DriftNoise"));
+	const FName Gabor(TEXT("Gabor"));
+	const FName Hemisphere(TEXT("Hemisphere"));
+	const FName LinearGradient(TEXT("LinearGradient"));
+	const FName RadialGradient(TEXT("RadialGradient"));
 	const FName TerrainShape(TEXT("TerrainShape"));
 	const FName TerrainContext(TEXT("TerrainContext"));
 	const FName Geology(TEXT("Geology"));
