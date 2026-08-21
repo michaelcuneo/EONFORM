@@ -57,6 +57,8 @@ namespace
 	{
 		FORCEINLINE bool operator()(const FHydrologyCell& A, const FHydrologyCell& B) const
 		{
+			// TArray heaps are max-heaps with TLess semantics; invert the
+			// comparison so the lowest filled elevation is popped first.
 			return A.Elevation > B.Elevation;
 		}
 	};
@@ -81,12 +83,8 @@ namespace
 		Filled.SetNumUninitialized(Num);
 		TArray<uint8> Visited;
 		Visited.Init(0, Num);
-		TArray<int32> Receiver;
-		Receiver.Init(INDEX_NONE, Num);
-		TArray<float> Accumulation;
-		Accumulation.Init(1.0f, Num);
-		TArray<int32> FloodOrder;
-		FloodOrder.Reserve(Num);
+		TArray<int32> FloodRank;
+		FloodRank.Init(MAX_int32, Num);
 		TArray<FHydrologyCell> Heap;
 		Heap.Reserve(Num);
 
@@ -114,11 +112,12 @@ namespace
 		static const int32 DX[8] = { 1, 1, 0, -1, -1, -1, 0, 1 };
 		static const int32 DY[8] = { 0, 1, 1, 1, 0, -1, -1, -1 };
 
+		int32 Rank = 0;
 		while (!Heap.IsEmpty())
 		{
 			FHydrologyCell Cell;
 			Heap.HeapPop(Cell, FHydrologyCellLess());
-			FloodOrder.Add(Cell.Index);
+			FloodRank[Cell.Index] = Rank++;
 			const int32 X = Cell.Index % Width;
 			const int32 Y = Cell.Index / Width;
 
@@ -131,16 +130,58 @@ namespace
 				if (Visited[NIndex]) continue;
 
 				Visited[NIndex] = 1;
-				const float SourceHeight = Height.AtInterior(NX, NY);
-				Filled[NIndex] = FMath::Max(SourceHeight, Cell.Elevation);
-				Receiver[NIndex] = Cell.Index;
+				Filled[NIndex] = FMath::Max(Height.AtInterior(NX, NY), Cell.Elevation);
 				Heap.HeapPush({ Filled[NIndex], NIndex }, FHydrologyCellLess());
 			}
 		}
 
-		for (int32 OrderIndex = FloodOrder.Num() - 1; OrderIndex >= 0; --OrderIndex)
+		TArray<int32> Receiver;
+		Receiver.Init(INDEX_NONE, Num);
+		for (int32 Y = 0; Y < HeightCount; ++Y)
 		{
-			const int32 Index = FloodOrder[OrderIndex];
+			for (int32 X = 0; X < Width; ++X)
+			{
+				const int32 Index = IndexOf(X, Y);
+				const float CurrentElevation = Filled[Index];
+				int32 BestIndex = INDEX_NONE;
+				float BestElevation = CurrentElevation;
+				int32 BestRank = FloodRank[Index];
+
+				for (int32 Direction = 0; Direction < 8; ++Direction)
+				{
+					const int32 NX = X + DX[Direction];
+					const int32 NY = Y + DY[Direction];
+					if (NX < 0 || NX >= Width || NY < 0 || NY >= HeightCount) continue;
+					const int32 NIndex = IndexOf(NX, NY);
+					const float NElevation = Filled[NIndex];
+					const bool bStrictlyLower = NElevation < BestElevation - UE_SMALL_NUMBER;
+					const bool bEqualAndCloserToOutlet = FMath::IsNearlyEqual(NElevation, BestElevation)
+						&& FloodRank[NIndex] < BestRank;
+					if (bStrictlyLower || bEqualAndCloserToOutlet)
+					{
+						BestIndex = NIndex;
+						BestElevation = NElevation;
+						BestRank = FloodRank[NIndex];
+					}
+				}
+
+				Receiver[Index] = BestIndex;
+			}
+		}
+
+		TArray<int32> DrainageOrder;
+		DrainageOrder.Reserve(Num);
+		for (int32 Index = 0; Index < Num; ++Index) DrainageOrder.Add(Index);
+		DrainageOrder.Sort([&](int32 A, int32 B)
+		{
+			if (!FMath::IsNearlyEqual(Filled[A], Filled[B])) return Filled[A] > Filled[B];
+			return FloodRank[A] > FloodRank[B];
+		});
+
+		TArray<float> Accumulation;
+		Accumulation.Init(1.0f, Num);
+		for (const int32 Index : DrainageOrder)
+		{
 			const int32 To = Receiver[Index];
 			if (To != INDEX_NONE)
 			{
@@ -287,6 +328,7 @@ bool FGaeaTerrainDerivedData::EnsureHydrology(
 	float HeightScale,
 	FString* OutError)
 {
+	(void)HeightScale;
 	if (HasHydrologyFields(InOutDataset))
 	{
 		if (OutError) OutError->Reset();
