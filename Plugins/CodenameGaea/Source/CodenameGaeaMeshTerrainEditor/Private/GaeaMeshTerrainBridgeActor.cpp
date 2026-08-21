@@ -57,7 +57,8 @@ AMeshPartition* AGaeaMeshTerrainBridgeActor::ResolveOrCreateMeshPartition()
 
 	AMeshPartition* Partition = World->SpawnActor<AMeshPartition>(
 		AMeshPartition::StaticClass(),
-		GetActorTransform(),
+		GetActorLocation(),
+		GetActorRotation(),
 		SpawnParameters);
 
 	if (!Partition)
@@ -66,6 +67,7 @@ AMeshPartition* AGaeaMeshTerrainBridgeActor::ResolveOrCreateMeshPartition()
 		return nullptr;
 	}
 
+	Partition->SetActorScale3D(GetActorScale3D());
 	Partition->SetActorLabel(TEXT("EONFORM Mesh Terrain"));
 	TargetMeshPartition = Partition;
 	return Partition;
