@@ -23,11 +23,7 @@ namespace
 
 	void ClearProviderMesh(UMeshProviderModifier* Provider)
 	{
-		if (!Provider)
-		{
-			return;
-		}
-
+		if (!Provider) return;
 		Provider->Modify();
 		FDynamicMesh3 EmptyMesh;
 		Provider->SetMesh(MoveTemp(EmptyMesh), true);
@@ -35,22 +31,10 @@ namespace
 
 	USceneComponent* EnsureRegionRoot(AActor* RegionActor)
 	{
-		if (!RegionActor)
-		{
-			return nullptr;
-		}
-
-		if (USceneComponent* ExistingRoot = RegionActor->GetRootComponent())
-		{
-			return ExistingRoot;
-		}
-
+		if (!RegionActor) return nullptr;
+		if (USceneComponent* ExistingRoot = RegionActor->GetRootComponent()) return ExistingRoot;
 		USceneComponent* RegionRoot = NewObject<USceneComponent>(RegionActor, NAME_None, RF_Transactional);
-		if (!RegionRoot)
-		{
-			return nullptr;
-		}
-
+		if (!RegionRoot) return nullptr;
 		RegionActor->AddInstanceComponent(RegionRoot);
 		RegionActor->SetRootComponent(RegionRoot);
 		RegionRoot->RegisterComponent();
@@ -59,25 +43,10 @@ namespace
 
 	UMeshProviderModifier* EnsureRegionProvider(AActor* RegionActor, USceneComponent* RegionRoot)
 	{
-		if (!RegionActor || !RegionRoot)
-		{
-			return nullptr;
-		}
-
-		if (UMeshProviderModifier* ExistingProvider = RegionActor->FindComponentByClass<UMeshProviderModifier>())
-		{
-			return ExistingProvider;
-		}
-
-		UMeshProviderModifier* MeshProvider = NewObject<UMeshProviderModifier>(
-			RegionActor,
-			NAME_None,
-			RF_Transactional);
-		if (!MeshProvider)
-		{
-			return nullptr;
-		}
-
+		if (!RegionActor || !RegionRoot) return nullptr;
+		if (UMeshProviderModifier* ExistingProvider = RegionActor->FindComponentByClass<UMeshProviderModifier>()) return ExistingProvider;
+		UMeshProviderModifier* MeshProvider = NewObject<UMeshProviderModifier>(RegionActor, NAME_None, RF_Transactional);
+		if (!MeshProvider) return nullptr;
 		RegionActor->AddInstanceComponent(MeshProvider);
 		MeshProvider->SetupAttachment(RegionRoot);
 		MeshProvider->RegisterComponent();
@@ -94,15 +63,11 @@ int32 FGaeaMeshTerrainOutput::GetTargetTrianglesPerSection(EGaeaMeshTerrainSecti
 {
 	switch (Complexity)
 	{
-	case EGaeaMeshTerrainSectionComplexity::Responsive:
-		return 32768;
-	case EGaeaMeshTerrainSectionComplexity::Detailed:
-		return 524288;
-	case EGaeaMeshTerrainSectionComplexity::Maximum:
-		return 2097152;
+	case EGaeaMeshTerrainSectionComplexity::Responsive: return 32768;
+	case EGaeaMeshTerrainSectionComplexity::Detailed: return 524288;
+	case EGaeaMeshTerrainSectionComplexity::Maximum: return 2097152;
 	case EGaeaMeshTerrainSectionComplexity::Balanced:
-	default:
-		return 131072;
+	default: return 131072;
 	}
 }
 
@@ -112,10 +77,7 @@ FGaeaMeshTerrainLayoutEstimate FGaeaMeshTerrainOutput::EstimateLayout(
 {
 	FGaeaMeshTerrainLayoutEstimate Estimate;
 	Estimate.Resolution = Resolution;
-	if (Resolution.X < 2 || Resolution.Y < 2)
-	{
-		return Estimate;
-	}
+	if (Resolution.X < 2 || Resolution.Y < 2) return Estimate;
 
 	const int32 IntervalsX = Resolution.X - 1;
 	const int32 IntervalsY = Resolution.Y - 1;
@@ -131,28 +93,21 @@ FGaeaMeshTerrainLayoutEstimate FGaeaMeshTerrainOutput::EstimateLayout(
 	else
 	{
 		Estimate.TargetTrianglesPerSection = GetTargetTrianglesPerSection(Settings.SectionComplexity);
-		const int32 TargetQuadsPerAxis = FMath::Max(
-			1,
-			FMath::FloorToInt(FMath::Sqrt(static_cast<double>(Estimate.TargetTrianglesPerSection) * 0.5)));
-
+		const int32 TargetQuadsPerAxis = FMath::Max(1, FMath::FloorToInt(FMath::Sqrt(static_cast<double>(Estimate.TargetTrianglesPerSection) * 0.5)));
 		Sections.X = FMath::Clamp(FMath::DivideAndRoundUp(IntervalsX, TargetQuadsPerAxis), 1, MaxSectionsX);
 		Sections.Y = FMath::Clamp(FMath::DivideAndRoundUp(IntervalsY, TargetQuadsPerAxis), 1, MaxSectionsY);
 	}
 
 	const int32 MaxIntervalsPerSectionX = FMath::DivideAndRoundUp(IntervalsX, Sections.X);
 	const int32 MaxIntervalsPerSectionY = FMath::DivideAndRoundUp(IntervalsY, Sections.Y);
-
 	Estimate.bValid = true;
 	Estimate.Sections = Sections;
 	Estimate.MaxSectionResolution = FIntPoint(MaxIntervalsPerSectionX + 1, MaxIntervalsPerSectionY + 1);
 	Estimate.SectionCount = static_cast<int64>(Sections.X) * static_cast<int64>(Sections.Y);
 	Estimate.TotalTriangleCount = static_cast<int64>(IntervalsX) * static_cast<int64>(IntervalsY) * 2ll;
-	Estimate.TotalVertexCount =
-		static_cast<int64>(IntervalsX + Sections.X) * static_cast<int64>(IntervalsY + Sections.Y);
-	Estimate.MaxSectionTriangleCount =
-		static_cast<int64>(MaxIntervalsPerSectionX) * static_cast<int64>(MaxIntervalsPerSectionY) * 2ll;
-	Estimate.MaxSectionVertexCount =
-		static_cast<int64>(MaxIntervalsPerSectionX + 1) * static_cast<int64>(MaxIntervalsPerSectionY + 1);
+	Estimate.TotalVertexCount = static_cast<int64>(IntervalsX + Sections.X) * static_cast<int64>(IntervalsY + Sections.Y);
+	Estimate.MaxSectionTriangleCount = static_cast<int64>(MaxIntervalsPerSectionX) * static_cast<int64>(MaxIntervalsPerSectionY) * 2ll;
+	Estimate.MaxSectionVertexCount = static_cast<int64>(MaxIntervalsPerSectionX + 1) * static_cast<int64>(MaxIntervalsPerSectionY + 1);
 	return Estimate;
 }
 
@@ -163,7 +118,6 @@ FGaeaMeshTerrainBuildResult FGaeaMeshTerrainOutput::Build(
 	const FGaeaMeshTerrainOutputSettings& Settings)
 {
 	FGaeaMeshTerrainBuildResult Result;
-
 	if (!World)
 	{
 		Result.Message = TEXT("The editor world is not available.");
@@ -173,6 +127,9 @@ FGaeaMeshTerrainBuildResult FGaeaMeshTerrainOutput::Build(
 	FGaeaTerrainMeshBuildOptions MeshOptions;
 	MeshOptions.HeightScale = HeightScale;
 	MeshOptions.HorizontalScale = FMath::Max(Settings.HorizontalScale, UE_DOUBLE_SMALL_NUMBER);
+	MeshOptions.HorizontalScaleXY = FVector2d(
+		FMath::Max(Settings.HorizontalScaleXY.X, UE_DOUBLE_SMALL_NUMBER),
+		FMath::Max(Settings.HorizontalScaleXY.Y, UE_DOUBLE_SMALL_NUMBER));
 	MeshOptions.VerticalScale = FMath::Max(Settings.VerticalScale, UE_DOUBLE_SMALL_NUMBER);
 	MeshOptions.TargetResolution = Settings.TargetResolution;
 
@@ -207,12 +164,7 @@ FGaeaMeshTerrainBuildResult FGaeaMeshTerrainOutput::Build(
 		FActorSpawnParameters SpawnParameters;
 		SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 		SpawnParameters.ObjectFlags |= RF_Transactional;
-
-		Partition = World->SpawnActor<AMeshPartition>(
-			AMeshPartition::StaticClass(),
-			FVector::ZeroVector,
-			FRotator::ZeroRotator,
-			SpawnParameters);
+		Partition = World->SpawnActor<AMeshPartition>(AMeshPartition::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, SpawnParameters);
 		if (!Partition)
 		{
 			Result.Message = TEXT("UE 5.8 failed to create the EONFORM Mesh Partition actor.");
@@ -224,10 +176,7 @@ FGaeaMeshTerrainBuildResult FGaeaMeshTerrainOutput::Build(
 	}
 
 	UMeshPartitionDefinition* Definition = Cast<UMeshPartitionDefinition>(Settings.MeshPartitionDefinition.Get());
-	if (!Definition)
-	{
-		Definition = Partition->GetMeshPartitionDefinition();
-	}
+	if (!Definition) Definition = Partition->GetMeshPartitionDefinition();
 	if (!Definition)
 	{
 		Result.Message = TEXT("Assign a UE 5.8 Mesh Partition Definition in EONFORM Terrain Output before generating terrain.");
@@ -243,15 +192,8 @@ FGaeaMeshTerrainBuildResult FGaeaMeshTerrainOutput::Build(
 	for (TActorIterator<AGaeaMeshTerrainBridgeActor> It(World); It; ++It)
 	{
 		AGaeaMeshTerrainBridgeActor* Bridge = *It;
-		if (!Bridge || Bridge->TargetMeshPartition.Get() != Partition)
-		{
-			continue;
-		}
-
-		if (UMeshProviderModifier* BridgeProvider = Cast<UMeshProviderModifier>(Bridge->MeshProviderComponent.Get()))
-		{
-			ClearProviderMesh(BridgeProvider);
-		}
+		if (!Bridge || Bridge->TargetMeshPartition.Get() != Partition) continue;
+		if (UMeshProviderModifier* BridgeProvider = Cast<UMeshProviderModifier>(Bridge->MeshProviderComponent.Get())) ClearProviderMesh(BridgeProvider);
 	}
 
 	TInlineComponentArray<UMeshProviderModifier*> LegacyProviders;
@@ -269,74 +211,43 @@ FGaeaMeshTerrainBuildResult FGaeaMeshTerrainOutput::Build(
 	for (TActorIterator<AActor> It(World); It; ++It)
 	{
 		AActor* Actor = *It;
-		if (Actor && Actor->Tags.Contains(EonformBaseRegionTag))
-		{
-			ExistingBaseRegions.Add(Actor);
-		}
+		if (Actor && Actor->Tags.Contains(EonformBaseRegionTag)) ExistingBaseRegions.Add(Actor);
 	}
 #if WITH_EDITOR
-	ExistingBaseRegions.Sort([](const AActor& A, const AActor& B)
-	{
-		return A.GetActorLabel() < B.GetActorLabel();
-	});
+	ExistingBaseRegions.Sort([](const AActor& A, const AActor& B) { return A.GetActorLabel() < B.GetActorLabel(); });
 #endif
 
 	const int32 IntervalsX = Resolution.X - 1;
 	const int32 IntervalsY = Resolution.Y - 1;
 	int32 RegionIndex = 0;
-
 	for (int32 SectionY = 0; SectionY < Sections.Y; ++SectionY)
 	{
 		const int32 StartY = (SectionY * IntervalsY) / Sections.Y;
 		const int32 EndY = ((SectionY + 1) * IntervalsY) / Sections.Y;
-
 		for (int32 SectionX = 0; SectionX < Sections.X; ++SectionX, ++RegionIndex)
 		{
 			const int32 StartX = (SectionX * IntervalsX) / Sections.X;
 			const int32 EndX = ((SectionX + 1) * IntervalsX) / Sections.X;
-
 			FDynamicMesh3 SectionMesh;
 			FString MaterializeError;
-			if (!FGaeaTerrainMeshMaterializer::BuildDynamicMeshRegion(
-				Dataset,
-				MeshOptions,
-				FIntPoint(StartX, StartY),
-				FIntPoint(EndX, EndY),
-				SectionMesh,
-				&MaterializeError))
+			if (!FGaeaTerrainMeshMaterializer::BuildDynamicMeshRegion(Dataset, MeshOptions, FIntPoint(StartX, StartY), FIntPoint(EndX, EndY), SectionMesh, &MaterializeError))
 			{
-				Result.Message = FString::Printf(
-					TEXT("Mesh Terrain base region %d,%d failed: %s"),
-					SectionX,
-					SectionY,
-					*MaterializeError);
+				Result.Message = FString::Printf(TEXT("Mesh Terrain base region %d,%d failed: %s"), SectionX, SectionY, *MaterializeError);
 				return Result;
 			}
 
 			const int32 RegionVertexCount = SectionMesh.VertexCount();
 			const int32 RegionTriangleCount = SectionMesh.TriangleCount();
-
-			AActor* RegionActor = ExistingBaseRegions.IsValidIndex(RegionIndex)
-				? ExistingBaseRegions[RegionIndex]
-				: nullptr;
-
+			AActor* RegionActor = ExistingBaseRegions.IsValidIndex(RegionIndex) ? ExistingBaseRegions[RegionIndex] : nullptr;
 			if (!RegionActor)
 			{
 				FActorSpawnParameters RegionSpawnParameters;
 				RegionSpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 				RegionSpawnParameters.ObjectFlags |= RF_Transactional;
-
-				RegionActor = World->SpawnActor<AActor>(
-					AActor::StaticClass(),
-					FVector::ZeroVector,
-					FRotator::ZeroRotator,
-					RegionSpawnParameters);
+				RegionActor = World->SpawnActor<AActor>(AActor::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, RegionSpawnParameters);
 				if (!RegionActor)
 				{
-					Result.Message = FString::Printf(
-						TEXT("Failed to create EONFORM Mesh Terrain base region actor %d,%d."),
-						SectionX,
-						SectionY);
+					Result.Message = FString::Printf(TEXT("Failed to create EONFORM Mesh Terrain base region actor %d,%d."), SectionX, SectionY);
 					return Result;
 				}
 			}
@@ -347,25 +258,21 @@ FGaeaMeshTerrainBuildResult FGaeaMeshTerrainOutput::Build(
 			RegionActor->SetActorLabel(FString::Printf(TEXT("EONFORM Base Region %d,%d"), SectionX, SectionY));
 			RegionActor->SetFolderPath(EonformBaseRegionsFolder);
 #endif
-
 			USceneComponent* RegionRoot = EnsureRegionRoot(RegionActor);
 			if (!RegionRoot)
 			{
 				Result.Message = TEXT("Failed to create or resolve an EONFORM base region scene root.");
 				return Result;
 			}
-
 			UMeshProviderModifier* MeshProvider = EnsureRegionProvider(RegionActor, RegionRoot);
 			if (!MeshProvider)
 			{
 				Result.Message = TEXT("Failed to create or resolve the UE 5.8 Mesh Provider modifier for an EONFORM base region.");
 				return Result;
 			}
-
 			MeshProvider->Modify();
 			MeshProvider->BP_SetAffectedMegaMesh(Partition);
 			MeshProvider->SetMesh(MoveTemp(SectionMesh), true);
-
 			Result.VertexCount += RegionVertexCount;
 			Result.TriangleCount += RegionTriangleCount;
 			++Result.SectionCount;
@@ -375,18 +282,10 @@ FGaeaMeshTerrainBuildResult FGaeaMeshTerrainOutput::Build(
 	for (int32 ExtraIndex = RequiredRegionCount; ExtraIndex < ExistingBaseRegions.Num(); ++ExtraIndex)
 	{
 		AActor* ExtraActor = ExistingBaseRegions[ExtraIndex];
-		if (!ExtraActor)
-		{
-			continue;
-		}
-
+		if (!ExtraActor) continue;
 		TInlineComponentArray<UMeshProviderModifier*> ExtraProviders;
 		ExtraActor->GetComponents(ExtraProviders);
-		for (UMeshProviderModifier* Provider : ExtraProviders)
-		{
-			ClearProviderMesh(Provider);
-		}
-
+		for (UMeshProviderModifier* Provider : ExtraProviders) ClearProviderMesh(Provider);
 		ExtraActor->Modify();
 		ExtraActor->Destroy();
 	}
@@ -394,18 +293,11 @@ FGaeaMeshTerrainBuildResult FGaeaMeshTerrainOutput::Build(
 	Result.bSuccess = true;
 	Result.TerrainActor = Partition;
 	Result.Message = FString::Printf(
-		TEXT("Built EONFORM Mesh Terrain: %d base regions (%dx%d), %d vertices, %d triangles at %dx%d samples; max region %dx%d samples / %lld triangles (XY x%.3f, Z x%.3f)."),
-		Result.SectionCount,
-		Sections.X,
-		Sections.Y,
-		Result.VertexCount,
-		Result.TriangleCount,
-		Resolution.X,
-		Resolution.Y,
-		Layout.MaxSectionResolution.X,
-		Layout.MaxSectionResolution.Y,
-		static_cast<long long>(Layout.MaxSectionTriangleCount),
-		MeshOptions.HorizontalScale,
+		TEXT("Built EONFORM Mesh Terrain: %d base regions (%dx%d), %d vertices, %d triangles at %dx%d samples; max region %dx%d / %lld triangles (XY x%.3f/x%.3f, Z x%.3f)."),
+		Result.SectionCount, Sections.X, Sections.Y, Result.VertexCount, Result.TriangleCount, Resolution.X, Resolution.Y,
+		Layout.MaxSectionResolution.X, Layout.MaxSectionResolution.Y, static_cast<long long>(Layout.MaxSectionTriangleCount),
+		MeshOptions.HorizontalScale * MeshOptions.HorizontalScaleXY.X,
+		MeshOptions.HorizontalScale * MeshOptions.HorizontalScaleXY.Y,
 		MeshOptions.VerticalScale);
 	return Result;
 }
