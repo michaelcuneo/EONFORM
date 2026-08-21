@@ -14,6 +14,7 @@
 #include "GaeaInvertNode.h"
 #include "GaeaMultiCombineNode.h"
 #include "GaeaRecurveNode.h"
+#include "GaeaShaperNode.h"
 #include "GaeaSharpenNode.h"
 #include "GaeaSineNode.h"
 #include "GaeaTerrainNodeDescriptor.h"
@@ -57,6 +58,7 @@ public:
 		RegisterGaeaDistanceNode();
 		RegisterGaeaFractalTerracesNode();
 		RegisterGaeaRecurveNode();
+		RegisterGaeaShaperNode();
 	}
 };
 
