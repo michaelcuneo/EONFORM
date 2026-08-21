@@ -11,6 +11,7 @@ namespace GaeaEditorGraphPins
 {
 	extern const FName Terrain;
 	extern const FName ScalarField;
+	extern const FName Color;
 	extern const FName Any;
 }
 
