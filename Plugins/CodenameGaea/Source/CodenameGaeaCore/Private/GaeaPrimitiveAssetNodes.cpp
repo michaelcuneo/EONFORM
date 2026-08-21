@@ -6,6 +6,7 @@
 #include "GaeaTerrainFieldNames.h"
 #include "GaeaTerrainNodeDescriptor.h"
 #include "GaeaTerrainRecipe.h"
+#include "ImageCore.h"
 #include "IImageWrapper.h"
 #include "IImageWrapperModule.h"
 #include "Misc/FileHelper.h"
@@ -136,49 +137,81 @@ namespace
 		const FString Path = ResolvePrimitiveAssetFilePath(Node);
 		if (Path.IsEmpty()) { Error = TEXT("File node has no file selected."); return false; }
 		if (!FPaths::FileExists(Path)) { Error = FString::Printf(TEXT("File does not exist: %s"), *Path); return false; }
+
 		TSharedPtr<IImageWrapper> Wrapper;
 		if (!LoadImageWrapper(Path, Wrapper, Error)) return false;
-		const int32 SourceWidth = Wrapper->GetWidth(); const int32 SourceHeight = Wrapper->GetHeight();
+
+		FImage DecodedImage;
+		if (!Wrapper->GetRawImage(DecodedImage))
+		{
+			Error = FString::Printf(TEXT("File could not decode '%s' into a native Unreal image."), *Path);
+			return false;
+		}
+
+		// UE 5.8 explicitly recommends GetRawImage over GetRaw(format, bit depth).
+		// Normalize every supported source into RGBA32F once so JPEG, PNG8/16,
+		// BMP, and EXR all follow the same safe pixel path.
+		DecodedImage.ChangeFormat(ERawImageFormat::RGBA32F, EGammaSpace::Linear);
+		const TArrayView64<const FLinearColor> Pixels = DecodedImage.AsRGBA32F();
+		const int32 SourceWidth = DecodedImage.SizeX;
+		const int32 SourceHeight = DecodedImage.SizeY;
+		if (SourceWidth < 2 || SourceHeight < 2 || Pixels.Num() < static_cast<int64>(SourceWidth) * SourceHeight)
+		{
+			Error = TEXT("File decoded image data is invalid.");
+			return false;
+		}
+
 		const bool bCropSquare = Node.GetBool(TEXT("CropToSquare"), false);
 		const int32 OutputWidth = bCropSquare ? FMath::Min(SourceWidth, SourceHeight) : SourceWidth;
 		const int32 OutputHeight = bCropSquare ? FMath::Min(SourceWidth, SourceHeight) : SourceHeight;
-		const int32 CropX = bCropSquare ? (SourceWidth - OutputWidth) / 2 : 0; const int32 CropY = bCropSquare ? (SourceHeight - OutputHeight) / 2 : 0;
+		const int32 CropX = bCropSquare ? (SourceWidth - OutputWidth) / 2 : 0;
+		const int32 CropY = bCropSquare ? (SourceHeight - OutputHeight) / 2 : 0;
 		const float WorldSize = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("WorldSize"), 100000.0)), 1.0f, 10000000.0f);
 		FGaeaGridDomain Domain;
 		if (!MakeImageDomain(OutputWidth, OutputHeight, WorldSize, Domain, Error)) return false;
+
 		const bool bRGB = Node.GetBool(TEXT("IsRGB"), false);
+		const bool bAllowUnclamped = Node.GetBool(TEXT("AllowUnclamped"), false);
 		if (bRGB)
 		{
-			TArray64<uint8> RawRGBA;
-			if (!Wrapper->GetRaw(ERGBFormat::RGBA, 8, RawRGBA)) { Error = TEXT("File could not decode RGB pixels."); return false; }
-			const bool bLinear = Node.GetBool(TEXT("EnforceLinearGamma"), false);
-			FGaeaColorField Field; Field.Initialize(Domain);
+			FGaeaColorField Field;
+			Field.Initialize(Domain);
 			for (int32 Y = 0; Y < OutputHeight; ++Y)
 			{
 				for (int32 X = 0; X < OutputWidth; ++X)
 				{
-					const int64 I = static_cast<int64>(((Y + CropY) * SourceWidth + (X + CropX)) * 4);
-					const FColor SRGB(RawRGBA[I], RawRGBA[I + 1], RawRGBA[I + 2], RawRGBA[I + 3]);
-					Field.AtInterior(X, Y) = bLinear ? FLinearColor(SRGB.R / 255.0f, SRGB.G / 255.0f, SRGB.B / 255.0f, SRGB.A / 255.0f) : FLinearColor::FromSRGBColor(SRGB);
+					FLinearColor Value = Pixels[static_cast<int64>(Y + CropY) * SourceWidth + (X + CropX)];
+					if (!bAllowUnclamped)
+					{
+						Value.R = FMath::Clamp(Value.R, 0.0f, 1.0f);
+						Value.G = FMath::Clamp(Value.G, 0.0f, 1.0f);
+						Value.B = FMath::Clamp(Value.B, 0.0f, 1.0f);
+						Value.A = FMath::Clamp(Value.A, 0.0f, 1.0f);
+					}
+					Field.AtInterior(X, Y) = Value;
 				}
 			}
 			Out.Outputs.Add(TEXT("Out"), FGaeaTerrainValue::MakeColor(MoveTemp(Field)));
 			return true;
 		}
-		TArray64<uint8> RawGray16; const bool bSixteenBit = Wrapper->GetRaw(ERGBFormat::Gray, 16, RawGray16);
-		TArray64<uint8> RawGray8;
-		if (!bSixteenBit && !Wrapper->GetRaw(ERGBFormat::Gray, 8, RawGray8)) { Error = TEXT("File could not decode grayscale pixels."); return false; }
-		FGaeaFieldDescriptor Descriptor; Descriptor.Name = GaeaTerrainFieldNames::Height; Descriptor.Unit = EGaeaFieldUnit::Normalized; Descriptor.Interpolation = EGaeaInterpolation::Bilinear;
-		FGaeaScalarField HeightField; HeightField.Initialize(Domain, Descriptor);
-		const uint16* Gray16 = bSixteenBit ? reinterpret_cast<const uint16*>(RawGray16.GetData()) : nullptr;
+
+		FGaeaFieldDescriptor Descriptor;
+		Descriptor.Name = GaeaTerrainFieldNames::Height;
+		Descriptor.Unit = EGaeaFieldUnit::Normalized;
+		Descriptor.Interpolation = EGaeaInterpolation::Bilinear;
+		FGaeaScalarField HeightField;
+		HeightField.Initialize(Domain, Descriptor);
 		for (int32 Y = 0; Y < OutputHeight; ++Y)
 		{
 			for (int32 X = 0; X < OutputWidth; ++X)
 			{
-				const int64 P = static_cast<int64>((Y + CropY) * SourceWidth + (X + CropX));
-				HeightField.AtInterior(X, Y) = bSixteenBit ? static_cast<float>(Gray16[P]) / 65535.0f : static_cast<float>(RawGray8[P]) / 255.0f;
+				const FLinearColor& Pixel = Pixels[static_cast<int64>(Y + CropY) * SourceWidth + (X + CropX)];
+				float HeightValue = Pixel.GetLuminance();
+				if (!bAllowUnclamped) HeightValue = FMath::Clamp(HeightValue, 0.0f, 1.0f);
+				HeightField.AtInterior(X, Y) = HeightValue;
 			}
 		}
+
 		FGaeaTerrainDataset Dataset;
 		if (!Dataset.SetScalarField(MoveTemp(HeightField))) { Error = TEXT("File could not publish its Height field."); return false; }
 		const float HeightScale = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("HeightScale"), Context.HeightScale > UE_SMALL_NUMBER ? Context.HeightScale : 8000.0f)), 1.0f, 1000000.0f);
@@ -209,8 +242,6 @@ void RegisterGaeaFileNode()
 {
 	FGaeaTerrainNodeDescriptor Descriptor; Descriptor.Type = GaeaTerrainNodeTypes::File; Descriptor.DisplayName = TEXT("File"); Descriptor.Category = TEXT("Primitive"); Descriptor.Description = TEXT("Loads an external grayscale heightfield or RGB color image. Choose the source with the Browse button on the node.");
 	Descriptor.Outputs.Add(PrimitiveAssetPort(TEXT("Out"), TEXT("Any"), TEXT("Out")));
-	// File and RelativePath are stored in NameParameters by the node's native
-	// file picker. They are intentionally not rendered as free-text controls.
 	Descriptor.Parameters.Add(PrimitiveAssetBool(TEXT("IsRGB"), TEXT("Is RGB"), false));
 	Descriptor.Parameters.Add(PrimitiveAssetBool(TEXT("EnforceLinearGamma"), TEXT("Enforce Linear Gamma"), false));
 	Descriptor.Parameters.Add(PrimitiveAssetBool(TEXT("AllowUnclamped"), TEXT("Allow Unclamped"), false));
