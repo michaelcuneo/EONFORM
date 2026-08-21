@@ -1,6 +1,7 @@
 #include "Modules/ModuleManager.h"
 
 #include "GaeaAngleNode.h"
+#include "GaeaAutoLevelNode.h"
 #include "GaeaClampNode.h"
 #include "GaeaCombineNode.h"
 #include "GaeaCurvatureNode.h"
@@ -29,6 +30,7 @@ public:
 		RegisterGaeaAngleNode();
 		RegisterGaeaCombineNode();
 		RegisterGaeaClampNode();
+		RegisterGaeaAutoLevelNode();
 	}
 };
 
