@@ -4,6 +4,7 @@ namespace GaeaTerrainNodeTypes
 {
 	const FName SourceDataset(TEXT("SourceDataset"));
 	const FName PerlinNoise(TEXT("PerlinNoise"));
+	const FName Cellular(TEXT("Cellular"));
 	const FName TerrainShape(TEXT("TerrainShape"));
 	const FName TerrainContext(TEXT("TerrainContext"));
 	const FName Geology(TEXT("Geology"));
@@ -78,11 +79,6 @@ FName FGaeaTerrainNode::GetName(FName Name, FName DefaultValue) const
 {
 	if (const FName* Value = NameParameters.Find(Name)) return *Value;
 	return DefaultValue;
-}
-
-bool FGaeaTerrainConnection::IsValid() const
-{
-	return FromNode.IsValid() && ToNode.IsValid() && !FromOutput.IsNone() && !ToInput.IsNone();
 }
 
 const FGaeaTerrainNode* FGaeaTerrainRecipe::FindNode(const FGuid& NodeId) const
