@@ -38,6 +38,7 @@
 #include "GaeaSineNode.h"
 #include "GaeaSlopeNode.h"
 #include "GaeaSoftClipNode.h"
+#include "GaeaSurfaceNodes.h"
 #include "GaeaTerraceNode.h"
 #include "GaeaTerrainNodeDescriptor.h"
 #include "GaeaTerrainRecipe.h"
@@ -144,6 +145,7 @@ public:
 		RegisterGaeaZeroBordersNode();
 		RegisterGaeaFractalTerracesNode();
 		RegisterGaeaTerraceNode();
+		RegisterGaeaSurfaceNodes();
 
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::SourceDataset, TEXT("Source Dataset"), TEXT("Internal"), true);
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::TerrainShape, TEXT("Terrain Shape"), TEXT("Internal"), true);
