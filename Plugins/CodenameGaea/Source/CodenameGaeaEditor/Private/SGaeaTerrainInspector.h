@@ -50,4 +50,5 @@ private:
 	float PreviewMeanValue = 0.0f;
 	float PreviewStdDev = 0.0f;
 	int64 PreviewSampleCount = 0;
+	int64 PreviewNonFiniteCount = 0;
 };
