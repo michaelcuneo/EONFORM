@@ -107,12 +107,28 @@ void RegisterGaeaDrawNode()
 
 void RegisterGaeaFileNode()
 {
-	FGaeaTerrainNodeDescriptor Descriptor; Descriptor.Type = GaeaTerrainNodeTypes::File; Descriptor.DisplayName = TEXT("File"); Descriptor.Category = TEXT("Primitive"); Descriptor.Description = TEXT("Loads an external grayscale heightfield or RGB color image. Choose the source with the Browse button on the node.");
+	FGaeaTerrainNodeDescriptor Descriptor;
+	Descriptor.Type = GaeaTerrainNodeTypes::File;
+	Descriptor.DisplayName = TEXT("File");
+	Descriptor.Category = TEXT("Primitive");
+	Descriptor.Description = TEXT("Loads an external heightfield or RGB image with explicit physical extents or ground-sample distance.");
 	Descriptor.Outputs.Add(PrimitiveAssetPort(TEXT("Out"), TEXT("Any"), TEXT("Out")));
+
 	Descriptor.Parameters.Add(PrimitiveAssetBool(TEXT("IsRGB"), TEXT("Is RGB"), false));
 	Descriptor.Parameters.Add(PrimitiveAssetBool(TEXT("EnforceLinearGamma"), TEXT("Enforce Linear Gamma"), false));
 	Descriptor.Parameters.Add(PrimitiveAssetBool(TEXT("AllowUnclamped"), TEXT("Allow Unclamped"), false));
 	Descriptor.Parameters.Add(PrimitiveAssetBool(TEXT("CropToSquare"), TEXT("Crop to Square"), false));
+
+	// Spatial calibration. Pixel resolution comes from the image itself; these
+	// values define how large that raster is in the physical world.
+	Descriptor.Parameters.Add(PrimitiveAssetNumber(TEXT("ExtentXMetres"), TEXT("Extent X (m)"), 1000.0, 0.001, 100000000.0));
+	Descriptor.Parameters.Add(PrimitiveAssetNumber(TEXT("ExtentYMetres"), TEXT("Extent Y (m)"), 1000.0, 0.001, 100000000.0));
+	Descriptor.Parameters.Add(PrimitiveAssetNumber(TEXT("XYScale"), TEXT("XY Scale"), 1.0, 0.0001, 10000.0));
+	Descriptor.Parameters.Add(PrimitiveAssetBool(TEXT("UseGroundSampleDistance"), TEXT("Use Metres / Pixel"), false));
+	Descriptor.Parameters.Add(PrimitiveAssetNumber(TEXT("GroundSampleDistanceXMetres"), TEXT("Metres / Pixel X"), 1.0, 0.0001, 1000000.0));
+	Descriptor.Parameters.Add(PrimitiveAssetNumber(TEXT("GroundSampleDistanceYMetres"), TEXT("Metres / Pixel Y"), 1.0, 0.0001, 1000000.0));
+	Descriptor.Parameters.Add(PrimitiveAssetNumber(TEXT("HeightScaleMetres"), TEXT("Height Scale (m)"), 80.0, 0.001, 1000000.0));
+
 	Descriptor.Parameters.Add(PrimitiveAssetName(TEXT("InformationHoudini"), TEXT("Information Houdini"), NAME_None));
 	Descriptor.Parameters.Add(PrimitiveAssetBool(TEXT("NeverCache"), TEXT("Never Cache"), false));
 
