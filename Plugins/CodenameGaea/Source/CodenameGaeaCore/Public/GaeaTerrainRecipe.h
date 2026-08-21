@@ -25,6 +25,7 @@ namespace GaeaTerrainNodeTypes
 	CODENAMEGAEACORE_API extern const FName Sine;
 	CODENAMEGAEACORE_API extern const FName Threshold;
 	CODENAMEGAEACORE_API extern const FName Transform;
+	CODENAMEGAEACORE_API extern const FName ZeroBorders;
 	CODENAMEGAEACORE_API extern const FName Slope;
 	CODENAMEGAEACORE_API extern const FName Angle;
 	CODENAMEGAEACORE_API extern const FName Curvature;
