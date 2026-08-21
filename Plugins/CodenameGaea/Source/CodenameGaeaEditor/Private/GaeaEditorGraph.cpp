@@ -33,15 +33,17 @@ namespace
 			|| Category == GaeaEditorGraphPins::Any;
 	}
 
-	bool ArePinCategoriesCompatible(FName A, FName B)
+	bool ArePinCategoriesCompatible(FName OutputCategory, FName InputCategory)
 	{
-		// Gaea's graph is fundamentally heightfield-based. Internally EONFORM
-		// distinguishes a full terrain dataset from a single scalar heightfield so
-		// simulations can preserve auxiliary channels, but authoring must not make
-		// that implementation detail block legitimate Gaea connections. A terrain
-		// can be used as a mask through its Height field, and a scalar mask/noise
-		// can be promoted to a terrain Height field when a heightfield input needs it.
-		return IsSupportedPinCategory(A) && IsSupportedPinCategory(B);
+		if (OutputCategory == InputCategory) return true;
+		if (OutputCategory == GaeaEditorGraphPins::Any || InputCategory == GaeaEditorGraphPins::Any) return true;
+
+		// Gaea allows any grayscale heightfield to be used as a mask. A full
+		// terrain output therefore feeds ScalarField inputs through its Height
+		// channel. The reverse promotion remains disabled until the runtime can
+		// preserve a meaningful terrain scale for standalone masks.
+		return OutputCategory == GaeaEditorGraphPins::Terrain
+			&& InputCategory == GaeaEditorGraphPins::ScalarField;
 	}
 
 	FText FriendlyPinName(const FGaeaTerrainPortDescriptor& Port, EEdGraphPinDirection Direction)
@@ -241,13 +243,14 @@ const FPinConnectionResponse UGaeaEditorGraphSchema::CanCreateConnection(
 	{
 		return FPinConnectionResponse(CONNECT_RESPONSE_DISALLOW, TEXT("Unsupported EONFORM graph value type."));
 	}
-	if (!ArePinCategoriesCompatible(A->PinType.PinCategory, B->PinType.PinCategory))
-	{
-		return FPinConnectionResponse(CONNECT_RESPONSE_DISALLOW, TEXT("These ports carry incompatible values."));
-	}
 
 	const UEdGraphPin* OutputPin = A->Direction == EGPD_Output ? A : B;
 	const UEdGraphPin* InputPin = A->Direction == EGPD_Input ? A : B;
+	if (!ArePinCategoriesCompatible(OutputPin->PinType.PinCategory, InputPin->PinType.PinCategory))
+	{
+		return FPinConnectionResponse(CONNECT_RESPONSE_DISALLOW, TEXT("This heightfield cannot be promoted to the requested input type yet."));
+	}
+
 	const UEdGraphNode* SourceNode = OutputPin->GetOwningNode();
 	const UEdGraphNode* DestinationNode = InputPin->GetOwningNode();
 	if (CanReachNode(DestinationNode, SourceNode))
