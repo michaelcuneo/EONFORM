@@ -14,13 +14,18 @@
 #include "GaeaDenoiseNode.h"
 #include "GaeaDistanceNode.h"
 #include "GaeaDotNoiseNode.h"
+#include "GaeaDriftNoiseNode.h"
 #include "GaeaErosionNode.h"
 #include "GaeaFlipNode.h"
 #include "GaeaFractalTerracesNode.h"
+#include "GaeaGaborNode.h"
 #include "GaeaHeightNode.h"
+#include "GaeaHemisphereNode.h"
 #include "GaeaInvertNode.h"
+#include "GaeaLinearGradientNode.h"
 #include "GaeaMultiCombineNode.h"
 #include "GaeaPerlinNode.h"
+#include "GaeaRadialGradientNode.h"
 #include "GaeaRecurveNode.h"
 #include "GaeaShaperNode.h"
 #include "GaeaSharpenNode.h"
@@ -62,6 +67,11 @@ public:
 		RegisterGaeaConstantNode();
 		RegisterGaeaCracksNode();
 		RegisterGaeaDotNoiseNode();
+		RegisterGaeaDriftNoiseNode();
+		RegisterGaeaGaborNode();
+		RegisterGaeaHemisphereNode();
+		RegisterGaeaLinearGradientNode();
+		RegisterGaeaRadialGradientNode();
 		RegisterGaeaErosionNode();
 		RegisterGaeaThermalErosionNode();
 		RegisterGaeaCurvatureNode();
@@ -98,6 +108,11 @@ public:
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Constant, TEXT("Constant"), TEXT("Primitive"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Cracks, TEXT("Cracks"), TEXT("Primitive"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::DotNoise, TEXT("DotNoise"), TEXT("Primitive"));
+		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::DriftNoise, TEXT("DriftNoise"), TEXT("Primitive"));
+		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Gabor, TEXT("Gabor"), TEXT("Primitive"));
+		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Hemisphere, TEXT("Hemisphere"), TEXT("Primitive"));
+		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::LinearGradient, TEXT("LinearGradient"), TEXT("Primitive"));
+		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::RadialGradient, TEXT("RadialGradient"), TEXT("Primitive"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::HydraulicErosion, TEXT("Erosion"), TEXT("Simulate"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::ThermalErosion, TEXT("Thermal"), TEXT("Simulate"));
 
