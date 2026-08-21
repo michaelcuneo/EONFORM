@@ -16,12 +16,7 @@ namespace
 		return Port;
 	}
 
-	FGaeaTerrainParameterDescriptor TransformNumberParameter(
-		FName Name,
-		const TCHAR* DisplayName,
-		double DefaultValue,
-		double Minimum,
-		double Maximum)
+	FGaeaTerrainParameterDescriptor TransformNumberParameter(FName Name, const TCHAR* DisplayName, double DefaultValue, double Minimum, double Maximum, const TCHAR* Group = nullptr)
 	{
 		FGaeaTerrainParameterDescriptor Parameter;
 		Parameter.Name = Name;
@@ -32,63 +27,64 @@ namespace
 		Parameter.Minimum = Minimum;
 		Parameter.bHasMaximum = true;
 		Parameter.Maximum = Maximum;
+		if (Group) Parameter.Group = Group;
 		return Parameter;
 	}
 
-	FGaeaTerrainParameterDescriptor TransformBooleanParameter(FName Name, const TCHAR* DisplayName, bool DefaultValue)
+	FGaeaTerrainParameterDescriptor TransformBooleanParameter(FName Name, const TCHAR* DisplayName, bool DefaultValue, const TCHAR* Group = nullptr)
 	{
 		FGaeaTerrainParameterDescriptor Parameter;
 		Parameter.Name = Name;
 		Parameter.DisplayName = DisplayName;
 		Parameter.Type = EGaeaTerrainParameterType::Boolean;
 		Parameter.DefaultBoolean = DefaultValue;
+		if (Group) Parameter.Group = Group;
 		return Parameter;
 	}
 
-	double TransformMirrorCoordinate(double Value, double Minimum, double Maximum)
+	FGaeaTerrainParameterDescriptor TransformNameParameter(FName Name, const TCHAR* DisplayName, FName DefaultValue, std::initializer_list<FName> Options, const TCHAR* Group = nullptr)
 	{
-		const double Range = Maximum - Minimum;
-		if (Range <= UE_DOUBLE_SMALL_NUMBER) return Minimum;
-		const double Period = Range * 2.0;
-		double Local = FMath::Fmod(Value - Minimum, Period);
-		if (Local < 0.0) Local += Period;
-		if (Local > Range) Local = Period - Local;
-		return Minimum + Local;
+		FGaeaTerrainParameterDescriptor Parameter;
+		Parameter.Name = Name;
+		Parameter.DisplayName = DisplayName;
+		Parameter.Type = EGaeaTerrainParameterType::Name;
+		Parameter.DefaultName = DefaultValue;
+		for (const FName Option : Options) Parameter.NameOptions.Add(Option);
+		if (Group) Parameter.Group = Group;
+		return Parameter;
 	}
 
-	float TransformSampleField(
-		const FGaeaScalarField& Source,
-		const FVector2d& WorldPosition,
-		bool bUnfiltered,
-		bool bFillEdges,
-		bool bMirrorEdges)
+	float TransformBlend(float Original, float Transformed, FName BlendMode)
 	{
-		FVector2d SamplePosition = WorldPosition;
+		if (BlendMode == TEXT("Blend")) return FMath::Lerp(Original, Transformed, 0.5f);
+		if (BlendMode == TEXT("Add")) return Original + Transformed;
+		if (BlendMode == TEXT("Subtract")) return Original - Transformed;
+		if (BlendMode == TEXT("Difference")) return FMath::Abs(Original - Transformed);
+		if (BlendMode == TEXT("Multiply")) return Original * Transformed;
+		if (BlendMode == TEXT("Screen"))
+		{
+			const float A = Original * 0.5f + 0.5f;
+			const float B = Transformed * 0.5f + 0.5f;
+			return (1.0f - (1.0f - A) * (1.0f - B)) * 2.0f - 1.0f;
+		}
+		if (BlendMode == TEXT("Max")) return FMath::Max(Original, Transformed);
+		if (BlendMode == TEXT("Min")) return FMath::Min(Original, Transformed);
+		return Transformed;
+	}
+
+	float TransformSampleField(const FGaeaScalarField& Source, FVector2d SamplePosition, FName Edges, FName Quality)
+	{
 		const FVector2d Min = Source.Domain.WorldMin;
 		const FVector2d Max = Source.Domain.WorldMax;
 		const bool bOutside = SamplePosition.X < Min.X || SamplePosition.X > Max.X || SamplePosition.Y < Min.Y || SamplePosition.Y > Max.Y;
 		if (bOutside)
 		{
-			if (bMirrorEdges)
-			{
-				SamplePosition.X = TransformMirrorCoordinate(SamplePosition.X, Min.X, Max.X);
-				SamplePosition.Y = TransformMirrorCoordinate(SamplePosition.Y, Min.Y, Max.Y);
-			}
-			else if (bFillEdges)
-			{
-				SamplePosition.X = FMath::Clamp(SamplePosition.X, Min.X, Max.X);
-				SamplePosition.Y = FMath::Clamp(SamplePosition.Y, Min.Y, Max.Y);
-			}
-			else
-			{
-				return 0.0f;
-			}
+			if (Edges == TEXT("None")) return 0.0f;
+			SamplePosition.X = FMath::Clamp(SamplePosition.X, Min.X, Max.X);
+			SamplePosition.Y = FMath::Clamp(SamplePosition.Y, Min.Y, Max.Y);
 		}
 
-		if (!bUnfiltered)
-		{
-			return Source.SampleWorld(SamplePosition, true);
-		}
+		if (Quality != TEXT("Draft")) return Source.SampleWorld(SamplePosition, true);
 
 		const FVector2d GridCoordinate = Source.Domain.WorldToStorageCoordinate(SamplePosition);
 		const FIntPoint StorageDimensions = Source.Domain.GetStorageDimensions();
@@ -97,11 +93,7 @@ namespace
 		return Source.AtStorage(X, Y);
 	}
 
-	bool TransformField(
-		const FGaeaTerrainNode& Node,
-		const FGaeaScalarField& Source,
-		FGaeaScalarField& OutField,
-		FString& Error)
+	bool TransformField(const FGaeaTerrainNode& Node, const FGaeaScalarField& Source, bool bHeightField, FGaeaScalarField& OutField, FString& Error)
 	{
 		if (!Source.IsValid())
 		{
@@ -113,12 +105,13 @@ namespace
 		const double UniformScale = FMath::Max(Node.GetNumber(TEXT("Scale"), 1.0), 0.001);
 		const double ScaleX = FMath::Max(bUniform ? UniformScale : Node.GetNumber(TEXT("ScaleX"), 1.0), 0.001);
 		const double ScaleY = FMath::Max(bUniform ? UniformScale : Node.GetNumber(TEXT("ScaleY"), 1.0), 0.001);
-		const bool bUnfiltered = Node.GetBool(TEXT("Unfiltered"), false);
-		const bool bFillEdges = Node.GetBool(TEXT("FillEdges"), false);
-		const bool bMirrorEdges = Node.GetBool(TEXT("MirrorEdges"), false);
+		const double OffsetX = Node.GetNumber(TEXT("OffsetX"), 0.0);
+		const double OffsetY = Node.GetNumber(TEXT("OffsetY"), 0.0);
+		const float OffsetZ = static_cast<float>(Node.GetNumber(TEXT("OffsetZ"), 0.0));
 		const double AngleRadians = FMath::DegreesToRadians(Node.GetNumber(TEXT("Angle"), 0.0));
-		const double OffsetX = Node.GetNumber(TEXT("X"), 0.0);
-		const double OffsetY = Node.GetNumber(TEXT("Y"), 0.0);
+		const FName BlendMode = Node.GetName(TEXT("BlendMode"), TEXT("None"));
+		const FName Edges = Node.GetName(TEXT("Edges"), TEXT("None"));
+		const FName Quality = Node.GetName(TEXT("Quality"), TEXT("High"));
 		const double CosAngle = FMath::Cos(AngleRadians);
 		const double SinAngle = FMath::Sin(AngleRadians);
 		const FVector2d Center = (Source.Domain.WorldMin + Source.Domain.WorldMax) * 0.5;
@@ -132,21 +125,30 @@ namespace
 				const FVector2d Shifted = DestinationWorld - Center - FVector2d(OffsetX, OffsetY);
 				const double RotatedX = CosAngle * Shifted.X + SinAngle * Shifted.Y;
 				const double RotatedY = -SinAngle * Shifted.X + CosAngle * Shifted.Y;
-				const FVector2d SourceWorld(
-					Center.X + RotatedX / ScaleX,
-					Center.Y + RotatedY / ScaleY);
-				OutField.AtInterior(X, Y) = TransformSampleField(Source, SourceWorld, bUnfiltered, bFillEdges, bMirrorEdges);
+				const FVector2d SourceWorld(Center.X + RotatedX / ScaleX, Center.Y + RotatedY / ScaleY);
+				float Transformed = TransformSampleField(Source, SourceWorld, Edges, Quality);
+				if (bHeightField) Transformed += OffsetZ;
+
+				if (Edges == TEXT("Thin") || Edges == TEXT("Wide") || Edges == TEXT("Soft"))
+				{
+					const double EdgeX = FMath::Min(SourceWorld.X - Source.Domain.WorldMin.X, Source.Domain.WorldMax.X - SourceWorld.X);
+					const double EdgeY = FMath::Min(SourceWorld.Y - Source.Domain.WorldMin.Y, Source.Domain.WorldMax.Y - SourceWorld.Y);
+					const double EdgeDistance = FMath::Min(EdgeX, EdgeY);
+					const double Width = Edges == TEXT("Thin") ? 0.01 : Edges == TEXT("Wide") ? 0.08 : 0.04;
+					const double WorldSpan = FMath::Min(Source.Domain.WorldMax.X - Source.Domain.WorldMin.X, Source.Domain.WorldMax.Y - Source.Domain.WorldMin.Y);
+					float EdgeWeight = FMath::Clamp(static_cast<float>(EdgeDistance / FMath::Max(WorldSpan * Width, 1.0)), 0.0f, 1.0f);
+					if (Edges == TEXT("Soft")) EdgeWeight = EdgeWeight * EdgeWeight * (3.0f - 2.0f * EdgeWeight);
+					Transformed *= EdgeWeight;
+				}
+
+				const float Original = Source.AtInterior(X, Y);
+				OutField.AtInterior(X, Y) = FMath::Clamp(TransformBlend(Original, Transformed, BlendMode), -1.0f, 1.0f);
 			}
 		}
 		return OutField.IsValid();
 	}
 
-	bool EvaluateTransformNode(
-		const FGaeaTerrainNode& Node,
-		const FGaeaTerrainNodeInputs& Inputs,
-		const FGaeaTerrainEvaluationContext&,
-		FGaeaTerrainNodeEvaluation& Out,
-		FString& Error)
+	bool EvaluateTransformNode(const FGaeaTerrainNode& Node, const FGaeaTerrainNodeInputs& Inputs, const FGaeaTerrainEvaluationContext&, FGaeaTerrainNodeEvaluation& Out, FString& Error)
 	{
 		const FGaeaTerrainValue* const* InputPtr = Inputs.Find(TEXT("Terrain"));
 		const FGaeaTerrainValue* Input = InputPtr ? *InputPtr : nullptr;
@@ -167,9 +169,9 @@ namespace
 				Error = FString::Printf(TEXT("Transform input field '%s' is invalid."), *FieldName.ToString());
 				return false;
 			}
-
 			FGaeaScalarField ResultField;
-			if (!TransformField(Node, *SourceField, ResultField, Error) || !Dataset.SetScalarField(MoveTemp(ResultField)))
+			const bool bHeightField = FieldName == GaeaTerrainFieldNames::Height;
+			if (!TransformField(Node, *SourceField, bHeightField, ResultField, Error) || !Dataset.SetScalarField(MoveTemp(ResultField)))
 			{
 				if (Error.IsEmpty()) Error = FString::Printf(TEXT("Transform could not publish field '%s'."), *FieldName.ToString());
 				return false;
@@ -192,20 +194,21 @@ void RegisterGaeaTransformNode()
 	FGaeaTerrainNodeDescriptor Descriptor;
 	Descriptor.Type = GaeaTerrainNodeTypes::Transform;
 	Descriptor.DisplayName = TEXT("Transform");
-	Descriptor.Category = TEXT("Adjustments");
-	Descriptor.Description = TEXT("Scales, rotates, and offsets terrain with configurable edge handling and filtering.");
+	Descriptor.Category = TEXT("Modify");
+	Descriptor.Description = TEXT("Moves, scales, rotates, and blends terrain with configurable edge handling and quality.");
 	Descriptor.Inputs.Add(TransformTerrainPort(TEXT("Terrain"), TEXT("Input")));
 	Descriptor.Outputs.Add(TransformTerrainPort(TEXT("Out"), TEXT("Out")));
-	Descriptor.Parameters.Add(TransformBooleanParameter(TEXT("Uniform"), TEXT("Uniform"), true));
-	Descriptor.Parameters.Add(TransformNumberParameter(TEXT("Scale"), TEXT("Scale"), 1.0, 0.001, 10.0));
-	Descriptor.Parameters.Add(TransformNumberParameter(TEXT("ScaleX"), TEXT("Scale X"), 1.0, 0.001, 10.0));
-	Descriptor.Parameters.Add(TransformNumberParameter(TEXT("ScaleY"), TEXT("Scale Y"), 1.0, 0.001, 10.0));
-	Descriptor.Parameters.Add(TransformBooleanParameter(TEXT("Unfiltered"), TEXT("Unfiltered"), false));
-	Descriptor.Parameters.Add(TransformBooleanParameter(TEXT("FillEdges"), TEXT("Fill Edges"), false));
-	Descriptor.Parameters.Add(TransformNumberParameter(TEXT("Angle"), TEXT("Angle"), 0.0, -360.0, 360.0));
-	Descriptor.Parameters.Add(TransformBooleanParameter(TEXT("MirrorEdges"), TEXT("Mirror Edges"), false));
-	Descriptor.Parameters.Add(TransformNumberParameter(TEXT("X"), TEXT("X"), 0.0, -1000000.0, 1000000.0));
-	Descriptor.Parameters.Add(TransformNumberParameter(TEXT("Y"), TEXT("Y"), 0.0, -1000000.0, 1000000.0));
+	Descriptor.Parameters.Add(TransformNumberParameter(TEXT("OffsetX"), TEXT("Offset X"), 0.0, -1000000.0, 1000000.0, TEXT("Position")));
+	Descriptor.Parameters.Add(TransformNumberParameter(TEXT("OffsetY"), TEXT("Offset Y"), 0.0, -1000000.0, 1000000.0, TEXT("Position")));
+	Descriptor.Parameters.Add(TransformNumberParameter(TEXT("OffsetZ"), TEXT("Offset Z"), 0.0, -2.0, 2.0, TEXT("Position")));
+	Descriptor.Parameters.Add(TransformBooleanParameter(TEXT("Uniform"), TEXT("Uniform"), true, TEXT("Scale")));
+	Descriptor.Parameters.Add(TransformNumberParameter(TEXT("Scale"), TEXT("Scale"), 1.0, 0.001, 10.0, TEXT("Scale")));
+	Descriptor.Parameters.Add(TransformNumberParameter(TEXT("ScaleX"), TEXT("Scale X"), 1.0, 0.001, 10.0, TEXT("Scale")));
+	Descriptor.Parameters.Add(TransformNumberParameter(TEXT("ScaleY"), TEXT("Scale Y"), 1.0, 0.001, 10.0, TEXT("Scale")));
+	Descriptor.Parameters.Add(TransformNumberParameter(TEXT("Angle"), TEXT("Angle"), 0.0, -360.0, 360.0, TEXT("Rotation")));
+	Descriptor.Parameters.Add(TransformNameParameter(TEXT("BlendMode"), TEXT("Blend Mode"), TEXT("None"), { TEXT("None"), TEXT("Blend"), TEXT("Add"), TEXT("Subtract"), TEXT("Difference"), TEXT("Multiply"), TEXT("Screen"), TEXT("Max"), TEXT("Min") }, TEXT("Settings")));
+	Descriptor.Parameters.Add(TransformNameParameter(TEXT("Edges"), TEXT("Edges"), TEXT("None"), { TEXT("None"), TEXT("Thin"), TEXT("Wide"), TEXT("Soft") }, TEXT("Settings")));
+	Descriptor.Parameters.Add(TransformNameParameter(TEXT("Quality"), TEXT("Quality"), TEXT("High"), { TEXT("Draft"), TEXT("Medium"), TEXT("High") }, TEXT("Settings")));
 
 	FGaeaTerrainNodeDescriptorRegistry::Register(Descriptor);
 	FGaeaTerrainNodeRegistry::Register(GaeaTerrainNodeTypes::Transform, EvaluateTransformNode);
