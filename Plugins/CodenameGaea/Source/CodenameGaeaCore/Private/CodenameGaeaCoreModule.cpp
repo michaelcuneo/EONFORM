@@ -16,6 +16,7 @@
 #include "GaeaTerrainNodeDescriptor.h"
 #include "GaeaTerrainRecipe.h"
 #include "GaeaThermalErosionNode.h"
+#include "GaeaThresholdNode.h"
 
 class FCodenameGaeaCoreModule final : public IModuleInterface
 {
@@ -45,6 +46,7 @@ public:
 		RegisterGaeaMultiCombineNode();
 		RegisterGaeaSharpenNode();
 		RegisterGaeaSineNode();
+		RegisterGaeaThresholdNode();
 	}
 };
 
