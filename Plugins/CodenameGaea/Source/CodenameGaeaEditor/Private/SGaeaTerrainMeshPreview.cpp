@@ -9,8 +9,8 @@
 
 namespace
 {
-	constexpr double CentimetersPerKilometer = 100000.0;
-	constexpr double CentimetersPerMeter = 100.0;
+	constexpr double PreviewCentimetersPerKilometer = 100000.0;
+	constexpr double PreviewCentimetersPerMeter = 100.0;
 }
 
 SGaeaTerrainMeshPreview::SGaeaTerrainMeshPreview()
@@ -107,10 +107,10 @@ void SGaeaTerrainMeshPreview::SetTerrain(const FGaeaTerrainDatasetSnapshot& Snap
 		{
 			const FGaeaTerrainGraphOutputSettings& Output = FGaeaTerrainOutputEditorState::Get().GetSettings();
 			Options.HorizontalScaleXY = FVector2d(
-				Output.WorldWidthKilometers * CentimetersPerKilometer / SourceWidth,
-				Output.WorldDepthKilometers * CentimetersPerKilometer / SourceDepth);
+				Output.WorldWidthKilometers * PreviewCentimetersPerKilometer / SourceWidth,
+				Output.WorldDepthKilometers * PreviewCentimetersPerKilometer / SourceDepth);
 			Options.VerticalScale =
-				Output.ElevationScaleMeters * CentimetersPerMeter /
+				Output.ElevationScaleMeters * PreviewCentimetersPerMeter /
 				FMath::Max(static_cast<double>(Snapshot.Metadata.HeightScale), UE_DOUBLE_SMALL_NUMBER);
 		}
 	}
