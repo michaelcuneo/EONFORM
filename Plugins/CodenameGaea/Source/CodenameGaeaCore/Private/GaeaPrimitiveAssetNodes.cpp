@@ -1,17 +1,10 @@
 #include "GaeaPrimitiveAssetNodes.h"
 
-#include "GaeaColorField.h"
 #include "GaeaGridDomain.h"
 #include "GaeaTerrainEvaluator.h"
 #include "GaeaTerrainFieldNames.h"
 #include "GaeaTerrainNodeDescriptor.h"
 #include "GaeaTerrainRecipe.h"
-#include "ImageCore.h"
-#include "IImageWrapper.h"
-#include "IImageWrapperModule.h"
-#include "Misc/FileHelper.h"
-#include "Misc/Paths.h"
-#include "Modules/ModuleManager.h"
 
 namespace
 {
@@ -58,45 +51,6 @@ namespace
 		return Parameter;
 	}
 
-	FString ResolvePrimitiveAssetFilePath(const FGaeaTerrainNode& Node)
-	{
-		FString Path = Node.GetName(TEXT("File"), NAME_None).ToString();
-		if (Path.IsEmpty() || Path == TEXT("None")) Path = Node.GetName(TEXT("RelativePath"), NAME_None).ToString();
-		if (Path.IsEmpty() || Path == TEXT("None")) return FString();
-		if (FPaths::IsRelative(Path)) Path = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir(), Path);
-		FPaths::NormalizeFilename(Path);
-		return Path;
-	}
-
-	bool MakeImageDomain(int32 Width, int32 Height, float WorldSize, FGaeaGridDomain& OutDomain, FString& Error)
-	{
-		if (Width < 2 || Height < 2) { Error = TEXT("File image must be at least 2x2 pixels."); return false; }
-		const double Half = static_cast<double>(WorldSize) * 0.5;
-		OutDomain = FGaeaGridDomain::Make(FIntPoint(Width, Height), FVector2d(-Half, -Half), FVector2d(Half, Half));
-		if (!OutDomain.IsValid()) { Error = TEXT("File produced an invalid grid domain."); return false; }
-		return true;
-	}
-
-	bool LoadImageWrapper(const FString& Path, TSharedPtr<IImageWrapper>& OutWrapper, FString& Error)
-	{
-		TArray64<uint8> CompressedData;
-		if (!FFileHelper::LoadFileToArray(CompressedData, *Path))
-		{
-			Error = FString::Printf(TEXT("File could not read '%s'."), *Path);
-			return false;
-		}
-		IImageWrapperModule& ImageWrapperModule = FModuleManager::LoadModuleChecked<IImageWrapperModule>(TEXT("ImageWrapper"));
-		const EImageFormat Format = ImageWrapperModule.DetectImageFormat(CompressedData.GetData(), CompressedData.Num());
-		if (Format == EImageFormat::Invalid) { Error = TEXT("File format is not supported by Unreal's ImageWrapper decoder."); return false; }
-		OutWrapper = ImageWrapperModule.CreateImageWrapper(Format);
-		if (!OutWrapper.IsValid() || !OutWrapper->SetCompressed(CompressedData.GetData(), CompressedData.Num()))
-		{
-			Error = TEXT("File image decoder could not initialize.");
-			return false;
-		}
-		return true;
-	}
-
 	bool EvaluateDrawNode(const FGaeaTerrainNode& Node, const FGaeaTerrainNodeInputs&, const FGaeaTerrainEvaluationContext&, FGaeaTerrainNodeEvaluation& Out, FString& Error)
 	{
 		const int32 Resolution = FMath::Clamp<int32>(static_cast<int32>(Node.GetInteger(TEXT("Resolution"), 257)), 2, 1025);
@@ -132,93 +86,6 @@ namespace
 		return true;
 	}
 
-	bool EvaluateFileNode(const FGaeaTerrainNode& Node, const FGaeaTerrainNodeInputs&, const FGaeaTerrainEvaluationContext& Context, FGaeaTerrainNodeEvaluation& Out, FString& Error)
-	{
-		const FString Path = ResolvePrimitiveAssetFilePath(Node);
-		if (Path.IsEmpty()) { Error = TEXT("File node has no file selected."); return false; }
-		if (!FPaths::FileExists(Path)) { Error = FString::Printf(TEXT("File does not exist: %s"), *Path); return false; }
-
-		TSharedPtr<IImageWrapper> Wrapper;
-		if (!LoadImageWrapper(Path, Wrapper, Error)) return false;
-
-		FImage DecodedImage;
-		if (!Wrapper->GetRawImage(DecodedImage))
-		{
-			Error = FString::Printf(TEXT("File could not decode '%s' into a native Unreal image."), *Path);
-			return false;
-		}
-
-		// UE 5.8 explicitly recommends GetRawImage over GetRaw(format, bit depth).
-		// Normalize every supported source into RGBA32F once so JPEG, PNG8/16,
-		// BMP, and EXR all follow the same safe pixel path.
-		DecodedImage.ChangeFormat(ERawImageFormat::RGBA32F, EGammaSpace::Linear);
-		const TArrayView64<const FLinearColor> Pixels = DecodedImage.AsRGBA32F();
-		const int32 SourceWidth = DecodedImage.SizeX;
-		const int32 SourceHeight = DecodedImage.SizeY;
-		if (SourceWidth < 2 || SourceHeight < 2 || Pixels.Num() < static_cast<int64>(SourceWidth) * SourceHeight)
-		{
-			Error = TEXT("File decoded image data is invalid.");
-			return false;
-		}
-
-		const bool bCropSquare = Node.GetBool(TEXT("CropToSquare"), false);
-		const int32 OutputWidth = bCropSquare ? FMath::Min(SourceWidth, SourceHeight) : SourceWidth;
-		const int32 OutputHeight = bCropSquare ? FMath::Min(SourceWidth, SourceHeight) : SourceHeight;
-		const int32 CropX = bCropSquare ? (SourceWidth - OutputWidth) / 2 : 0;
-		const int32 CropY = bCropSquare ? (SourceHeight - OutputHeight) / 2 : 0;
-		const float WorldSize = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("WorldSize"), 100000.0)), 1.0f, 10000000.0f);
-		FGaeaGridDomain Domain;
-		if (!MakeImageDomain(OutputWidth, OutputHeight, WorldSize, Domain, Error)) return false;
-
-		const bool bRGB = Node.GetBool(TEXT("IsRGB"), false);
-		const bool bAllowUnclamped = Node.GetBool(TEXT("AllowUnclamped"), false);
-		if (bRGB)
-		{
-			FGaeaColorField Field;
-			Field.Initialize(Domain);
-			for (int32 Y = 0; Y < OutputHeight; ++Y)
-			{
-				for (int32 X = 0; X < OutputWidth; ++X)
-				{
-					FLinearColor Value = Pixels[static_cast<int64>(Y + CropY) * SourceWidth + (X + CropX)];
-					if (!bAllowUnclamped)
-					{
-						Value.R = FMath::Clamp(Value.R, 0.0f, 1.0f);
-						Value.G = FMath::Clamp(Value.G, 0.0f, 1.0f);
-						Value.B = FMath::Clamp(Value.B, 0.0f, 1.0f);
-						Value.A = FMath::Clamp(Value.A, 0.0f, 1.0f);
-					}
-					Field.AtInterior(X, Y) = Value;
-				}
-			}
-			Out.Outputs.Add(TEXT("Out"), FGaeaTerrainValue::MakeColor(MoveTemp(Field)));
-			return true;
-		}
-
-		FGaeaFieldDescriptor Descriptor;
-		Descriptor.Name = GaeaTerrainFieldNames::Height;
-		Descriptor.Unit = EGaeaFieldUnit::Normalized;
-		Descriptor.Interpolation = EGaeaInterpolation::Bilinear;
-		FGaeaScalarField HeightField;
-		HeightField.Initialize(Domain, Descriptor);
-		for (int32 Y = 0; Y < OutputHeight; ++Y)
-		{
-			for (int32 X = 0; X < OutputWidth; ++X)
-			{
-				const FLinearColor& Pixel = Pixels[static_cast<int64>(Y + CropY) * SourceWidth + (X + CropX)];
-				float HeightValue = Pixel.GetLuminance();
-				if (!bAllowUnclamped) HeightValue = FMath::Clamp(HeightValue, 0.0f, 1.0f);
-				HeightField.AtInterior(X, Y) = HeightValue;
-			}
-		}
-
-		FGaeaTerrainDataset Dataset;
-		if (!Dataset.SetScalarField(MoveTemp(HeightField))) { Error = TEXT("File could not publish its Height field."); return false; }
-		const float HeightScale = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("HeightScale"), Context.HeightScale > UE_SMALL_NUMBER ? Context.HeightScale : 8000.0f)), 1.0f, 1000000.0f);
-		Out.Outputs.Add(TEXT("Out"), FGaeaTerrainValue::MakeTerrain(MoveTemp(Dataset), HeightScale));
-		return true;
-	}
-
 	bool EvaluateObjectNode(const FGaeaTerrainNode&, const FGaeaTerrainNodeInputs&, const FGaeaTerrainEvaluationContext&, FGaeaTerrainNodeEvaluation&, FString& Error)
 	{
 		Error = TEXT("Object node import backend is pending. The Gaea 2 public node contract is available, but mesh rasterization to a 2.5D heightfield has not been wired yet."); return false;
@@ -248,7 +115,10 @@ void RegisterGaeaFileNode()
 	Descriptor.Parameters.Add(PrimitiveAssetBool(TEXT("CropToSquare"), TEXT("Crop to Square"), false));
 	Descriptor.Parameters.Add(PrimitiveAssetName(TEXT("InformationHoudini"), TEXT("Information Houdini"), NAME_None));
 	Descriptor.Parameters.Add(PrimitiveAssetBool(TEXT("NeverCache"), TEXT("Never Cache"), false));
-	FGaeaTerrainNodeDescriptorRegistry::Register(Descriptor); FGaeaTerrainNodeRegistry::Register(GaeaTerrainNodeTypes::File, EvaluateFileNode);
+
+	// Descriptor only. The UE 5.8-safe evaluator is registered separately by
+	// RegisterGaeaFileNodeDecoder(), which decodes through IImageWrapperModule::DecompressImage.
+	FGaeaTerrainNodeDescriptorRegistry::Register(Descriptor);
 }
 
 void RegisterGaeaObjectNode()
