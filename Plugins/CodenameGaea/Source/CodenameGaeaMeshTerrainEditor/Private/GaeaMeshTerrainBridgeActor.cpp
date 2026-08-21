@@ -1,11 +1,14 @@
 #include "GaeaMeshTerrainBridgeActor.h"
 
 #include "DynamicMesh/DynamicMesh3.h"
+#include "Engine/World.h"
 #include "GaeaTerrainDatasetRegistry.h"
 #include "GaeaTerrainEvaluator.h"
 #include "GaeaTerrainGraphAsset.h"
 #include "GaeaTerrainMeshMaterializer.h"
-#include "Engine/World.h"
+#include "MeshPartition.h"
+#include "MeshPartitionDefinition.h"
+#include "Modifiers/MeshPartitionMeshProvider.h"
 
 using UE::Geometry::FDynamicMesh3;
 
@@ -14,9 +17,9 @@ AGaeaMeshTerrainBridgeActor::AGaeaMeshTerrainBridgeActor()
 	PrimaryActorTick.bCanEverTick = false;
 	bIsEditorOnlyActor = true;
 
-	MeshProvider = CreateDefaultSubobject<UMeshProviderModifier>(TEXT("EONFORMMeshProvider"));
-	SetRootComponent(MeshProvider.Get());
-
+	UMeshProviderModifier* MeshProvider = CreateDefaultSubobject<UMeshProviderModifier>(TEXT("EONFORMMeshProvider"));
+	MeshProviderComponent = MeshProvider;
+	SetRootComponent(MeshProvider);
 	SetActorLabel(TEXT("EONFORM Mesh Terrain Bridge"));
 }
 
@@ -33,11 +36,16 @@ void AGaeaMeshTerrainBridgeActor::SetStatus(const FString& Message, bool bError)
 	}
 }
 
-AMeshPartition* AGaeaMeshTerrainBridgeActor::ResolveOrCreateMeshPartition()
+AActor* AGaeaMeshTerrainBridgeActor::ResolveOrCreateMeshPartitionActor()
 {
 	if (IsValid(TargetMeshPartition.Get()))
 	{
-		return TargetMeshPartition.Get();
+		if (Cast<AMeshPartition>(TargetMeshPartition.Get()))
+		{
+			return TargetMeshPartition.Get();
+		}
+		SetStatus(TEXT("Target Mesh Partition is assigned but is not an AMeshPartition actor."), true);
+		return nullptr;
 	}
 
 	UWorld* World = GetWorld();
@@ -80,6 +88,13 @@ void AGaeaMeshTerrainBridgeActor::BuildMeshTerrain()
 		return;
 	}
 
+	UMeshProviderModifier* MeshProvider = Cast<UMeshProviderModifier>(MeshProviderComponent.Get());
+	if (!MeshProvider)
+	{
+		SetStatus(TEXT("EONFORM Mesh Provider component is unavailable."), true);
+		return;
+	}
+
 	FGaeaTerrainEvaluationContext Context;
 	Context.HeightScale = FMath::Max(DefaultHeightScale, UE_SMALL_NUMBER);
 
@@ -118,30 +133,22 @@ void AGaeaMeshTerrainBridgeActor::BuildMeshTerrain()
 		return;
 	}
 
-	AMeshPartition* Partition = ResolveOrCreateMeshPartition();
+	AMeshPartition* Partition = Cast<AMeshPartition>(ResolveOrCreateMeshPartitionActor());
 	if (!Partition)
 	{
 		return;
 	}
 
-	Partition->Modify();
-	MeshProvider->Modify();
-
-	UMeshPartitionDefinition* Definition = MeshPartitionDefinition.Get();
+	UMeshPartitionDefinition* Definition = Cast<UMeshPartitionDefinition>(MeshPartitionDefinition.Get());
 	if (!Definition)
 	{
-		Definition = const_cast<UMeshPartitionDefinition*>(UMeshPartitionDefinition::GetDefaultMegaMeshDefinition());
-	}
-	if (!Definition)
-	{
-		SetStatus(TEXT("No Mesh Partition Definition is available. Assign an MPD asset to the bridge."), true);
+		SetStatus(TEXT("Assign a UE 5.8 Mesh Partition Definition asset before building Mesh Terrain."), true);
 		return;
 	}
-	if (Partition->GetMeshPartitionDefinition() != Definition)
-	{
-		Partition->SetMeshPartitionDefinition(Definition);
-	}
 
+	Partition->Modify();
+	MeshProvider->Modify();
+	Partition->SetMeshPartitionDefinition(Definition);
 	MeshProvider->BP_SetAffectedMegaMesh(Partition);
 	MeshProvider->SetMesh(MoveTemp(DynamicMesh), true);
 
@@ -155,6 +162,7 @@ void AGaeaMeshTerrainBridgeActor::BuildMeshTerrain()
 
 void AGaeaMeshTerrainBridgeActor::ClearMeshTerrain()
 {
+	UMeshProviderModifier* MeshProvider = Cast<UMeshProviderModifier>(MeshProviderComponent.Get());
 	if (!MeshProvider)
 	{
 		return;
