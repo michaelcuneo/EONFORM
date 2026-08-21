@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GaeaScalarField.h"
 #include "GaeaTerrainDataset.h"
+#include "GaeaTerrainPhysicalMetrics.h"
 
 struct CODENAMEGAEACORE_API FGaeaTerrainProcessMaskSettings
 {
@@ -20,6 +21,13 @@ public:
 	static bool Analyze(
 		const FGaeaScalarField& Height,
 		float HeightScale,
+		FGaeaTerrainDataset& InOutDataset,
+		FString* OutError = nullptr);
+
+	static bool Analyze(
+		const FGaeaScalarField& Height,
+		float HeightScale,
+		const FGaeaTerrainPhysicalMetrics& PhysicalMetrics,
 		FGaeaTerrainDataset& InOutDataset,
 		FString* OutError = nullptr);
 
