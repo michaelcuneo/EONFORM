@@ -17,7 +17,14 @@ namespace GaeaTerrainNodeTypes
 	CODENAMEGAEACORE_API extern const FName Gabor;
 	CODENAMEGAEACORE_API extern const FName Hemisphere;
 	CODENAMEGAEACORE_API extern const FName LinearGradient;
+	CODENAMEGAEACORE_API extern const FName LineNoise;
+	CODENAMEGAEACORE_API extern const FName MultiFractal;
+	CODENAMEGAEACORE_API extern const FName Noise;
+	CODENAMEGAEACORE_API extern const FName Pattern;
 	CODENAMEGAEACORE_API extern const FName RadialGradient;
+	CODENAMEGAEACORE_API extern const FName Shape;
+	CODENAMEGAEACORE_API extern const FName Voronoi;
+	CODENAMEGAEACORE_API extern const FName WaveShine;
 	CODENAMEGAEACORE_API extern const FName TerrainShape;
 	CODENAMEGAEACORE_API extern const FName TerrainContext;
 	CODENAMEGAEACORE_API extern const FName Geology;
@@ -53,25 +60,12 @@ USTRUCT(BlueprintType)
 struct CODENAMEGAEACORE_API FGaeaTerrainNode
 {
 	GENERATED_BODY()
-
-	UPROPERTY(EditAnywhere, Category="Terrain Node")
-	FGuid Id;
-
-	UPROPERTY(EditAnywhere, Category="Terrain Node")
-	FName Type = NAME_None;
-
-	UPROPERTY(EditAnywhere, Category="Terrain Node")
-	TMap<FName, double> NumericParameters;
-
-	UPROPERTY(EditAnywhere, Category="Terrain Node")
-	TMap<FName, int64> IntegerParameters;
-
-	UPROPERTY(EditAnywhere, Category="Terrain Node")
-	TMap<FName, bool> BoolParameters;
-
-	UPROPERTY(EditAnywhere, Category="Terrain Node")
-	TMap<FName, FName> NameParameters;
-
+	UPROPERTY(EditAnywhere, Category="Terrain Node") FGuid Id;
+	UPROPERTY(EditAnywhere, Category="Terrain Node") FName Type = NAME_None;
+	UPROPERTY(EditAnywhere, Category="Terrain Node") TMap<FName, double> NumericParameters;
+	UPROPERTY(EditAnywhere, Category="Terrain Node") TMap<FName, int64> IntegerParameters;
+	UPROPERTY(EditAnywhere, Category="Terrain Node") TMap<FName, bool> BoolParameters;
+	UPROPERTY(EditAnywhere, Category="Terrain Node") TMap<FName, FName> NameParameters;
 	bool IsValid() const;
 	double GetNumber(FName Name, double DefaultValue) const;
 	int64 GetInteger(FName Name, int64 DefaultValue) const;
@@ -83,19 +77,10 @@ USTRUCT(BlueprintType)
 struct CODENAMEGAEACORE_API FGaeaTerrainConnection
 {
 	GENERATED_BODY()
-
-	UPROPERTY(EditAnywhere, Category="Terrain Connection")
-	FGuid FromNode;
-
-	UPROPERTY(EditAnywhere, Category="Terrain Connection")
-	FName FromOutput = NAME_None;
-
-	UPROPERTY(EditAnywhere, Category="Terrain Connection")
-	FGuid ToNode;
-
-	UPROPERTY(EditAnywhere, Category="Terrain Connection")
-	FName ToInput = NAME_None;
-
+	UPROPERTY(EditAnywhere, Category="Terrain Connection") FGuid FromNode;
+	UPROPERTY(EditAnywhere, Category="Terrain Connection") FName FromOutput = NAME_None;
+	UPROPERTY(EditAnywhere, Category="Terrain Connection") FGuid ToNode;
+	UPROPERTY(EditAnywhere, Category="Terrain Connection") FName ToInput = NAME_None;
 	bool IsValid() const;
 };
 
@@ -103,19 +88,10 @@ USTRUCT(BlueprintType)
 struct CODENAMEGAEACORE_API FGaeaTerrainRecipe
 {
 	GENERATED_BODY()
-
-	UPROPERTY(EditAnywhere, Category="Terrain Recipe")
-	int32 Version = 1;
-
-	UPROPERTY(EditAnywhere, Category="Terrain Recipe")
-	FGuid OutputNode;
-
-	UPROPERTY(EditAnywhere, Category="Terrain Recipe")
-	TArray<FGaeaTerrainNode> Nodes;
-
-	UPROPERTY(EditAnywhere, Category="Terrain Recipe")
-	TArray<FGaeaTerrainConnection> Connections;
-
+	UPROPERTY(EditAnywhere, Category="Terrain Recipe") int32 Version = 1;
+	UPROPERTY(EditAnywhere, Category="Terrain Recipe") FGuid OutputNode;
+	UPROPERTY(EditAnywhere, Category="Terrain Recipe") TArray<FGaeaTerrainNode> Nodes;
+	UPROPERTY(EditAnywhere, Category="Terrain Recipe") TArray<FGaeaTerrainConnection> Connections;
 	const FGaeaTerrainNode* FindNode(const FGuid& NodeId) const;
 	bool Validate(FString* OutError = nullptr) const;
 	uint32 GetDeterministicHash() const;
