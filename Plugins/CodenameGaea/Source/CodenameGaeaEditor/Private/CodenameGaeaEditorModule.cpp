@@ -85,32 +85,13 @@ private:
 	void InitializeResolutionPresets()
 	{
 		TerrainResolutionPresets.Reset();
-
-		static constexpr int32 Presets[] =
-		{
-			0,
-			127,
-			253,
-			505,
-			1009,
-			2017,
-			4033,
-			8129
-		};
-
-		for (const int32 Resolution : Presets)
-		{
-			TerrainResolutionPresets.Add(MakeShared<int32>(Resolution));
-		}
+		static constexpr int32 Presets[] = { 0, 127, 253, 505, 1009, 2017, 4033, 8129 };
+		for (const int32 Resolution : Presets) TerrainResolutionPresets.Add(MakeShared<int32>(Resolution));
 	}
 
 	FText GetResolutionPresetLabel(int32 Resolution) const
 	{
-		if (Resolution <= 0)
-		{
-			return LOCTEXT("NativeResolutionPreset", "Native / Source Resolution");
-		}
-
+		if (Resolution <= 0) return LOCTEXT("NativeResolutionPreset", "Native / Source Resolution");
 		return FText::FromString(FString::Printf(TEXT("%d x %d"), Resolution, Resolution));
 	}
 
@@ -118,31 +99,20 @@ private:
 	{
 		for (const TSharedPtr<int32>& Preset : TerrainResolutionPresets)
 		{
-			if (Preset.IsValid() && *Preset == Resolution)
-			{
-				return Preset;
-			}
+			if (Preset.IsValid() && *Preset == Resolution) return Preset;
 		}
 		return TerrainResolutionPresets.Num() > 0 ? TerrainResolutionPresets[0] : nullptr;
 	}
 
 	FIntPoint GetSelectedTargetResolution() const
 	{
-		return TerrainResolutionPreset > 0
-			? FIntPoint(TerrainResolutionPreset, TerrainResolutionPreset)
-			: FIntPoint::ZeroValue;
+		return TerrainResolutionPreset > 0 ? FIntPoint(TerrainResolutionPreset, TerrainResolutionPreset) : FIntPoint::ZeroValue;
 	}
 
 	bool GetLatestEvaluatedTerrain(FGaeaTerrainDatasetSnapshot& OutSnapshot) const
 	{
-		if (FGaeaTerrainDatasetRegistry::Get(TEXT("CodenameGaeaGraph"), OutSnapshot) && OutSnapshot.IsValid())
-		{
-			return true;
-		}
-
-		FMessageDialog::Open(
-			EAppMsgType::Ok,
-			LOCTEXT("NoEvaluatedGaeaGraph", "No evaluated EONFORM graph is available. Evaluate the graph first."));
+		if (FGaeaTerrainDatasetRegistry::Get(TEXT("CodenameGaeaGraph"), OutSnapshot) && OutSnapshot.IsValid()) return true;
+		FMessageDialog::Open(EAppMsgType::Ok, LOCTEXT("NoEvaluatedGaeaGraph", "No evaluated EONFORM graph is available yet. Connect or edit the graph so EONFORM can evaluate it first."));
 		return false;
 	}
 
@@ -168,9 +138,7 @@ private:
 		Settings.VerticalScale = TerrainVerticalScale;
 		Settings.TargetResolution = GetSelectedTargetResolution();
 		Settings.Sections = FIntPoint(TerrainSectionsX, TerrainSectionsY);
-		Settings.MeshPartitionDefinition = MeshPartitionDefinitionPath.IsValid()
-			? MeshPartitionDefinitionPath.TryLoad()
-			: nullptr;
+		Settings.MeshPartitionDefinition = MeshPartitionDefinitionPath.IsValid() ? MeshPartitionDefinitionPath.TryLoad() : nullptr;
 		return Settings;
 	}
 
@@ -195,10 +163,7 @@ private:
 	void BuildPreviewMesh()
 	{
 		FGaeaTerrainDatasetSnapshot Snapshot;
-		if (!GetLatestEvaluatedTerrain(Snapshot))
-		{
-			return;
-		}
+		if (!GetLatestEvaluatedTerrain(Snapshot)) return;
 
 		UWorld* World = GetEditorWorld();
 		if (!World)
@@ -208,53 +173,28 @@ private:
 		}
 
 		AGaeaTerrainDynamicMeshActor* MeshActor = nullptr;
-		for (TActorIterator<AGaeaTerrainDynamicMeshActor> It(World); It; ++It)
-		{
-			MeshActor = *It;
-			break;
-		}
-
+		for (TActorIterator<AGaeaTerrainDynamicMeshActor> It(World); It; ++It) { MeshActor = *It; break; }
 		if (!MeshActor)
 		{
 			FActorSpawnParameters SpawnParameters;
 			SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-			MeshActor = World->SpawnActor<AGaeaTerrainDynamicMeshActor>(
-				FVector::ZeroVector,
-				FRotator::ZeroRotator,
-				SpawnParameters);
+			MeshActor = World->SpawnActor<AGaeaTerrainDynamicMeshActor>(FVector::ZeroVector, FRotator::ZeroRotator, SpawnParameters);
 		}
-
-		if (!MeshActor)
-		{
-			FMessageDialog::Open(EAppMsgType::Ok, LOCTEXT("GaeaMeshSpawnFailed", "Could not create the EONFORM Dynamic Mesh preview actor."));
-			return;
-		}
+		if (!MeshActor) return;
 
 #if WITH_EDITOR
 		MeshActor->SetActorLabel(TEXT("EONFORM Terrain Preview"));
 #endif
 
 		FString Error;
-		if (!MeshActor->ApplyTerrainDataset(Snapshot.Dataset, MakePreviewOptions(Snapshot.Metadata.HeightScale), &Error))
-		{
-			FMessageDialog::Open(
-				EAppMsgType::Ok,
-				FText::FromString(FString::Printf(TEXT("Terrain preview build failed: %s"), *Error)));
-			return;
-		}
-
+		if (!MeshActor->ApplyTerrainDataset(Snapshot.Dataset, MakePreviewOptions(Snapshot.Metadata.HeightScale), &Error)) return;
 		MeshActor->Modify();
-		GEditor->SelectNone(false, true, false);
-		GEditor->SelectActor(MeshActor, true, true, true, true);
 	}
 
 	void BuildMeshTerrain()
 	{
 		FGaeaTerrainDatasetSnapshot Snapshot;
-		if (!GetLatestEvaluatedTerrain(Snapshot))
-		{
-			return;
-		}
+		if (!GetLatestEvaluatedTerrain(Snapshot)) return;
 
 		UWorld* World = GetEditorWorld();
 		if (!World)
@@ -263,12 +203,7 @@ private:
 			return;
 		}
 
-		const FGaeaMeshTerrainBuildResult BuildResult = FGaeaMeshTerrainOutput::Build(
-			World,
-			Snapshot.Dataset,
-			Snapshot.Metadata.HeightScale,
-			MakeMeshTerrainSettings());
-
+		const FGaeaMeshTerrainBuildResult BuildResult = FGaeaMeshTerrainOutput::Build(World, Snapshot.Dataset, Snapshot.Metadata.HeightScale, MakeMeshTerrainSettings());
 		if (!BuildResult.bSuccess)
 		{
 			FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(BuildResult.Message));
@@ -285,17 +220,10 @@ private:
 
 	void EditMeshPartitionDefinition()
 	{
-		if (!MeshPartitionDefinitionPath.IsValid() || !GEditor)
-		{
-			return;
-		}
-
+		if (!MeshPartitionDefinitionPath.IsValid() || !GEditor) return;
 		if (UObject* Asset = MeshPartitionDefinitionPath.TryLoad())
 		{
-			if (UAssetEditorSubsystem* AssetEditorSubsystem = GEditor->GetEditorSubsystem<UAssetEditorSubsystem>())
-			{
-				AssetEditorSubsystem->OpenEditorForAsset(Asset);
-			}
+			if (UAssetEditorSubsystem* AssetEditorSubsystem = GEditor->GetEditorSubsystem<UAssetEditorSubsystem>()) AssetEditorSubsystem->OpenEditorForAsset(Asset);
 		}
 	}
 
@@ -307,7 +235,7 @@ private:
 				SNew(SVerticalBox)
 				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 6.0f)
 				[
-					SNew(STextBlock).Text(LOCTEXT("MeshTerrainSettingsTitle", "Mesh Terrain Output"))
+					SNew(STextBlock).Text(LOCTEXT("MeshTerrainSettingsTitle", "Terrain Output"))
 				]
 				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 2.0f)
 				[
@@ -330,11 +258,7 @@ private:
 					[
 						SNew(SButton)
 						.Text(LOCTEXT("EditMPDLabel", "Edit MPD"))
-						.OnClicked_Lambda([this]()
-						{
-							EditMeshPartitionDefinition();
-							return FReply::Handled();
-						})
+						.OnClicked_Lambda([this]() { EditMeshPartitionDefinition(); return FReply::Handled(); })
 					]
 				]
 				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 2.0f)
@@ -371,18 +295,8 @@ private:
 						SNew(SComboBox<TSharedPtr<int32>>)
 						.OptionsSource(&TerrainResolutionPresets)
 						.InitiallySelectedItem(FindResolutionPreset(TerrainResolutionPreset))
-						.ToolTipText(LOCTEXT("ResolutionPresetTooltip", "Use the EONFORM source resolution, or resample to one of Epic's recommended UE Landscape-compatible square dimensions. Mesh Terrain itself can use arbitrary mesh resolution."))
-						.OnGenerateWidget_Lambda([this](TSharedPtr<int32> Item)
-						{
-							return SNew(STextBlock).Text(GetResolutionPresetLabel(Item.IsValid() ? *Item : 0));
-						})
-						.OnSelectionChanged_Lambda([this](TSharedPtr<int32> Item, ESelectInfo::Type)
-						{
-							if (Item.IsValid())
-							{
-								TerrainResolutionPreset = *Item;
-							}
-						})
+						.OnGenerateWidget_Lambda([this](TSharedPtr<int32> Item) { return SNew(STextBlock).Text(GetResolutionPresetLabel(Item.IsValid() ? *Item : 0)); })
+						.OnSelectionChanged_Lambda([this](TSharedPtr<int32> Item, ESelectInfo::Type) { if (Item.IsValid()) TerrainResolutionPreset = *Item; })
 						[
 							SNew(STextBlock).Text_Lambda([this]() { return GetResolutionPresetLabel(TerrainResolutionPreset); })
 						]
@@ -408,36 +322,17 @@ private:
 						.OnValueChanged_Lambda([this](int32 Value) { TerrainSectionsY = FMath::Max(Value, 1); })
 					]
 				]
-				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 6.0f, 0.0f, 0.0f)
+				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 10.0f, 0.0f, 0.0f)
 				[
-					SNew(SHorizontalBox)
-					+ SHorizontalBox::Slot().FillWidth(1.0f)
-					[
-						SNew(SButton)
-						.Text(LOCTEXT("PreviewTerrainLabel", "Preview Mesh"))
-						.ToolTipText(LOCTEXT("PreviewTerrainTooltip", "Build or refresh the lightweight Dynamic Mesh preview using the current EONFORM scale and resolution settings."))
-						.OnClicked_Lambda([this]()
-						{
-							BuildPreviewMesh();
-							return FReply::Handled();
-						})
-					]
-					+ SHorizontalBox::Slot().FillWidth(1.0f).Padding(8.0f, 0.0f, 0.0f, 0.0f)
-					[
-						SNew(SButton)
-						.Text(LOCTEXT("GenerateTerrainLabel", "Generate Terrain"))
-						.ToolTipText(LOCTEXT("GenerateTerrainTooltip", "Build or refresh the committed UE 5.8 Mesh Terrain using the current output and streaming settings."))
-						.OnClicked_Lambda([this]()
-						{
-							BuildMeshTerrain();
-							return FReply::Handled();
-						})
-					]
+					SNew(SButton)
+					.Text(LOCTEXT("GenerateTerrainLabel", "Generate Terrain"))
+					.ToolTipText(LOCTEXT("GenerateTerrainTooltip", "Commit the currently analysed EONFORM result into UE 5.8 Mesh Terrain."))
+					.OnClicked_Lambda([this]() { BuildMeshTerrain(); return FReply::Handled(); })
 				]
 				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 6.0f, 0.0f, 0.0f)
 				[
 					SNew(STextBlock)
-					.Text(LOCTEXT("OutputSettingsHint", "1.0 scale = authored 1:1 size. Resolution presets use Epic's recommended Landscape-compatible dimensions; Native preserves EONFORM/Mesh Terrain's source resolution. Section counts control EONFORM base regions."))
+					.Text(LOCTEXT("OutputSettingsHint", "Analysis and the embedded 3D preview update from the graph automatically. Generate Terrain is the explicit world-commit step."))
 					.AutoWrapText(true)
 				]
 			];
@@ -446,7 +341,6 @@ private:
 	TSharedRef<SDockTab> SpawnCodenameGaeaTab(const FSpawnTabArgs& Args)
 	{
 		TSharedRef<SWidget> OutputPanel = MakeOutputSettingsPanel();
-
 		return SNew(SDockTab)
 			.TabRole(ETabRole::NomadTab)
 			[
