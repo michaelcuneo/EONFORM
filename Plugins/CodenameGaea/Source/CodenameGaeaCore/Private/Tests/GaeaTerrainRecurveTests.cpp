@@ -28,10 +28,10 @@ bool FGaeaTerrainRecurveDescriptorTest::RunTest(const FString& Parameters)
 	FGaeaTerrainNodeDescriptor Descriptor;
 	TestTrue(TEXT("Recurve descriptor exists"), FGaeaTerrainNodeDescriptorRegistry::Get(GaeaTerrainNodeTypes::Recurve, Descriptor));
 	TestEqual(TEXT("Recurve display name"), Descriptor.DisplayName, FString(TEXT("Recurve")));
-	TestEqual(TEXT("Recurve category"), Descriptor.Category, FString(TEXT("Profile")));
+	TestEqual(TEXT("Recurve category"), Descriptor.Category, FString(TEXT("Modify")));
 	TestEqual(TEXT("Recurve input count"), Descriptor.Inputs.Num(), 1);
 	TestEqual(TEXT("Recurve output count"), Descriptor.Outputs.Num(), 1);
-	TestEqual(TEXT("Recurve parameter count"), Descriptor.Parameters.Num(), 7);
+	TestEqual(TEXT("Recurve parameter count"), Descriptor.Parameters.Num(), 4);
 	if (Descriptor.Inputs.Num() == 1)
 	{
 		TestEqual(TEXT("Recurve input pin"), Descriptor.Inputs[0].Name, FName(TEXT("Terrain")));
@@ -39,6 +39,14 @@ bool FGaeaTerrainRecurveDescriptorTest::RunTest(const FString& Parameters)
 	if (Descriptor.Outputs.Num() == 1)
 	{
 		TestEqual(TEXT("Recurve output pin"), Descriptor.Outputs[0].Name, FName(TEXT("Out")));
+	}
+	if (Descriptor.Parameters.Num() == 4)
+	{
+		TestEqual(TEXT("Recurve Power"), Descriptor.Parameters[0].Name, FName(TEXT("Power")));
+		TestEqual(TEXT("Recurve Scale"), Descriptor.Parameters[1].Name, FName(TEXT("Scale")));
+		TestEqual(TEXT("Recurve Iterations"), Descriptor.Parameters[2].Name, FName(TEXT("Iterations")));
+		TestEqual(TEXT("Recurve Style"), Descriptor.Parameters[3].Name, FName(TEXT("Style")));
+		TestEqual(TEXT("Recurve Style option count"), Descriptor.Parameters[3].NameOptions.Num(), 2);
 	}
 	return true;
 }
@@ -66,10 +74,8 @@ bool FGaeaTerrainRecurveTerminalTest::RunTest(const FString& Parameters)
 	Recurve.Type = GaeaTerrainNodeTypes::Recurve;
 	Recurve.NumericParameters.Add(TEXT("Power"), 0.5);
 	Recurve.NumericParameters.Add(TEXT("Scale"), 0.5);
-	Recurve.IntegerParameters.Add(TEXT("Duration"), 2);
-	Recurve.NumericParameters.Add(TEXT("Degrees"), 45.0);
-	Recurve.BoolParameters.Add(TEXT("Inflate"), true);
-	Recurve.BoolParameters.Add(TEXT("PreserveFidelity"), false);
+	Recurve.IntegerParameters.Add(TEXT("Iterations"), 2);
+	Recurve.NameParameters.Add(TEXT("Style"), TEXT("Inward"));
 
 	Recipe.Nodes = { Source, Recurve };
 	GaeaRecurveTests::Connect(Recipe, Source.Id, TEXT("Terrain"), Recurve.Id, TEXT("Terrain"));
