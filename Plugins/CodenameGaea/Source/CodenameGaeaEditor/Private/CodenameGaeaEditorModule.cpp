@@ -19,6 +19,7 @@
 #include "ToolMenus.h"
 #include "Widgets/Docking/SDockTab.h"
 #include "Widgets/Input/SButton.h"
+#include "Widgets/Input/SComboBox.h"
 #include "Widgets/Input/SNumericEntryBox.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/SBoxPanel.h"
@@ -36,6 +37,8 @@ class FCodenameGaeaEditorModule : public IModuleInterface
 public:
 	virtual void StartupModule() override
 	{
+		InitializeResolutionPresets();
+
 		TerrainGraphNodeFactory = MakeShared<FGaeaTerrainGraphNodeFactory>();
 		FEdGraphUtilities::RegisterVisualNodeFactory(TerrainGraphNodeFactory);
 
@@ -74,9 +77,65 @@ public:
 		{
 			FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(CodenameGaeaTabName);
 		}
+
+		TerrainResolutionPresets.Reset();
 	}
 
 private:
+	void InitializeResolutionPresets()
+	{
+		TerrainResolutionPresets.Reset();
+
+		// Native keeps Mesh Terrain's arbitrary-resolution workflow intact.
+		// The remaining entries are Epic's recommended Landscape-compatible
+		// square heightfield dimensions in UE 5.8.
+		static constexpr int32 Presets[] =
+		{
+			0,
+			127,
+			253,
+			505,
+			1009,
+			2017,
+			4033,
+			8129
+		};
+
+		for (const int32 Resolution : Presets)
+		{
+			TerrainResolutionPresets.Add(MakeShared<int32>(Resolution));
+		}
+	}
+
+	FText GetResolutionPresetLabel(int32 Resolution) const
+	{
+		if (Resolution <= 0)
+		{
+			return LOCTEXT("NativeResolutionPreset", "Native / Source Resolution");
+		}
+
+		return FText::FromString(FString::Printf(TEXT("%d x %d"), Resolution, Resolution));
+	}
+
+	TSharedPtr<int32> FindResolutionPreset(int32 Resolution) const
+	{
+		for (const TSharedPtr<int32>& Preset : TerrainResolutionPresets)
+		{
+			if (Preset.IsValid() && *Preset == Resolution)
+			{
+				return Preset;
+			}
+		}
+		return TerrainResolutionPresets.Num() > 0 ? TerrainResolutionPresets[0] : nullptr;
+	}
+
+	FIntPoint GetSelectedTargetResolution() const
+	{
+		return TerrainResolutionPreset > 0
+			? FIntPoint(TerrainResolutionPreset, TerrainResolutionPreset)
+			: FIntPoint::ZeroValue;
+	}
+
 	bool GetLatestEvaluatedTerrain(FGaeaTerrainDatasetSnapshot& OutSnapshot) const
 	{
 		if (FGaeaTerrainDatasetRegistry::Get(TEXT("CodenameGaeaGraph"), OutSnapshot) && OutSnapshot.IsValid())
@@ -101,7 +160,7 @@ private:
 		Options.HeightScale = HeightScale;
 		Options.HorizontalScale = TerrainHorizontalScale;
 		Options.VerticalScale = TerrainVerticalScale;
-		Options.TargetResolution = FIntPoint(TerrainResolutionX, TerrainResolutionY);
+		Options.TargetResolution = GetSelectedTargetResolution();
 		return Options;
 	}
 
@@ -110,7 +169,7 @@ private:
 		FGaeaMeshTerrainOutputSettings Settings;
 		Settings.HorizontalScale = TerrainHorizontalScale;
 		Settings.VerticalScale = TerrainVerticalScale;
-		Settings.TargetResolution = FIntPoint(TerrainResolutionX, TerrainResolutionY);
+		Settings.TargetResolution = GetSelectedTargetResolution();
 		Settings.Sections = FIntPoint(TerrainSectionsX, TerrainSectionsY);
 		Settings.MeshPartitionDefinition = MeshPartitionDefinitionPath.IsValid()
 			? MeshPartitionDefinitionPath.TryLoad()
@@ -311,21 +370,33 @@ private:
 				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 2.0f)
 				[
 					SNew(SHorizontalBox)
-					+ SHorizontalBox::Slot().FillWidth(1.0f).Padding(0.0f, 0.0f, 4.0f, 0.0f)
+					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.0f, 0.0f, 8.0f, 0.0f)
 					[
-						SNew(SNumericEntryBox<int32>)
-						.Label()[SNew(STextBlock).Text(LOCTEXT("ResolutionXLabel", "Resolution X"))]
-						.Value_Lambda([this]() { return TerrainResolutionX; })
-						.MinValue(0)
-						.OnValueChanged_Lambda([this](int32 Value) { TerrainResolutionX = FMath::Max(Value, 0); })
+						SNew(STextBlock)
+						.Text(LOCTEXT("ResolutionPresetLabel", "Output Resolution"))
 					]
-					+ SHorizontalBox::Slot().FillWidth(1.0f).Padding(4.0f, 0.0f, 0.0f, 0.0f)
+					+ SHorizontalBox::Slot().FillWidth(1.0f)
 					[
-						SNew(SNumericEntryBox<int32>)
-						.Label()[SNew(STextBlock).Text(LOCTEXT("ResolutionYLabel", "Resolution Y"))]
-						.Value_Lambda([this]() { return TerrainResolutionY; })
-						.MinValue(0)
-						.OnValueChanged_Lambda([this](int32 Value) { TerrainResolutionY = FMath::Max(Value, 0); })
+						SNew(SComboBox<TSharedPtr<int32>>)
+						.OptionsSource(&TerrainResolutionPresets)
+						.InitiallySelectedItem(FindResolutionPreset(TerrainResolutionPreset))
+						.ToolTipText(LOCTEXT("ResolutionPresetTooltip", "Use the EONFORM source resolution, or resample to one of Epic's recommended UE Landscape-compatible square dimensions. Mesh Terrain itself can use arbitrary mesh resolution."))
+						.OnGenerateWidget_Lambda([this](TSharedPtr<int32> Item)
+						{
+							return SNew(STextBlock)
+								.Text(GetResolutionPresetLabel(Item.IsValid() ? *Item : 0));
+						})
+						.OnSelectionChanged_Lambda([this](TSharedPtr<int32> Item, ESelectInfo::Type)
+						{
+							if (Item.IsValid())
+							{
+								TerrainResolutionPreset = *Item;
+							}
+						})
+						[
+							SNew(STextBlock)
+							.Text_Lambda([this]() { return GetResolutionPresetLabel(TerrainResolutionPreset); })
+						]
 					]
 				]
 				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 2.0f)
@@ -351,7 +422,7 @@ private:
 				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 4.0f, 0.0f, 0.0f)
 				[
 					SNew(STextBlock)
-					.Text(LOCTEXT("OutputSettingsHint", "1.0 scale = authored 1:1 size. Resolution 0 = source resolution. Section counts split the base mesh for smaller Mesh Terrain rebuild/streaming regions."))
+					.Text(LOCTEXT("OutputSettingsHint", "1.0 scale = authored 1:1 size. Resolution presets use Epic's recommended Landscape-compatible dimensions; Native preserves EONFORM/Mesh Terrain's source resolution. Section counts control EONFORM base regions."))
 					.AutoWrapText(true)
 				]
 			];
@@ -412,10 +483,10 @@ private:
 	FSoftObjectPath MeshPartitionDefinitionPath;
 	double TerrainHorizontalScale = 1.0;
 	double TerrainVerticalScale = 1.0;
-	int32 TerrainResolutionX = 0;
-	int32 TerrainResolutionY = 0;
+	int32 TerrainResolutionPreset = 0;
 	int32 TerrainSectionsX = 1;
 	int32 TerrainSectionsY = 1;
+	TArray<TSharedPtr<int32>> TerrainResolutionPresets;
 };
 
 IMPLEMENT_MODULE(FCodenameGaeaEditorModule, CodenameGaeaEditor)
