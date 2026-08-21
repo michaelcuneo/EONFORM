@@ -24,8 +24,11 @@ enum class EGaeaMeshTerrainSectionComplexity : uint8
 
 struct FGaeaMeshTerrainOutputSettings
 {
-	/** 1.0 preserves EONFORM's authored world dimensions. */
+	/** Legacy uniform XY multiplier. New physical output uses HorizontalScaleXY. */
 	double HorizontalScale = 1.0;
+
+	/** Independent X/Y physical scale multipliers. */
+	FVector2d HorizontalScaleXY = FVector2d(1.0, 1.0);
 
 	/** 1.0 preserves EONFORM's authored elevation. */
 	double VerticalScale = 1.0;
