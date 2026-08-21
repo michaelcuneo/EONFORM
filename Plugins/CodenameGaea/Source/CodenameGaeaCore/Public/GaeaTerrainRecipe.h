@@ -9,6 +9,7 @@ namespace GaeaTerrainNodeTypes
 	CODENAMEGAEACORE_API extern const FName PerlinNoise;
 	CODENAMEGAEACORE_API extern const FName Cellular;
 	CODENAMEGAEACORE_API extern const FName Cellular3D;
+	CODENAMEGAEACORE_API extern const FName Cone;
 	CODENAMEGAEACORE_API extern const FName TerrainShape;
 	CODENAMEGAEACORE_API extern const FName TerrainContext;
 	CODENAMEGAEACORE_API extern const FName Geology;
