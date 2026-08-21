@@ -13,6 +13,11 @@ namespace GaeaTerrainNodeTypes
 	CODENAMEGAEACORE_API extern const FName Constant;
 	CODENAMEGAEACORE_API extern const FName Cracks;
 	CODENAMEGAEACORE_API extern const FName DotNoise;
+	CODENAMEGAEACORE_API extern const FName DriftNoise;
+	CODENAMEGAEACORE_API extern const FName Gabor;
+	CODENAMEGAEACORE_API extern const FName Hemisphere;
+	CODENAMEGAEACORE_API extern const FName LinearGradient;
+	CODENAMEGAEACORE_API extern const FName RadialGradient;
 	CODENAMEGAEACORE_API extern const FName TerrainShape;
 	CODENAMEGAEACORE_API extern const FName TerrainContext;
 	CODENAMEGAEACORE_API extern const FName Geology;
