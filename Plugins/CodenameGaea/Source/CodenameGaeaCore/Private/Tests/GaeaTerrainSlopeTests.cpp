@@ -32,6 +32,13 @@ namespace
 		Erosion.IntegerParameters.Add(TEXT("Iterations"), 8);
 		Erosion.NumericParameters.Add(TEXT("Rainfall"), 0.03);
 		Erosion.NumericParameters.Add(TEXT("Strength"), 1.5);
+		if (bUseSlopeMask)
+		{
+			// Gaea only uses the Area input when Selective Processing is enabled.
+			// Use Erosion Strength here so the routed slope mask is expected to alter
+			// the downstream terrain rather than being intentionally ignored by None.
+			Erosion.NameParameters.Add(TEXT("SelectiveProcessing"), TEXT("ErosionStrength"));
+		}
 
 		Recipe.Nodes.Add(Source);
 		Recipe.Nodes.Add(Slope);
@@ -78,7 +85,7 @@ bool FGaeaTerrainSlopeMaskRoutingTest::RunTest(const FString& Parameters)
 	const FGaeaTerrainEvaluationResult Masked = FGaeaTerrainEvaluator::Evaluate(MakeSlopeMaskedErosionRecipe(true), Context);
 
 	TestTrue(TEXT("Unmasked erosion evaluates"), Unmasked.bSuccess);
-	TestTrue(TEXT("Slope-masked erosion evaluates"), Masked.bSuccess);
+	TestTrue(TEXT("Slope-masked selective erosion evaluates"), Masked.bSuccess);
 	if (!Unmasked.bSuccess || !Masked.bSuccess)
 	{
 		if (!Unmasked.bSuccess) AddError(Unmasked.Error);
@@ -100,7 +107,7 @@ bool FGaeaTerrainSlopeMaskRoutingTest::RunTest(const FString& Parameters)
 	{
 		Difference += FMath::Abs(MaskedHeight->Values[Index] - UnmaskedHeight->Values[Index]);
 	}
-	TestTrue(TEXT("Slope mask changes downstream erosion"), Difference > 0.0001);
+	TestTrue(TEXT("Slope-driven Erosion Strength changes downstream erosion"), Difference > 0.0001);
 	return true;
 }
 
