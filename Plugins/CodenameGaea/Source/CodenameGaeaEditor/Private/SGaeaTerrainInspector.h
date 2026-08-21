@@ -7,6 +7,7 @@
 #include "Widgets/SCompoundWidget.h"
 #include "Widgets/Views/SListView.h"
 
+class SGaeaTerrainMeshPreview;
 class SImage;
 class SWidget;
 class UTexture2D;
@@ -40,6 +41,7 @@ private:
 
 	TSharedPtr<SListView<TSharedPtr<FName>>> FieldListView;
 	TSharedPtr<SImage> PreviewImage;
+	TSharedPtr<SGaeaTerrainMeshPreview> MeshPreview;
 	FSlateBrush PreviewBrush;
 	TStrongObjectPtr<UTexture2D> PreviewTexture;
 
