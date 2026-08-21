@@ -25,10 +25,9 @@ bool FGaeaTerrainHeightRoutingTest::RunTest(const FString& Parameters)
 	FGaeaTerrainNode HeightSelector;
 	HeightSelector.Id = FGuid(602, 2, 2, 2);
 	HeightSelector.Type = GaeaTerrainNodeTypes::Height;
-	HeightSelector.NumericParameters.Add(TEXT("Min"), 0.45);
-	HeightSelector.NumericParameters.Add(TEXT("Max"), 1.0);
+	HeightSelector.NumericParameters.Add(TEXT("RangeMin"), 0.45);
+	HeightSelector.NumericParameters.Add(TEXT("RangeMax"), 1.0);
 	HeightSelector.NumericParameters.Add(TEXT("Falloff"), 0.1);
-	HeightSelector.BoolParameters.Add(TEXT("Normalized"), true);
 
 	FGaeaTerrainNode Erosion;
 	Erosion.Id = FGuid(603, 3, 3, 3);
