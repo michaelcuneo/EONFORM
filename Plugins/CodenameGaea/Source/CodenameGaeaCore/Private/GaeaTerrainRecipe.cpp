@@ -14,7 +14,14 @@ namespace GaeaTerrainNodeTypes
 	const FName Gabor(TEXT("Gabor"));
 	const FName Hemisphere(TEXT("Hemisphere"));
 	const FName LinearGradient(TEXT("LinearGradient"));
+	const FName LineNoise(TEXT("LineNoise"));
+	const FName MultiFractal(TEXT("MultiFractal"));
+	const FName Noise(TEXT("Noise"));
+	const FName Pattern(TEXT("Pattern"));
 	const FName RadialGradient(TEXT("RadialGradient"));
+	const FName Shape(TEXT("Shape"));
+	const FName Voronoi(TEXT("Voronoi"));
+	const FName WaveShine(TEXT("WaveShine"));
 	const FName TerrainShape(TEXT("TerrainShape"));
 	const FName TerrainContext(TEXT("TerrainContext"));
 	const FName Geology(TEXT("Geology"));
@@ -114,7 +121,6 @@ bool FGaeaTerrainRecipe::Validate(FString* OutError) const
 	};
 
 	if (Version <= 0) return Fail(TEXT("Recipe version must be positive."));
-
 	if (Nodes.IsEmpty())
 	{
 		if (OutputNode.IsValid()) return Fail(TEXT("Empty recipe must not reference an output node."));
@@ -122,7 +128,6 @@ bool FGaeaTerrainRecipe::Validate(FString* OutError) const
 		if (OutError) OutError->Reset();
 		return true;
 	}
-
 	if (!OutputNode.IsValid()) return Fail(TEXT("Recipe has no valid output node."));
 
 	TSet<FGuid> NodeIds;
@@ -143,7 +148,6 @@ bool FGaeaTerrainRecipe::Validate(FString* OutError) const
 		if (InputKeys.Contains(Key)) return Fail(TEXT("More than one connection targets the same node input."));
 		InputKeys.Add(Key);
 	}
-
 	if (OutError) OutError->Reset();
 	return true;
 }
@@ -152,11 +156,9 @@ uint32 FGaeaTerrainRecipe::GetDeterministicHash() const
 {
 	uint32 Hash = GetTypeHash(Version);
 	Hash = HashCombineFast(Hash, GetTypeHash(OutputNode));
-
 	TArray<const FGaeaTerrainNode*> SortedNodes;
 	for (const FGaeaTerrainNode& Node : Nodes) SortedNodes.Add(&Node);
 	SortedNodes.Sort([](const FGaeaTerrainNode& A, const FGaeaTerrainNode& B) { return A.Id < B.Id; });
-
 	for (const FGaeaTerrainNode* Node : SortedNodes)
 	{
 		Hash = HashCombineFast(Hash, GetTypeHash(Node->Id));
@@ -166,7 +168,6 @@ uint32 FGaeaTerrainRecipe::GetDeterministicHash() const
 		HashNamedMap(Hash, Node->BoolParameters);
 		HashNamedMap(Hash, Node->NameParameters);
 	}
-
 	TArray<const FGaeaTerrainConnection*> SortedConnections;
 	for (const FGaeaTerrainConnection& Connection : Connections) SortedConnections.Add(&Connection);
 	SortedConnections.Sort([](const FGaeaTerrainConnection& A, const FGaeaTerrainConnection& B)
