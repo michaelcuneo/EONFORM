@@ -82,6 +82,10 @@ struct CODENAMEGAEACORE_API FGaeaTerrainRecipe
 	UPROPERTY(EditAnywhere, Category="Terrain Recipe")
 	FGuid OutputNode;
 
+	/** Exact output pin connected to Terrain Output. */
+	UPROPERTY(EditAnywhere, Category="Terrain Recipe")
+	FName OutputName = NAME_None;
+
 	UPROPERTY(EditAnywhere, Category="Terrain Recipe")
 	TArray<FGaeaTerrainNode> Nodes;
 
