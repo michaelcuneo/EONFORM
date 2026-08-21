@@ -80,9 +80,17 @@ namespace
 		return Parameter;
 	}
 
-	float ErosionSampleClamped(const FGaeaScalarField& Field, int32 X, int32 Y)
+	const FGaeaScalarField* ErosionResolveHeightfield(const FGaeaTerrainValue& Value)
 	{
-		return Field.AtInterior(FMath::Clamp(X, 0, Field.Domain.Dimensions.X - 1), FMath::Clamp(Y, 0, Field.Domain.Dimensions.Y - 1));
+		if (Value.Type == EGaeaTerrainValueType::ScalarField && Value.ScalarField.IsValid())
+		{
+			return &Value.ScalarField;
+		}
+		if (Value.Type == EGaeaTerrainValueType::Terrain && Value.IsValid())
+		{
+			return Value.TerrainDataset.FindScalarField(GaeaTerrainFieldNames::Height);
+		}
+		return nullptr;
 	}
 
 	bool ErosionBuildBiasMask(const FGaeaTerrainNode& Node, const FGaeaScalarField& Height, float HeightScale, const FGaeaScalarField* AreaInput, FGaeaScalarField& OutMask)
@@ -149,12 +157,12 @@ namespace
 		const FGaeaScalarField* AreaInput = nullptr;
 		if (AreaValue)
 		{
-			if (AreaValue->Type != EGaeaTerrainValueType::ScalarField || !AreaValue->ScalarField.IsValid() || AreaValue->ScalarField.Domain != Height->Domain)
+			AreaInput = ErosionResolveHeightfield(*AreaValue);
+			if (!AreaInput || AreaInput->Domain != Height->Domain)
 			{
-				Error = TEXT("Erosion Area must be a valid scalar field using the terrain domain.");
+				Error = TEXT("Erosion Area must be a valid heightfield using the terrain domain.");
 				return false;
 			}
-			AreaInput = &AreaValue->ScalarField;
 		}
 
 		FGaeaHydraulicErosionSettings Settings;
