@@ -21,6 +21,7 @@ namespace GaeaTerrainNodeTypes
 	CODENAMEGAEACORE_API extern const FName Flip;
 	CODENAMEGAEACORE_API extern const FName Invert;
 	CODENAMEGAEACORE_API extern const FName MultiCombine;
+	CODENAMEGAEACORE_API extern const FName Sharpen;
 	CODENAMEGAEACORE_API extern const FName Slope;
 	CODENAMEGAEACORE_API extern const FName Angle;
 	CODENAMEGAEACORE_API extern const FName Curvature;
