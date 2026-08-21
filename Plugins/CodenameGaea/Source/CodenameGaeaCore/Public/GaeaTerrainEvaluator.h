@@ -12,7 +12,7 @@ struct CODENAMEGAEACORE_API FGaeaTerrainEvaluationContext
 	float HeightScale = 1000.0f;
 
 	/** Optional physical world contract supplied by EONFORM's graph asset/output settings. */
-	FGaeaTerrainPhysicalMetrics PhysicalMetrics;
+	FGaeaTerrainPhysicalMetrics PhysicalMetrics = FGaeaTerrainPhysicalContext::GetActive();
 };
 
 struct CODENAMEGAEACORE_API FGaeaTerrainEvaluationResult
