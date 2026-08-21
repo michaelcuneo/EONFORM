@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Algo/BinarySearch.h"
+
 void RegisterGaeaAdjustNode();
 void RegisterGaeaApertureNode();
 void RegisterGaeaBlobRemoverNode();
