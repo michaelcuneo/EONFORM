@@ -36,7 +36,7 @@ bool FGaeaCurrentNodeContractTest::RunTest(const FString& Parameters)
 
 	CheckNode(*this, GaeaTerrainNodeTypes::PerlinNoise, TEXT("Perlin"), TEXT("Primitive"), 14);
 	CheckNode(*this, GaeaTerrainNodeTypes::Cellular, TEXT("Cellular"), TEXT("Primitive"), 10);
-	CheckNode(*this, GaeaTerrainNodeTypes::Cellular3D, TEXT("Cellular3D"), TEXT("Primitive"), 9);
+	CheckNode(*this, GaeaTerrainNodeTypes::Cellular3D, TEXT("Cellular3D"), TEXT("Primitive"), 10);
 	CheckNode(*this, GaeaTerrainNodeTypes::Cone, TEXT("Cone"), TEXT("Primitive"), 4);
 	CheckNode(*this, GaeaTerrainNodeTypes::Constant, TEXT("Constant"), TEXT("Primitive"), 3);
 	CheckNode(*this, GaeaTerrainNodeTypes::HydraulicErosion, TEXT("Erosion"), TEXT("Simulate"), 20);
