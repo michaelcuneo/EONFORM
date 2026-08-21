@@ -85,7 +85,7 @@ namespace
 			}
 		}
 		OutMean = Sum / 9.0f;
-		Algo::Sort(Samples, Samples + 9);
+		Algo::Sort(Samples);
 		OutMedian = Samples[4];
 		OutDeviation = FMath::Abs(Field.AtInterior(X, Y) - OutMedian);
 	}
