@@ -25,6 +25,7 @@
 #include "GaeaLinearGradientNode.h"
 #include "GaeaMultiCombineNode.h"
 #include "GaeaPerlinNode.h"
+#include "GaeaPrimitiveAssetNodes.h"
 #include "GaeaPrimitiveCoverageNodes.h"
 #include "GaeaRadialGradientNode.h"
 #include "GaeaRecurveNode.h"
@@ -68,16 +69,20 @@ public:
 		RegisterGaeaConstantNode();
 		RegisterGaeaCracksNode();
 		RegisterGaeaDotNoiseNode();
+		RegisterGaeaDrawNode();
 		RegisterGaeaDriftNoiseNode();
+		RegisterGaeaFileNode();
 		RegisterGaeaGaborNode();
 		RegisterGaeaHemisphereNode();
 		RegisterGaeaLinearGradientNode();
 		RegisterGaeaLineNoiseNode();
 		RegisterGaeaMultiFractalNode();
 		RegisterGaeaNoiseNode();
+		RegisterGaeaObjectNode();
 		RegisterGaeaPatternNode();
 		RegisterGaeaRadialGradientNode();
 		RegisterGaeaShapeNode();
+		RegisterGaeaTileInputNode();
 		RegisterGaeaVoronoiNode();
 		RegisterGaeaWaveShineNode();
 		RegisterGaeaErosionNode();
@@ -116,16 +121,20 @@ public:
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Constant, TEXT("Constant"), TEXT("Primitive"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Cracks, TEXT("Cracks"), TEXT("Primitive"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::DotNoise, TEXT("DotNoise"), TEXT("Primitive"));
+		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Draw, TEXT("Draw"), TEXT("Primitive"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::DriftNoise, TEXT("DriftNoise"), TEXT("Primitive"));
+		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::File, TEXT("File"), TEXT("Primitive"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Gabor, TEXT("Gabor"), TEXT("Primitive"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Hemisphere, TEXT("Hemisphere"), TEXT("Primitive"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::LinearGradient, TEXT("LinearGradient"), TEXT("Primitive"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::LineNoise, TEXT("LineNoise"), TEXT("Primitive"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::MultiFractal, TEXT("MultiFractal"), TEXT("Primitive"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Noise, TEXT("Noise"), TEXT("Primitive"));
+		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Object, TEXT("Object"), TEXT("Primitive"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Pattern, TEXT("Pattern"), TEXT("Primitive"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::RadialGradient, TEXT("RadialGradient"), TEXT("Primitive"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Shape, TEXT("Shape"), TEXT("Primitive"));
+		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::TileInput, TEXT("TileInput"), TEXT("Primitive"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Voronoi, TEXT("Voronoi"), TEXT("Primitive"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::WaveShine, TEXT("WaveShine"), TEXT("Primitive"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::HydraulicErosion, TEXT("Erosion"), TEXT("Simulate"));
