@@ -36,31 +36,9 @@ A high-level Terrain node may use internal compiled/composite execution for perf
 
 Current public Gaea Primitive catalogue:
 
-- Cellular - COMPLETE
-- Cellular3D - COMPLETE
-- Cone - COMPLETE
-- Constant - COMPLETE
-- Cracks - COMPLETE
-- DotNoise - COMPLETE
-- Draw - COMPLETE
-- DriftNoise - COMPLETE
-- File - COMPLETE
-- Gabor - COMPLETE
-- Hemisphere - COMPLETE
-- LinearGradient - COMPLETE
-- LineNoise - COMPLETE
-- MultiFractal - COMPLETE
-- Noise - COMPLETE
-- Object - COMPLETE
-- Pattern - COMPLETE
-- Perlin - COMPLETE
-- RadialGradient - COMPLETE
-- Shape - COMPLETE
-- TileInput - COMPLETE
-- Voronoi - COMPLETE
-- WaveShine - COMPLETE
+Cellular, Cellular3D, Cone, Constant, Cracks, DotNoise, Draw, DriftNoise, File, Gabor, Hemisphere, LinearGradient, LineNoise, MultiFractal, Noise, Object, Pattern, Perlin, RadialGradient, Shape, TileInput, Voronoi, WaveShine.
 
-Primitive coverage is sufficient to support later composite Terrain nodes. Individual fidelity passes remain allowed, but missing-node breadth is not the blocker here.
+Status: COMPLETE by public node coverage. Individual fidelity passes remain allowed, but missing-node breadth is not the blocker here.
 
 ## Modify - 39 / 39 represented
 
@@ -74,84 +52,72 @@ Status: COMPLETE by public node coverage; several implementations still need exa
 
 All current public Surface node names now have runtime graph descriptors and evaluators:
 
-- Bomber - COMPLETE foundation
-- Bulbous - COMPLETE foundation
-- Contours - COMPLETE foundation
-- Craggy - COMPLETE foundation
-- Distress - COMPLETE foundation
-- FractalTerraces - COMPLETE
-- Grid - COMPLETE foundation
-- GroundTexture - COMPLETE foundation
-- Outcrops - COMPLETE foundation
-- Pockmarks - COMPLETE foundation
-- RockNoise - COMPLETE foundation
-- Rockscape - COMPLETE foundation
-- Roughen - COMPLETE foundation
-- Sand - COMPLETE foundation
-- Sandstone - COMPLETE foundation
-- Shatter - COMPLETE foundation
-- Shear - COMPLETE foundation
-- Steps - COMPLETE foundation
-- Stones - COMPLETE foundation
-- Stratify - COMPLETE foundation
-- Terraces - COMPLETE
+Bomber, Bulbous, Contours, Craggy, Distress, FractalTerraces, Grid, GroundTexture, Outcrops, Pockmarks, RockNoise, Rockscape, Roughen, Sand, Sandstone, Shatter, Shear, Steps, Stones, Stratify, Terraces.
 
-The new Surface implementations share reusable deterministic operations for scatter/stamping, layered noise, ridged rock breakup, cellular crack structure, strata, slope/curvature bias, directional sand, and spatial resampling. These operations are intended to become building blocks for later Terrain composites rather than duplicated secret algorithms.
+The Surface implementations share reusable deterministic operations for scatter/stamping, layered noise, ridged rock breakup, cellular crack structure, strata, slope/curvature bias, directional sand, and spatial resampling. These operations are intended to become building blocks for later Terrain composites rather than duplicated secret algorithms.
 
 `CodenameGaea.Core.Graph.SurfaceNodeCoverage` enforces that all 21 Surface nodes have descriptors and runtime evaluators, can evaluate from a real Perlin terrain source, publish a valid Height field, and contain finite samples.
 
 Surface fidelity remains an iterative product task: coverage here means the nodes are real executable EONFORM operations, not a claim of byte-for-byte equivalence with QuadSpinner's proprietary implementations.
 
-## Simulate - 2 / 26 represented before expansion
+## Simulate - 7 / 26 represented
 
-Existing:
+Existing before this expansion:
 
 - Erosion - COMPLETE / physical-scale aware
 - Thermal - COMPLETE
 
-Missing:
+First physical foundation batch now represented:
+
+- HydroFix - COMPLETE foundation; physical D8 drainage continuity/downcutting
+- Rivers - COMPLETE foundation; physical catchment-driven network, optional Headwaters mask, channel/valley carving, River and RiverDepth outputs
+- Sediments - COMPLETE foundation; low-slope/concavity-biased sediment accumulation and Deposits output
+- Debris - COMPLETE foundation; loose-rock terrain accumulation and Debris output
+- Scree - COMPLETE foundation; slope/edge-biased scree accumulation and Scree output
+
+The `Rivers` implementation deliberately sits on EONFORM's physical hydrology rather than introducing a parallel river solver. Catchment area, drainage direction, distance-to-outlet, physical elevation scale and world dimensions are the reusable engine beneath the graph node.
+
+`CodenameGaea.Core.Graph.SimulateFoundationChain` evaluates a real chain:
+
+```text
+Perlin -> HydroFix -> Rivers -> Sediments -> Debris -> Scree
+```
+
+and verifies finite final terrain plus persistent River, RiverDepth, Deposits, Debris and Scree fields.
+
+Still missing:
 
 - Anastomosis
 - Crumble
-- Debris
 - Dusting
 - EasyErosion
 - Erosion2
 - Glacier
 - Hillify
-- HydroFix
 - IceFloe
 - Lake
 - Lichtenberg
-- Rivers
-- Scree
-- Sea
-- Sediments
 - Shrubs
 - Snow
 - Snowfield
 - Thermal2
 - Trees
+- Sea
 - Wizard
 - Wizard2
 
-This is the largest geomorphology gap. EONFORM's physical hydrology, catchment area, stream order, terrain context, geology, erosion, deposition and sea-level datum are engine primitives beneath these graph nodes; they do not replace the nodes.
+This remains the largest geomorphology gap. EONFORM's physical hydrology, catchment area, stream order, terrain context, geology, erosion, deposition and sea-level datum are engine primitives beneath these graph nodes; they do not replace the nodes.
 
-Implementation priority inside Simulate:
+Next Simulate priority:
 
-1. HydroFix
-2. Rivers
-3. Sediments
-4. Debris
-5. Scree
-6. Erosion2 / EasyErosion
-7. Thermal2 / Crumble / Hillify
-8. Lake
-9. Sea
-10. Snow / Snowfield / Glacier / IceFloe / Dusting
-11. Anastomosis / Lichtenberg
-12. Trees / Shrubs
-13. Wizard / Wizard2 as high-level simulation composites
+1. Erosion2 / EasyErosion
+2. Thermal2 / Crumble / Hillify
+3. Lake
+4. Sea
+5. Snow / Snowfield / Glacier / IceFloe / Dusting
+6. Anastomosis / Lichtenberg
+7. Trees / Shrubs
+8. Wizard / Wizard2 as high-level simulation composites
 
 ## Derive - 4 / 14 represented before expansion
 
@@ -196,30 +162,9 @@ Existing:
 
 Missing:
 
-- Accumulator
-- Chokepoint
-- Compare
-- DataExtractor
-- Gate
-- Layers
-- LoopBegin
-- MacroPort
-- LoopEnd
-- Mask
-- Math
-- Mixer
-- Repeat
-- Reseed
-- Route
-- Seamless
-- Switch
-- Var
+Accumulator, Chokepoint, Compare, DataExtractor, Gate, Layers, LoopBegin, MacroPort, LoopEnd, Mask, Math, Mixer, Repeat, Reseed, Route, Seamless, Switch, Var.
 
-Utility work should be split into:
-
-- data/mask operations first: Accumulator, Compare, Mask, Math, Mixer, Layers, Seamless, Repeat, Reseed;
-- graph-control nodes second: Gate, Route, Switch, Var, MacroPort, DataExtractor;
-- loop semantics only after recipe execution supports explicit loop scopes safely.
+Utility work should be split into data/mask operations first, graph-control nodes second, and loop semantics only after recipe execution supports explicit loop scopes safely.
 
 ## Terrain - 0 / 14 public nodes; intentionally LAST
 
@@ -227,20 +172,7 @@ The hidden legacy `TerrainShape` node is not counted as a public Terrain node an
 
 Public Terrain catalogue:
 
-- Canyon
-- Crater
-- CraterField
-- DuneSea
-- Island
-- Mountain
-- MountainRange
-- MountainSide
-- Plates
-- Ridge
-- Rugged
-- Slump
-- Uplift
-- Volcano
+Canyon, Crater, CraterField, DuneSea, Island, Mountain, MountainRange, MountainSide, Plates, Ridge, Rugged, Slump, Uplift, Volcano.
 
 All remain intentionally deferred until their lower-level dependencies exist.
 
