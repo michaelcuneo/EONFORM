@@ -75,14 +75,27 @@ namespace
 		return static_cast<float>(CellularHash(H) & 0x00ffffffU) / static_cast<float>(0x01000000U);
 	}
 
+	float CellularSmoothHash(float X, float Y, int32 Seed, uint32 Salt)
+	{
+		const int32 X0 = FMath::FloorToInt(X);
+		const int32 Y0 = FMath::FloorToInt(Y);
+		const float FX = X - static_cast<float>(X0);
+		const float FY = Y - static_cast<float>(Y0);
+		const float SX = FX * FX * (3.0f - 2.0f * FX);
+		const float SY = FY * FY * (3.0f - 2.0f * FY);
+		const float A = FMath::Lerp(CellularHash01(X0, Y0, Seed, Salt), CellularHash01(X0 + 1, Y0, Seed, Salt), SX);
+		const float B = FMath::Lerp(CellularHash01(X0, Y0 + 1, Seed, Salt), CellularHash01(X0 + 1, Y0 + 1, Seed, Salt), SX);
+		return FMath::Lerp(A, B, SY);
+	}
+
 	float CellularDistance(float DX, float DY, FName Metric, float Morph, float Anisotropy)
 	{
-		DX *= FMath::Lerp(1.0f, 2.0f, Anisotropy);
+		DX *= FMath::Lerp(1.0f, 4.0f, Anisotropy);
 		const float Euclidean = FMath::Sqrt(DX * DX + DY * DY);
 		const float Manhattan = FMath::Abs(DX) + FMath::Abs(DY);
 		const float Chebyshev = FMath::Max(FMath::Abs(DX), FMath::Abs(DY));
-		if (Metric == TEXT("Euclidian_Manhattan")) return FMath::Lerp(Euclidean, Manhattan, Morph);
-		if (Metric == TEXT("Euclidian_Chebyshev")) return FMath::Lerp(Euclidean, Chebyshev, Morph);
+		if (Metric == TEXT("Euclidian Manhattan") || Metric == TEXT("Euclidian_Manhattan")) return FMath::Lerp(Euclidean, Manhattan, Morph);
+		if (Metric == TEXT("Euclidian Chebyshev") || Metric == TEXT("Euclidian_Chebyshev")) return FMath::Lerp(Euclidean, Chebyshev, Morph);
 		if (Metric == TEXT("Minkowski"))
 		{
 			const float P = FMath::Lerp(1.0f, 4.0f, Morph);
@@ -100,11 +113,11 @@ namespace
 		const float Density = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Density"), 1.0)), 0.05f, 8.0f);
 		const float Jitter = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Jitter"), 1.0)), 0.0f, 2.0f);
 		const float MetricMorph = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("MetricMorph"), 0.0)), 0.0f, 1.0f);
-		const FName DistanceMetric = Node.GetName(TEXT("DistanceMetric"), TEXT("Euclidian_Manhattan"));
+		const FName DistanceMetric = Node.GetName(TEXT("DistanceMetric"), TEXT("Euclidian Manhattan"));
 		const float AxesJitter = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("CoordinateAxesJitter"), 0.0)), 0.0f, 1.0f);
 		const float Clustering = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("CAJClustering"), 0.0)), 0.0f, 1.0f);
 		const float Anisotropy = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Anisotropy"), 0.0)), 0.0f, 1.0f);
-		const FName DistanceFunction = Node.GetName(TEXT("DistanceFunction"), TEXT("DistanceInv"));
+		const FName DistanceFunction = Node.GetName(TEXT("DistanceFunction"), TEXT("Hash"));
 		const int32 Seed = static_cast<int32>(Node.GetInteger(TEXT("Seed"), 1337));
 
 		const double HalfWorldSize = static_cast<double>(WorldSize) * 0.5;
@@ -122,7 +135,10 @@ namespace
 		FGaeaScalarField HeightField;
 		HeightField.Initialize(Domain, Descriptor);
 
-		const float CellWorldSize = FMath::Max(WorldSize * 0.08f * Size / Density, 1.0f);
+		// Current Gaea semantics are intentionally inverse for Size: larger Size
+		// values create finer/smaller cells, while Density independently controls
+		// feature count. The previous implementation had this relationship reversed.
+		const float CellWorldSize = FMath::Max(WorldSize * 0.08f / FMath::Max(Size * Density, 0.001f), 1.0f);
 		for (int32 Y = 0; Y < Resolution; ++Y)
 		{
 			for (int32 X = 0; X < Resolution; ++X)
@@ -130,48 +146,80 @@ namespace
 				const FVector2d World = Domain.InteriorSampleToWorld(X, Y);
 				float PX = static_cast<float>(World.X) / CellWorldSize;
 				float PY = static_cast<float>(World.Y) / CellWorldSize;
-				PX += (CellularHash01(X, Y, Seed, 0x1234U) - 0.5f) * AxesJitter * 0.25f;
-				PY += (CellularHash01(X, Y, Seed, 0x5678U) - 0.5f) * AxesJitter * 0.25f;
+
+				if (AxesJitter > UE_SMALL_NUMBER)
+				{
+					const float ClusterNoise = CellularSmoothHash(PX * 0.22f, PY * 0.22f, Seed, 0x72e3U);
+					const float ClusterWeight = FMath::Lerp(1.0f, FMath::Clamp((ClusterNoise - 0.25f) * 1.333333f, 0.0f, 1.0f), Clustering);
+					PX += (CellularSmoothHash(PX * 0.43f, PY * 0.43f, Seed, 0x1234U) - 0.5f) * AxesJitter * 1.75f * ClusterWeight;
+					PY += (CellularSmoothHash(PX * 0.43f, PY * 0.43f, Seed, 0x5678U) - 0.5f) * AxesJitter * 1.75f * ClusterWeight;
+				}
+
 				const int32 BaseX = FMath::FloorToInt(PX);
 				const int32 BaseY = FMath::FloorToInt(PY);
 				float F1 = TNumericLimits<float>::Max();
 				float F2 = TNumericLimits<float>::Max();
+				FVector2D NearestPoint = FVector2D::ZeroVector;
+				FVector2D SecondPoint = FVector2D::ZeroVector;
 				uint32 NearestHash = 0;
 
 				for (int32 CY = BaseY - 2; CY <= BaseY + 2; ++CY)
 				{
 					for (int32 CX = BaseX - 2; CX <= BaseX + 2; ++CX)
 					{
-						const float ClusterX = (CellularHash01(CX, CY, Seed, 0xa11cU) - 0.5f) * Clustering;
-						const float ClusterY = (CellularHash01(CX, CY, Seed, 0xb22dU) - 0.5f) * Clustering;
-						const float FeatureX = static_cast<float>(CX) + 0.5f + (CellularHash01(CX, CY, Seed, 0xc33eU) - 0.5f) * Jitter + ClusterX;
-						const float FeatureY = static_cast<float>(CY) + 0.5f + (CellularHash01(CX, CY, Seed, 0xd44fU) - 0.5f) * Jitter + ClusterY;
+						const float FeatureX = static_cast<float>(CX) + 0.5f + (CellularHash01(CX, CY, Seed, 0xc33eU) - 0.5f) * Jitter;
+						const float FeatureY = static_cast<float>(CY) + 0.5f + (CellularHash01(CX, CY, Seed, 0xd44fU) - 0.5f) * Jitter;
 						const float Distance = CellularDistance(PX - FeatureX, PY - FeatureY, DistanceMetric, MetricMorph, Anisotropy);
 						if (Distance < F1)
 						{
 							F2 = F1;
+							SecondPoint = NearestPoint;
 							F1 = Distance;
+							NearestPoint = FVector2D(FeatureX, FeatureY);
 							NearestHash = CellularHash(static_cast<uint32>(CX) ^ (static_cast<uint32>(CY) * 0x9e3779b9U) ^ static_cast<uint32>(Seed));
 						}
 						else if (Distance < F2)
 						{
 							F2 = Distance;
+							SecondPoint = FVector2D(FeatureX, FeatureY);
 						}
 					}
 				}
 
 				float V = 0.0f;
-				if (DistanceFunction == TEXT("Hash")) V = static_cast<float>(NearestHash & 0xffffU) / 65535.0f;
-				else if (DistanceFunction == TEXT("DistanceInv")) V = 1.0f - FMath::Clamp(F1, 0.0f, 1.0f);
-				else if (DistanceFunction == TEXT("Distance2Inv")) V = 1.0f - FMath::Clamp(F2, 0.0f, 1.0f);
-				else if (DistanceFunction == TEXT("DistanceDiff")) V = FMath::Clamp(F2 - F1, 0.0f, 1.0f);
-				else if (DistanceFunction == TEXT("DistanceToEdge")) V = FMath::Clamp((F2 - F1) * 2.0f, 0.0f, 1.0f);
+				if (DistanceFunction == TEXT("Hash"))
+				{
+					// A stable value per Voronoi region produces the flat, hard-edged,
+					// pillar/plate character shown in Gaea's Cellular reference render.
+					V = static_cast<float>(NearestHash & 0x00ffffffU) / static_cast<float>(0x01000000U);
+				}
+				else if (DistanceFunction == TEXT("Distance Inv") || DistanceFunction == TEXT("DistanceInv"))
+				{
+					V = 1.0f - FMath::Clamp(F1, 0.0f, 1.0f);
+				}
+				else if (DistanceFunction == TEXT("Distance 2 Inv") || DistanceFunction == TEXT("Distance2Inv"))
+				{
+					V = 1.0f - FMath::Clamp(F2, 0.0f, 1.0f);
+				}
+				else if (DistanceFunction == TEXT("Distance Diff") || DistanceFunction == TEXT("DistanceDiff"))
+				{
+					V = FMath::Clamp(F2 - F1, 0.0f, 1.0f);
+				}
+				else if (DistanceFunction == TEXT("Distance to Edge") || DistanceFunction == TEXT("DistanceToEdge"))
+				{
+					const float SiteDistance = FVector2D::Distance(NearestPoint, SecondPoint);
+					const float EdgeDistance = SiteDistance > UE_SMALL_NUMBER
+						? FMath::Max((F2 * F2 - F1 * F1) / (2.0f * SiteDistance), 0.0f)
+						: 0.0f;
+					V = FMath::Clamp(EdgeDistance * 2.0f, 0.0f, 1.0f);
+				}
 				else
 				{
 					Error = TEXT("Cellular Distance Function is invalid.");
 					return false;
 				}
-				HeightField.AtInterior(X, Y) = V * 2.0f - 1.0f;
+
+				HeightField.AtInterior(X, Y) = FMath::Clamp(V, 0.0f, 1.0f);
 			}
 		}
 
@@ -198,17 +246,17 @@ void RegisterGaeaCellularNode()
 	Descriptor.Type = GaeaTerrainNodeTypes::Cellular;
 	Descriptor.DisplayName = TEXT("Cellular");
 	Descriptor.Category = TEXT("Primitive");
-	Descriptor.Description = TEXT("Generates Gaea-style cellular distance noise as a terrain primitive.");
+	Descriptor.Description = TEXT("Generates hard-region cellular/Voronoi patterns with Gaea's distance, jitter, density, and anisotropy controls.");
 	Descriptor.Outputs.Add(CellularTerrainPort(TEXT("Out"), TEXT("Out")));
 	Descriptor.Parameters.Add(CellularNumberParameter(TEXT("Size"), TEXT("Size"), 0.5, 0.001, 10.0));
 	Descriptor.Parameters.Add(CellularNumberParameter(TEXT("Density"), TEXT("Density"), 1.0, 0.05, 8.0));
 	Descriptor.Parameters.Add(CellularNumberParameter(TEXT("Jitter"), TEXT("Jitter"), 1.0, 0.0, 2.0));
 	Descriptor.Parameters.Add(CellularNumberParameter(TEXT("MetricMorph"), TEXT("Metric Morph"), 0.0, 0.0, 1.0));
-	Descriptor.Parameters.Add(CellularNameParameter(TEXT("DistanceMetric"), TEXT("Distance Metric"), TEXT("Euclidian_Manhattan"), { TEXT("Euclidian_Manhattan"), TEXT("Euclidian_Chebyshev"), TEXT("Minkowski") }));
+	Descriptor.Parameters.Add(CellularNameParameter(TEXT("DistanceMetric"), TEXT("Distance Metric"), TEXT("Euclidian Manhattan"), { TEXT("Euclidian Manhattan"), TEXT("Euclidian Chebyshev"), TEXT("Minkowski") }));
 	Descriptor.Parameters.Add(CellularNumberParameter(TEXT("CoordinateAxesJitter"), TEXT("Coordinate Axes Jitter"), 0.0, 0.0, 1.0));
 	Descriptor.Parameters.Add(CellularNumberParameter(TEXT("CAJClustering"), TEXT("CAJ Clustering"), 0.0, 0.0, 1.0));
 	Descriptor.Parameters.Add(CellularNumberParameter(TEXT("Anisotropy"), TEXT("Anisotropy"), 0.0, 0.0, 1.0));
-	Descriptor.Parameters.Add(CellularNameParameter(TEXT("DistanceFunction"), TEXT("Distance Function"), TEXT("DistanceInv"), { TEXT("Hash"), TEXT("DistanceInv"), TEXT("Distance2Inv"), TEXT("DistanceDiff"), TEXT("DistanceToEdge") }));
+	Descriptor.Parameters.Add(CellularNameParameter(TEXT("DistanceFunction"), TEXT("Distance Function"), TEXT("Hash"), { TEXT("Hash"), TEXT("Distance Inv"), TEXT("Distance 2 Inv"), TEXT("Distance Diff"), TEXT("Distance to Edge") }));
 	Descriptor.Parameters.Add(CellularIntegerParameter(TEXT("Seed"), TEXT("Seed"), 1337, -2147483647, 2147483647));
 	FGaeaTerrainNodeDescriptorRegistry::Register(Descriptor);
 	FGaeaTerrainNodeRegistry::Register(GaeaTerrainNodeTypes::Cellular, EvaluateCellularNode);
