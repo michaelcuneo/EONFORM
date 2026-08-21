@@ -21,6 +21,8 @@ public class CodenameGaeaEditor : ModuleRules
             "AssetTools",
             "ContentBrowser",
             "DesktopPlatform",
+            "DynamicMesh",
+            "GeometryFramework",
             "GraphEditor",
             "InputCore",
             "CodenameGaeaMeshTerrainEditor",
