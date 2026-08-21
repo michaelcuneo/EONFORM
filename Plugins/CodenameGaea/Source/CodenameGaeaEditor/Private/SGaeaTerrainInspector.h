@@ -8,12 +8,14 @@
 #include "Widgets/Views/SListView.h"
 
 class SImage;
+class SWidget;
 class UTexture2D;
 
 class SGaeaTerrainInspector : public SCompoundWidget
 {
 public:
 	SLATE_BEGIN_ARGS(SGaeaTerrainInspector) {}
+		SLATE_ARGUMENT(TSharedPtr<SWidget>, OutputPanel)
 	SLATE_END_ARGS()
 
 	void Construct(const FArguments& InArgs);
