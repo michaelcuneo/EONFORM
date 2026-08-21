@@ -9,6 +9,12 @@
   "CanContainContent": true,
   "IsBetaVersion": true,
   "Installed": false,
+  "Plugins": [
+    {
+      "Name": "MeshPartition",
+      "Enabled": true
+    }
+  ],
   "Modules": [
     {
       "Name": "CodenameGaeaCore",
@@ -22,6 +28,11 @@
     },
     {
       "Name": "CodenameGaeaEditor",
+      "Type": "Editor",
+      "LoadingPhase": "Default"
+    },
+    {
+      "Name": "CodenameGaeaMeshTerrainEditor",
       "Type": "Editor",
       "LoadingPhase": "Default"
     }
