@@ -111,7 +111,7 @@ void RegisterGaeaFileNode()
 	Descriptor.Type = GaeaTerrainNodeTypes::File;
 	Descriptor.DisplayName = TEXT("File");
 	Descriptor.Category = TEXT("Primitive");
-	Descriptor.Description = TEXT("Loads an external heightfield or RGB image with explicit physical extents or ground-sample distance.");
+	Descriptor.Description = TEXT("Loads an external heightfield or RGB image using coordinate bounds, explicit physical extents, or ground-sample distance.");
 	Descriptor.Outputs.Add(PrimitiveAssetPort(TEXT("Out"), TEXT("Any"), TEXT("Out")));
 
 	Descriptor.Parameters.Add(PrimitiveAssetBool(TEXT("IsRGB"), TEXT("Is RGB"), false));
@@ -119,8 +119,15 @@ void RegisterGaeaFileNode()
 	Descriptor.Parameters.Add(PrimitiveAssetBool(TEXT("AllowUnclamped"), TEXT("Allow Unclamped"), false));
 	Descriptor.Parameters.Add(PrimitiveAssetBool(TEXT("CropToSquare"), TEXT("Crop to Square"), false));
 
-	// Spatial calibration. Pixel resolution comes from the image itself; these
-	// values define how large that raster is in the physical world.
+	// Spatial calibration. Coordinate bounds take priority when enabled; the
+	// existing explicit extents and metres-per-pixel modes remain available.
+	Descriptor.Parameters.Add(PrimitiveAssetBool(TEXT("UseCoordinateBounds"), TEXT("Use Coordinate Bounds"), false));
+	Descriptor.Parameters.Add(PrimitiveAssetBool(TEXT("BoundsAreGeographic"), TEXT("Bounds are Lon / Lat (WGS84)"), true));
+	Descriptor.Parameters.Add(PrimitiveAssetNumber(TEXT("XMin"), TEXT("X Min / Longitude"), 0.0, -1000000000000.0, 1000000000000.0));
+	Descriptor.Parameters.Add(PrimitiveAssetNumber(TEXT("YMin"), TEXT("Y Min / Latitude"), 0.0, -1000000000000.0, 1000000000000.0));
+	Descriptor.Parameters.Add(PrimitiveAssetNumber(TEXT("XMax"), TEXT("X Max / Longitude"), 1.0, -1000000000000.0, 1000000000000.0));
+	Descriptor.Parameters.Add(PrimitiveAssetNumber(TEXT("YMax"), TEXT("Y Max / Latitude"), 1.0, -1000000000000.0, 1000000000000.0));
+
 	Descriptor.Parameters.Add(PrimitiveAssetNumber(TEXT("ExtentXMetres"), TEXT("Extent X (m)"), 1000.0, 0.001, 100000000.0));
 	Descriptor.Parameters.Add(PrimitiveAssetNumber(TEXT("ExtentYMetres"), TEXT("Extent Y (m)"), 1000.0, 0.001, 100000000.0));
 	Descriptor.Parameters.Add(PrimitiveAssetNumber(TEXT("XYScale"), TEXT("XY Scale"), 1.0, 0.0001, 10000.0));
