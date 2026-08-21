@@ -2,19 +2,17 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
-#include "MeshPartition.h"
-#include "MeshPartitionDefinition.h"
-#include "Modifiers/MeshPartitionMeshProvider.h"
 #include "GaeaMeshTerrainBridgeActor.generated.h"
 
 class UGaeaTerrainGraphAsset;
+class UPrimitiveComponent;
 
 /**
  * Editor-only vertical bridge from an EONFORM terrain graph to UE 5.8 Mesh Terrain.
  *
- * The graph is evaluated by CodenameGaeaCore, materialized to FDynamicMesh3 by
- * CodenameGaeaRuntime, then supplied directly to Mesh Terrain through Epic's
- * UMeshProviderModifier base layer.
+ * MeshPartition is intentionally kept out of this reflected public header.
+ * The experimental UE 5.8 API is isolated to the implementation file so UHT
+ * and the rest of EONFORM do not inherit MeshPartition's editor headers.
  */
 UCLASS(DisplayName="EONFORM Mesh Terrain Bridge")
 class CODENAMEGAEAMESHTERRAINEDITOR_API AGaeaMeshTerrainBridgeActor : public AActor
@@ -39,19 +37,21 @@ public:
 	UPROPERTY(EditAnywhere, Category="EONFORM|Source", meta=(ClampMin="0.001"))
 	float DefaultHeightScale = 100000.0f;
 
+	/** Optional Mesh Partition Definition asset. Kept as UObject to isolate the experimental type from UHT. */
 	UPROPERTY(EditAnywhere, Category="EONFORM|Mesh Terrain")
-	TObjectPtr<UMeshPartitionDefinition> MeshPartitionDefinition;
+	TObjectPtr<UObject> MeshPartitionDefinition;
 
-	UPROPERTY(EditAnywhere, Category="EONFORM|Mesh Terrain")
-	TObjectPtr<AMeshPartition> TargetMeshPartition;
+	/** Optional existing Mesh Partition actor. Kept as AActor to isolate the experimental type from UHT. */
+	UPROPERTY(EditInstanceOnly, Category="EONFORM|Mesh Terrain")
+	TObjectPtr<AActor> TargetMeshPartition;
 
 	UPROPERTY(VisibleAnywhere, Category="EONFORM|Mesh Terrain")
-	TObjectPtr<UMeshProviderModifier> MeshProvider;
+	TObjectPtr<UPrimitiveComponent> MeshProviderComponent;
 
 	UPROPERTY(VisibleAnywhere, Category="EONFORM|Status")
 	FString LastBuildStatus;
 
 private:
-	AMeshPartition* ResolveOrCreateMeshPartition();
+	AActor* ResolveOrCreateMeshPartitionActor();
 	void SetStatus(const FString& Message, bool bError);
 };
