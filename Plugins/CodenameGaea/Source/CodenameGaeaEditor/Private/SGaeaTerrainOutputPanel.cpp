@@ -17,8 +17,8 @@
 
 namespace
 {
-	constexpr double CentimetersPerKilometer = 100000.0;
-	constexpr double CentimetersPerMeter = 100.0;
+	constexpr double OutputCentimetersPerKilometer = 100000.0;
+	constexpr double OutputCentimetersPerMeter = 100.0;
 }
 
 void SGaeaTerrainOutputPanel::InitializePresets()
@@ -159,9 +159,9 @@ bool SGaeaTerrainOutputPanel::ApplyPhysicalScale(
 	}
 
 	const FGaeaTerrainGraphOutputSettings& State = FGaeaTerrainOutputEditorState::Get().GetSettings();
-	const double TargetWidthCm = State.WorldWidthKilometers * CentimetersPerKilometer;
-	const double TargetDepthCm = State.WorldDepthKilometers * CentimetersPerKilometer;
-	const double TargetElevationCm = State.ElevationScaleMeters * CentimetersPerMeter;
+	const double TargetWidthCm = State.WorldWidthKilometers * OutputCentimetersPerKilometer;
+	const double TargetDepthCm = State.WorldDepthKilometers * OutputCentimetersPerKilometer;
+	const double TargetElevationCm = State.ElevationScaleMeters * OutputCentimetersPerMeter;
 
 	InOutSettings.HorizontalScale = 1.0;
 	InOutSettings.HorizontalScaleXY = FVector2d(TargetWidthCm / SourceWidth, TargetDepthCm / SourceDepth);
