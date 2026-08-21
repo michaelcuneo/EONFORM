@@ -9,6 +9,8 @@ enum class EGaeaFieldUnit : uint8
 	Normalized,
 	Centimeters,
 	Meters,
+	Kilometers,
+	SquareKilometers,
 	Degrees,
 	Celsius
 };
