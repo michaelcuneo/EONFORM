@@ -191,6 +191,7 @@ void SGaeaTerrainGraphPanel::Construct(const FArguments& InArgs)
 							SAssignNew(ParameterPanel, SVerticalBox)
 						]
 					]
+				]
 			]
 
 			+ SVerticalBox::Slot()
