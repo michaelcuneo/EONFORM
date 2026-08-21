@@ -16,12 +16,7 @@ namespace
 		return Port;
 	}
 
-	FGaeaTerrainParameterDescriptor SharpenNumberParameter(
-		FName Name,
-		const TCHAR* DisplayName,
-		double DefaultValue,
-		double Minimum,
-		double Maximum)
+	FGaeaTerrainParameterDescriptor SharpenNumberParameter(FName Name, const TCHAR* DisplayName, double DefaultValue, double Minimum, double Maximum)
 	{
 		FGaeaTerrainParameterDescriptor Parameter;
 		Parameter.Name = Name;
@@ -35,18 +30,26 @@ namespace
 		return Parameter;
 	}
 
-	float SharpenSampleClamped(const FGaeaScalarField& Field, int32 X, int32 Y)
+	FGaeaTerrainParameterDescriptor SharpenNameParameter(FName Name, const TCHAR* DisplayName, FName DefaultValue)
 	{
-		const int32 SX = FMath::Clamp(X, 0, Field.Domain.Dimensions.X - 1);
-		const int32 SY = FMath::Clamp(Y, 0, Field.Domain.Dimensions.Y - 1);
-		return Field.AtInterior(SX, SY);
+		FGaeaTerrainParameterDescriptor Parameter;
+		Parameter.Name = Name;
+		Parameter.DisplayName = DisplayName;
+		Parameter.Type = EGaeaTerrainParameterType::Name;
+		Parameter.DefaultName = DefaultValue;
+		Parameter.NameOptions.Add(TEXT("Edge"));
+		Parameter.NameOptions.Add(TEXT("Frequency"));
+		return Parameter;
 	}
 
-	bool SharpenHeightField(
-		const FGaeaTerrainNode& Node,
-		const FGaeaScalarField& Source,
-		FGaeaScalarField& OutField,
-		FString& Error)
+	float SharpenSampleClamped(const FGaeaScalarField& Field, int32 X, int32 Y)
+	{
+		return Field.AtInterior(
+			FMath::Clamp(X, 0, Field.Domain.Dimensions.X - 1),
+			FMath::Clamp(Y, 0, Field.Domain.Dimensions.Y - 1));
+	}
+
+	bool SharpenHeightField(const FGaeaTerrainNode& Node, const FGaeaScalarField& Source, FGaeaScalarField& OutField, FString& Error)
 	{
 		if (!Source.IsValid())
 		{
@@ -54,6 +57,12 @@ namespace
 			return false;
 		}
 
+		const FName Method = Node.GetName(TEXT("Method"), TEXT("Edge"));
+		if (Method != TEXT("Edge") && Method != TEXT("Frequency"))
+		{
+			Error = TEXT("Sharpen Method must be Edge or Frequency.");
+			return false;
+		}
 		const float Amount = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Amount"), 0.5)), 0.0f, 2.0f);
 		OutField = Source;
 		for (int32 Y = 0; Y < Source.Domain.Dimensions.Y; ++Y)
@@ -68,22 +77,17 @@ namespace
 						Sum += SharpenSampleClamped(Source, X + DX, Y + DY);
 					}
 				}
-
 				const float Center = Source.AtInterior(X, Y);
 				const float Blurred = Sum / 9.0f;
 				const float Detail = Center - Blurred;
-				OutField.AtInterior(X, Y) = FMath::Clamp(Center + Detail * Amount, -1.0f, 1.0f);
+				const float Gain = Method == TEXT("Frequency") ? 1.5f : 1.0f;
+				OutField.AtInterior(X, Y) = FMath::Clamp(Center + Detail * Amount * Gain, -1.0f, 1.0f);
 			}
 		}
 		return OutField.IsValid();
 	}
 
-	bool EvaluateSharpenNode(
-		const FGaeaTerrainNode& Node,
-		const FGaeaTerrainNodeInputs& Inputs,
-		const FGaeaTerrainEvaluationContext&,
-		FGaeaTerrainNodeEvaluation& Out,
-		FString& Error)
+	bool EvaluateSharpenNode(const FGaeaTerrainNode& Node, const FGaeaTerrainNodeInputs& Inputs, const FGaeaTerrainEvaluationContext&, FGaeaTerrainNodeEvaluation& Out, FString& Error)
 	{
 		const FGaeaTerrainValue* const* InputPtr = Inputs.Find(TEXT("Terrain"));
 		const FGaeaTerrainValue* Input = InputPtr ? *InputPtr : nullptr;
@@ -128,10 +132,11 @@ void RegisterGaeaSharpenNode()
 	FGaeaTerrainNodeDescriptor Descriptor;
 	Descriptor.Type = GaeaTerrainNodeTypes::Sharpen;
 	Descriptor.DisplayName = TEXT("Sharpen");
-	Descriptor.Category = TEXT("Adjustments");
-	Descriptor.Description = TEXT("Enhances edges and small terrain structures by making them more prominent.");
+	Descriptor.Category = TEXT("Modify");
+	Descriptor.Description = TEXT("Enhances terrain edges or high-frequency detail.");
 	Descriptor.Inputs.Add(SharpenTerrainPort(TEXT("Terrain"), TEXT("Input")));
 	Descriptor.Outputs.Add(SharpenTerrainPort(TEXT("Out"), TEXT("Out")));
+	Descriptor.Parameters.Add(SharpenNameParameter(TEXT("Method"), TEXT("Method"), TEXT("Edge")));
 	Descriptor.Parameters.Add(SharpenNumberParameter(TEXT("Amount"), TEXT("Amount"), 0.5, 0.0, 2.0));
 
 	FGaeaTerrainNodeDescriptorRegistry::Register(Descriptor);
