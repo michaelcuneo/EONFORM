@@ -1,9 +1,9 @@
 #include "GaeaMeshTerrainOutput.h"
 
+#include "Components/SceneComponent.h"
 #include "DynamicMesh/DynamicMesh3.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
-#include "GaeaTerrainMeshMaterializer.h"
 #include "MeshPartition.h"
 #include "MeshPartitionDefinition.h"
 #include "Modifiers/MeshPartitionMeshProvider.h"
@@ -13,12 +13,16 @@ using UE::MeshPartition::AMeshPartition;
 using UE::MeshPartition::UMeshPartitionDefinition;
 using UE::MeshPartition::UMeshProviderModifier;
 
+UClass* FGaeaMeshTerrainOutput::GetMeshPartitionDefinitionClass()
+{
+	return UMeshPartitionDefinition::StaticClass();
+}
+
 FGaeaMeshTerrainBuildResult FGaeaMeshTerrainOutput::Build(
 	UWorld* World,
 	const FGaeaTerrainDataset& Dataset,
 	float HeightScale,
-	UObject* PreferredMeshPartitionDefinition,
-	AActor* PreferredMeshPartition)
+	const FGaeaMeshTerrainOutputSettings& Settings)
 {
 	FGaeaMeshTerrainBuildResult Result;
 
@@ -28,23 +32,26 @@ FGaeaMeshTerrainBuildResult FGaeaMeshTerrainOutput::Build(
 		return Result;
 	}
 
-	FDynamicMesh3 DynamicMesh;
-	FString MaterializeError;
-	if (!FGaeaTerrainMeshMaterializer::BuildDynamicMesh(Dataset, HeightScale, DynamicMesh, &MaterializeError))
+	FGaeaTerrainMeshBuildOptions MeshOptions;
+	MeshOptions.HeightScale = HeightScale;
+	MeshOptions.HorizontalScale = FMath::Max(Settings.HorizontalScale, UE_DOUBLE_SMALL_NUMBER);
+	MeshOptions.VerticalScale = FMath::Max(Settings.VerticalScale, UE_DOUBLE_SMALL_NUMBER);
+	MeshOptions.TargetResolution = Settings.TargetResolution;
+
+	const FIntPoint Resolution = FGaeaTerrainMeshMaterializer::ResolveTargetResolution(Dataset, MeshOptions);
+	if (Resolution.X < 2 || Resolution.Y < 2)
 	{
-		Result.Message = FString::Printf(TEXT("Mesh materialization failed: %s"), *MaterializeError);
+		Result.Message = TEXT("The resolved Mesh Terrain output resolution must be at least 2x2 samples.");
 		return Result;
 	}
 
-	Result.VertexCount = DynamicMesh.VertexCount();
-	Result.TriangleCount = DynamicMesh.TriangleCount();
-	if (Result.VertexCount <= 0 || Result.TriangleCount <= 0)
-	{
-		Result.Message = TEXT("The evaluated graph produced an empty terrain mesh.");
-		return Result;
-	}
+	const int32 MaxSectionsX = FMath::Max(1, Resolution.X - 1);
+	const int32 MaxSectionsY = FMath::Max(1, Resolution.Y - 1);
+	const FIntPoint Sections(
+		FMath::Clamp(Settings.Sections.X, 1, MaxSectionsX),
+		FMath::Clamp(Settings.Sections.Y, 1, MaxSectionsY));
 
-	AMeshPartition* Partition = Cast<AMeshPartition>(PreferredMeshPartition);
+	AMeshPartition* Partition = Cast<AMeshPartition>(Settings.TargetMeshPartition.Get());
 	if (!Partition)
 	{
 		for (TActorIterator<AMeshPartition> It(World); It; ++It)
@@ -81,46 +88,94 @@ FGaeaMeshTerrainBuildResult FGaeaMeshTerrainOutput::Build(
 #endif
 	}
 
-	UMeshPartitionDefinition* Definition = Cast<UMeshPartitionDefinition>(PreferredMeshPartitionDefinition);
+	UMeshPartitionDefinition* Definition = Cast<UMeshPartitionDefinition>(Settings.MeshPartitionDefinition.Get());
 	if (!Definition)
 	{
-		Definition = const_cast<UMeshPartitionDefinition*>(UMeshPartitionDefinition::GetDefaultMegaMeshDefinition());
+		Definition = Partition->GetMeshPartitionDefinition();
 	}
 	if (!Definition)
 	{
-		Result.Message = TEXT("No UE 5.8 Mesh Partition Definition is available.");
+		Result.Message = TEXT("Assign a UE 5.8 Mesh Partition Definition in EONFORM Terrain Output before generating terrain.");
 		return Result;
 	}
 
-	UMeshProviderModifier* MeshProvider = Partition->FindComponentByClass<UMeshProviderModifier>();
-	if (!MeshProvider)
-	{
-		MeshProvider = NewObject<UMeshProviderModifier>(Partition, TEXT("EONFORMMeshProvider"), RF_Transactional);
-		if (!MeshProvider)
-		{
-			Result.Message = TEXT("Failed to create the UE 5.8 Mesh Provider modifier.");
-			return Result;
-		}
+	Partition->Modify();
+	Partition->SetMeshPartitionDefinition(Definition);
 
-		Partition->AddInstanceComponent(MeshProvider);
-		if (USceneComponent* Root = Partition->GetRootComponent())
+	TInlineComponentArray<UMeshProviderModifier*> ExistingProviders(Partition);
+	for (UMeshProviderModifier* Existing : ExistingProviders)
+	{
+		if (Existing && Existing->GetName().StartsWith(TEXT("EONFORMMeshProvider_")))
 		{
-			MeshProvider->SetupAttachment(Root);
+			Existing->Modify();
+			Existing->DestroyComponent();
 		}
-		MeshProvider->RegisterComponent();
 	}
 
-	Partition->Modify();
-	MeshProvider->Modify();
-	Partition->SetMeshPartitionDefinition(Definition);
-	MeshProvider->BP_SetAffectedMegaMesh(Partition);
-	MeshProvider->SetMesh(MoveTemp(DynamicMesh), true);
+	const int32 IntervalsX = Resolution.X - 1;
+	const int32 IntervalsY = Resolution.Y - 1;
+
+	for (int32 SectionY = 0; SectionY < Sections.Y; ++SectionY)
+	{
+		const int32 StartY = (SectionY * IntervalsY) / Sections.Y;
+		const int32 EndY = ((SectionY + 1) * IntervalsY) / Sections.Y;
+
+		for (int32 SectionX = 0; SectionX < Sections.X; ++SectionX)
+		{
+			const int32 StartX = (SectionX * IntervalsX) / Sections.X;
+			const int32 EndX = ((SectionX + 1) * IntervalsX) / Sections.X;
+
+			FDynamicMesh3 SectionMesh;
+			FString MaterializeError;
+			if (!FGaeaTerrainMeshMaterializer::BuildDynamicMeshRegion(
+				Dataset,
+				MeshOptions,
+				FIntPoint(StartX, StartY),
+				FIntPoint(EndX, EndY),
+				SectionMesh,
+				&MaterializeError))
+			{
+				Result.Message = FString::Printf(
+					TEXT("Mesh Terrain section %d,%d failed: %s"),
+					SectionX,
+					SectionY,
+					*MaterializeError);
+				return Result;
+			}
+
+			Result.VertexCount += SectionMesh.VertexCount();
+			Result.TriangleCount += SectionMesh.TriangleCount();
+
+			const FName ProviderName(*FString::Printf(TEXT("EONFORMMeshProvider_%d_%d"), SectionX, SectionY));
+			UMeshProviderModifier* MeshProvider = NewObject<UMeshProviderModifier>(Partition, ProviderName, RF_Transactional);
+			if (!MeshProvider)
+			{
+				Result.Message = TEXT("Failed to create a UE 5.8 Mesh Provider modifier for an EONFORM terrain section.");
+				return Result;
+			}
+
+			Partition->AddInstanceComponent(MeshProvider);
+			if (USceneComponent* Root = Partition->GetRootComponent())
+			{
+				MeshProvider->SetupAttachment(Root);
+			}
+			MeshProvider->RegisterComponent();
+			MeshProvider->BP_SetAffectedMegaMesh(Partition);
+			MeshProvider->SetMesh(MoveTemp(SectionMesh), true);
+			++Result.SectionCount;
+		}
+	}
 
 	Result.bSuccess = true;
 	Result.TerrainActor = Partition;
 	Result.Message = FString::Printf(
-		TEXT("Built EONFORM Mesh Terrain: %d vertices, %d triangles."),
+		TEXT("Built EONFORM Mesh Terrain: %d sections, %d vertices, %d triangles at %dx%d samples (XY x%.3f, Z x%.3f)."),
+		Result.SectionCount,
 		Result.VertexCount,
-		Result.TriangleCount);
+		Result.TriangleCount,
+		Resolution.X,
+		Resolution.Y,
+		MeshOptions.HorizontalScale,
+		MeshOptions.VerticalScale);
 	return Result;
 }
