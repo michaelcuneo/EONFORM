@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "GaeaTerrainDataset.h"
+#include "GaeaTerrainMeshMaterializer.h"
 #include "GaeaTerrainDynamicMeshActor.generated.h"
 
 class UDynamicMeshComponent;
@@ -19,6 +20,11 @@ public:
 	bool ApplyTerrainDataset(
 		const FGaeaTerrainDataset& Dataset,
 		float HeightScale,
+		FString* OutError = nullptr);
+
+	bool ApplyTerrainDataset(
+		const FGaeaTerrainDataset& Dataset,
+		const FGaeaTerrainMeshBuildOptions& Options,
 		FString* OutError = nullptr);
 
 	UDynamicMeshComponent* GetTerrainMeshComponent() const
