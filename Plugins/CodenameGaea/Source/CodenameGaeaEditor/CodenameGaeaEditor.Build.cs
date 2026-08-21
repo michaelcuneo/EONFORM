@@ -24,6 +24,7 @@ public class CodenameGaeaEditor : ModuleRules
             "GraphEditor",
             "InputCore",
             "CodenameGaeaMeshTerrainEditor",
+            "PropertyEditor",
             "UnrealEd",
             "Slate",
             "SlateCore",
