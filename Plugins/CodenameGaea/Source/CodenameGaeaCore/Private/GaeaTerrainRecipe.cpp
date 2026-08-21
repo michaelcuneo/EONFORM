@@ -22,6 +22,7 @@ namespace GaeaTerrainNodeTypes
 	const FName Sine(TEXT("Sine"));
 	const FName Threshold(TEXT("Threshold"));
 	const FName Transform(TEXT("Transform"));
+	const FName ZeroBorders(TEXT("ZeroBorders"));
 	const FName Slope(TEXT("Slope"));
 	const FName Angle(TEXT("Angle"));
 	const FName Curvature(TEXT("Curvature"));
