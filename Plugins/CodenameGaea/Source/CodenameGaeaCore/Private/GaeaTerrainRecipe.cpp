@@ -84,6 +84,15 @@ FName FGaeaTerrainNode::GetName(FName Name, FName DefaultValue) const
 	return DefaultValue;
 }
 
+bool FGaeaTerrainConnection::IsValid() const
+{
+	return FromNode.IsValid()
+		&& ToNode.IsValid()
+		&& FromNode != ToNode
+		&& !FromOutput.IsNone()
+		&& !ToInput.IsNone();
+}
+
 const FGaeaTerrainNode* FGaeaTerrainRecipe::FindNode(const FGuid& NodeId) const
 {
 	return Nodes.FindByPredicate([&NodeId](const FGaeaTerrainNode& Node) { return Node.Id == NodeId; });
