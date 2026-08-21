@@ -35,6 +35,7 @@ bool FGaeaCurrentNodeContractTest::RunTest(const FString& Parameters)
 	using namespace GaeaCurrentNodeContractTests;
 
 	CheckNode(*this, GaeaTerrainNodeTypes::PerlinNoise, TEXT("Perlin"), TEXT("Primitive"), 14);
+	CheckNode(*this, GaeaTerrainNodeTypes::Cellular, TEXT("Cellular"), TEXT("Primitive"), 10);
 	CheckNode(*this, GaeaTerrainNodeTypes::HydraulicErosion, TEXT("Erosion"), TEXT("Simulate"), 20);
 	CheckNode(*this, GaeaTerrainNodeTypes::ThermalErosion, TEXT("Thermal"), TEXT("Simulate"), 11);
 
