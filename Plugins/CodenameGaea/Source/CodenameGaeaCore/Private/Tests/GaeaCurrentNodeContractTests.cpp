@@ -66,7 +66,7 @@ bool FGaeaCurrentNodeContractTest::RunTest(const FString& Parameters)
 	CheckNode(*this, GaeaTerrainNodeTypes::TerrainShape, TEXT("Terrain Shape"), TEXT("Internal"), 8, true);
 	CheckNode(*this, GaeaTerrainNodeTypes::Invert, TEXT("Invert"), TEXT("Legacy"), 0, true);
 	CheckNode(*this, GaeaTerrainNodeTypes::Sine, TEXT("Sine"), TEXT("Legacy"), 1, true);
-	CheckNode(*this, GaeaTerrainNodeTypes::MultiCombine, TEXT("MultiCombine"), TEXT("Legacy"), 11, true);
+	CheckNode(*this, GaeaTerrainNodeTypes::MultiCombine, TEXT("MultiCombine"), TEXT("Legacy"), 12, true);
 
 	return true;
 }
