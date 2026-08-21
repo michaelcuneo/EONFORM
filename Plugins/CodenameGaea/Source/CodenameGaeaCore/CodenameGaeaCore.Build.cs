@@ -14,6 +14,7 @@ public class CodenameGaeaCore : ModuleRules
 
         PrivateDependencyModuleNames.AddRange(new string[]
         {
+            "ImageCore",
             "ImageWrapper"
         });
     }
