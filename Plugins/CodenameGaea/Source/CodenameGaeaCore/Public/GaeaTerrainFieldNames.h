@@ -23,4 +23,10 @@ namespace GaeaTerrainFieldNames
 	CODENAMEGAEACORE_API extern const FName Wear;
 	CODENAMEGAEACORE_API extern const FName Deposits;
 	CODENAMEGAEACORE_API extern const FName Flow;
+
+	// EONFORM persistent hydrology state. FlowDirection stores a D8 receiver
+	// index (0=E, 1=SE, 2=S, 3=SW, 4=W, 5=NW, 6=N, 7=NE, -1=outlet).
+	// FlowAccumulation stores upstream contributing sample count including self.
+	CODENAMEGAEACORE_API extern const FName FlowDirection;
+	CODENAMEGAEACORE_API extern const FName FlowAccumulation;
 }
