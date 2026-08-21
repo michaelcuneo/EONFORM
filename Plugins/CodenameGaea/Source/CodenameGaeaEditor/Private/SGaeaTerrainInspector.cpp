@@ -250,7 +250,7 @@ void SGaeaTerrainInspector::Construct(const FArguments& InArgs)
 			]
 
 			+ SVerticalBox::Slot()
-			.FillHeight(0.54f)
+			.FillHeight(0.64f)
 			.Padding(0.0f, 0.0f, 0.0f, 8.0f)
 			[
 				SNew(SGaeaTerrainGraphPanel)
@@ -258,7 +258,7 @@ void SGaeaTerrainInspector::Construct(const FArguments& InArgs)
 			]
 
 			+ SVerticalBox::Slot()
-			.FillHeight(0.46f)
+			.FillHeight(0.36f)
 			[
 				SNew(SSplitter)
 				+ SSplitter::Slot().Value(0.20f)
@@ -342,7 +342,15 @@ void SGaeaTerrainInspector::Construct(const FArguments& InArgs)
 
 				+ SSplitter::Slot().Value(0.22f)
 				[
-					OutputPanel
+					SNew(SVerticalBox)
+					+ SVerticalBox::Slot().FillHeight(1.0f)
+					[
+						SNullWidget::NullWidget
+					]
+					+ SVerticalBox::Slot().AutoHeight()
+					[
+						OutputPanel
+					]
 				]
 			]
 		]
