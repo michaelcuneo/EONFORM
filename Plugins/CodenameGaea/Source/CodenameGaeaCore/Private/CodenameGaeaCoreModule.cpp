@@ -7,6 +7,7 @@
 #include "GaeaCombineNode.h"
 #include "GaeaCurvatureNode.h"
 #include "GaeaDenoiseNode.h"
+#include "GaeaDistanceNode.h"
 #include "GaeaFlipNode.h"
 #include "GaeaHeightNode.h"
 #include "GaeaInvertNode.h"
@@ -51,6 +52,7 @@ public:
 		RegisterGaeaThresholdNode();
 		RegisterGaeaTransformNode();
 		RegisterGaeaZeroBordersNode();
+		RegisterGaeaDistanceNode();
 	}
 };
 
