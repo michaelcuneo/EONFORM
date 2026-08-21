@@ -40,6 +40,7 @@ bool FGaeaCurrentNodeContractTest::RunTest(const FString& Parameters)
 	CheckNode(*this, GaeaTerrainNodeTypes::Cone, TEXT("Cone"), TEXT("Primitive"), 4);
 	CheckNode(*this, GaeaTerrainNodeTypes::Constant, TEXT("Constant"), TEXT("Primitive"), 3);
 	CheckNode(*this, GaeaTerrainNodeTypes::Cracks, TEXT("Cracks"), TEXT("Primitive"), 10);
+	CheckNode(*this, GaeaTerrainNodeTypes::DotNoise, TEXT("DotNoise"), TEXT("Primitive"), 7);
 	CheckNode(*this, GaeaTerrainNodeTypes::HydraulicErosion, TEXT("Erosion"), TEXT("Simulate"), 20);
 	CheckNode(*this, GaeaTerrainNodeTypes::ThermalErosion, TEXT("Thermal"), TEXT("Simulate"), 11);
 
