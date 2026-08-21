@@ -61,4 +61,5 @@ private:
 	float AutoPreviewPollAccumulator = 0.0f;
 	bool bAutoPreviewInitialized = false;
 	bool bAutoPreviewEvaluating = false;
+	bool bLegacyEvaluateButtonHidden = false;
 };
