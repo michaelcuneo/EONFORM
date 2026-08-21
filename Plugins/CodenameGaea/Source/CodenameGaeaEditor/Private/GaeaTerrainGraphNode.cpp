@@ -24,7 +24,7 @@ namespace
 			[
 				SNew(SEditableTextBox)
 				.IsReadOnly(true)
-				.ToolTipText(FText::FromString(TEXT("Selected raster file.")))
+				.ToolTipText(FText::FromString(TEXT("Selected raster file. GeoTIFF/TIFF, PNG, JPEG, BMP, and OpenEXR are supported.")))
 				.Text_Lambda([WeakNode]()
 				{
 					if (const UGaeaEditorGraphNode* Current = WeakNode.Get())
@@ -41,7 +41,7 @@ namespace
 			[
 				SNew(SButton)
 				.Text(FText::FromString(TEXT("...")))
-				.ToolTipText(FText::FromString(TEXT("Choose a terrain/image file")))
+				.ToolTipText(FText::FromString(TEXT("Choose a terrain/image file, including GeoTIFF (.tif/.tiff)")))
 				.OnClicked_Lambda([WeakNode]()
 				{
 					UGaeaEditorGraphNode* Current = WeakNode.Get();
@@ -53,7 +53,7 @@ namespace
 					TArray<FString> SelectedFiles;
 					const FString Existing = Current->NameParameters.FindRef(TEXT("File")).ToString();
 					const FString StartDirectory = Existing.IsEmpty() ? FString() : FPaths::GetPath(Existing);
-					const FString Filter = TEXT("Terrain and Image Files (*.png;*.jpg;*.jpeg;*.bmp;*.exr)|*.png;*.jpg;*.jpeg;*.bmp;*.exr|PNG (*.png)|*.png|JPEG (*.jpg;*.jpeg)|*.jpg;*.jpeg|Bitmap (*.bmp)|*.bmp|OpenEXR (*.exr)|*.exr|All Files (*.*)|*.*");
+					const FString Filter = TEXT("Terrain and Image Files (*.tif;*.tiff;*.png;*.jpg;*.jpeg;*.bmp;*.exr)|*.tif;*.tiff;*.png;*.jpg;*.jpeg;*.bmp;*.exr|GeoTIFF / TIFF (*.tif;*.tiff)|*.tif;*.tiff|PNG (*.png)|*.png|JPEG (*.jpg;*.jpeg)|*.jpg;*.jpeg|Bitmap (*.bmp)|*.bmp|OpenEXR (*.exr)|*.exr|All Files (*.*)|*.*");
 					if (DesktopPlatform->OpenFileDialog(
 						nullptr,
 						TEXT("Choose Gaea File Input"),
