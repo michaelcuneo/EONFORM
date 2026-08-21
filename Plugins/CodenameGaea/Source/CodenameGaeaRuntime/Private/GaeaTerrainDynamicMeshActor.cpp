@@ -20,6 +20,16 @@ bool AGaeaTerrainDynamicMeshActor::ApplyTerrainDataset(
 	float HeightScale,
 	FString* OutError)
 {
+	FGaeaTerrainMeshBuildOptions Options;
+	Options.HeightScale = HeightScale;
+	return ApplyTerrainDataset(Dataset, Options, OutError);
+}
+
+bool AGaeaTerrainDynamicMeshActor::ApplyTerrainDataset(
+	const FGaeaTerrainDataset& Dataset,
+	const FGaeaTerrainMeshBuildOptions& Options,
+	FString* OutError)
+{
 	if (!TerrainMesh)
 	{
 		if (OutError)
@@ -30,7 +40,7 @@ bool AGaeaTerrainDynamicMeshActor::ApplyTerrainDataset(
 	}
 
 	UE::Geometry::FDynamicMesh3 Mesh;
-	if (!FGaeaTerrainMeshMaterializer::BuildDynamicMesh(Dataset, HeightScale, Mesh, OutError))
+	if (!FGaeaTerrainMeshMaterializer::BuildDynamicMesh(Dataset, Options, Mesh, OutError))
 	{
 		return false;
 	}
