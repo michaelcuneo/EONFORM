@@ -4,6 +4,7 @@
 #include "GaeaTerrainContext.h"
 #include "GaeaTerrainDataset.h"
 #include "GaeaTerrainGeology.h"
+#include "GaeaTerrainPhysicalMetrics.h"
 
 struct CODENAMEGAEACORE_API FGaeaTerrainDerivedDataSettings
 {
@@ -25,6 +26,12 @@ public:
 		float HeightScale,
 		FString* OutError = nullptr);
 
+	static bool EnsureContext(
+		FGaeaTerrainDataset& InOutDataset,
+		float HeightScale,
+		const FGaeaTerrainPhysicalMetrics& PhysicalMetrics,
+		FString* OutError = nullptr);
+
 	static bool EnsureGeology(
 		FGaeaTerrainDataset& InOutDataset,
 		float HeightScale,
@@ -42,9 +49,22 @@ public:
 		float HeightScale,
 		FString* OutError = nullptr);
 
+	static bool EnsureHydrology(
+		FGaeaTerrainDataset& InOutDataset,
+		float HeightScale,
+		const FGaeaTerrainPhysicalMetrics& PhysicalMetrics,
+		FString* OutError = nullptr);
+
 	static bool EnsureHydraulicInputs(
 		FGaeaTerrainDataset& InOutDataset,
 		float HeightScale,
+		const FGaeaTerrainDerivedDataSettings& Settings = FGaeaTerrainDerivedDataSettings(),
+		FString* OutError = nullptr);
+
+	static bool EnsureHydraulicInputs(
+		FGaeaTerrainDataset& InOutDataset,
+		float HeightScale,
+		const FGaeaTerrainPhysicalMetrics& PhysicalMetrics,
 		const FGaeaTerrainDerivedDataSettings& Settings = FGaeaTerrainDerivedDataSettings(),
 		FString* OutError = nullptr);
 };
