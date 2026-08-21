@@ -9,6 +9,7 @@
 #include "GaeaDenoiseNode.h"
 #include "GaeaFlipNode.h"
 #include "GaeaHeightNode.h"
+#include "GaeaInvertNode.h"
 #include "GaeaTerrainNodeDescriptor.h"
 #include "GaeaTerrainRecipe.h"
 #include "GaeaThermalErosionNode.h"
@@ -37,6 +38,7 @@ public:
 		RegisterGaeaBlurNode();
 		RegisterGaeaDenoiseNode();
 		RegisterGaeaFlipNode();
+		RegisterGaeaInvertNode();
 	}
 };
 
