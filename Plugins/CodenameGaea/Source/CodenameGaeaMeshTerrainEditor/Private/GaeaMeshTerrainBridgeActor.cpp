@@ -20,7 +20,6 @@ using UE::MeshPartition::UMeshProviderModifier;
 AGaeaMeshTerrainBridgeActor::AGaeaMeshTerrainBridgeActor()
 {
 	PrimaryActorTick.bCanEverTick = false;
-	bIsEditorOnlyActor = true;
 
 	SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
 	SetRootComponent(SceneRoot);
@@ -30,12 +29,6 @@ AGaeaMeshTerrainBridgeActor::AGaeaMeshTerrainBridgeActor()
 	EditorMarker->ArrowSize = 2.0f;
 	EditorMarker->SetHiddenInGame(true);
 	EditorMarker->SetIsVisualizationComponent(true);
-
-	UMeshProviderModifier* MeshProvider = CreateDefaultSubobject<UMeshProviderModifier>(TEXT("EONFORMMeshProvider"));
-	MeshProvider->SetupAttachment(SceneRoot);
-	MeshProviderComponent = MeshProvider;
-
-	SetActorLabel(TEXT("EONFORM Mesh Terrain Bridge"));
 }
 
 void AGaeaMeshTerrainBridgeActor::SetStatus(const FString& Message, bool bError)
@@ -88,7 +81,9 @@ AActor* AGaeaMeshTerrainBridgeActor::ResolveOrCreateMeshPartitionActor()
 	}
 
 	Partition->SetActorScale3D(GetActorScale3D());
+#if WITH_EDITOR
 	Partition->SetActorLabel(TEXT("EONFORM Mesh Terrain"));
+#endif
 	TargetMeshPartition = Partition;
 	return Partition;
 }
@@ -106,8 +101,17 @@ void AGaeaMeshTerrainBridgeActor::BuildMeshTerrain()
 	UMeshProviderModifier* MeshProvider = Cast<UMeshProviderModifier>(MeshProviderComponent.Get());
 	if (!MeshProvider)
 	{
-		SetStatus(TEXT("EONFORM Mesh Provider component is unavailable."), true);
-		return;
+		MeshProvider = NewObject<UMeshProviderModifier>(this, TEXT("EONFORMMeshProvider"), RF_Transactional);
+		if (!MeshProvider)
+		{
+			SetStatus(TEXT("Failed to create the UE 5.8 Mesh Provider modifier."), true);
+			return;
+		}
+
+		AddInstanceComponent(MeshProvider);
+		MeshProvider->SetupAttachment(SceneRoot);
+		MeshProvider->RegisterComponent();
+		MeshProviderComponent = MeshProvider;
 	}
 
 	FGaeaTerrainEvaluationContext Context;
@@ -180,6 +184,7 @@ void AGaeaMeshTerrainBridgeActor::ClearMeshTerrain()
 	UMeshProviderModifier* MeshProvider = Cast<UMeshProviderModifier>(MeshProviderComponent.Get());
 	if (!MeshProvider)
 	{
+		SetStatus(TEXT("There is no Mesh Terrain provider to clear."), false);
 		return;
 	}
 
