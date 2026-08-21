@@ -1,5 +1,7 @@
 #include "GaeaMeshTerrainBridgeActor.h"
 
+#include "Components/ArrowComponent.h"
+#include "Components/SceneComponent.h"
 #include "DynamicMesh/DynamicMesh3.h"
 #include "Engine/World.h"
 #include "GaeaTerrainDatasetRegistry.h"
@@ -20,9 +22,19 @@ AGaeaMeshTerrainBridgeActor::AGaeaMeshTerrainBridgeActor()
 	PrimaryActorTick.bCanEverTick = false;
 	bIsEditorOnlyActor = true;
 
+	SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
+	SetRootComponent(SceneRoot);
+
+	EditorMarker = CreateDefaultSubobject<UArrowComponent>(TEXT("EditorMarker"));
+	EditorMarker->SetupAttachment(SceneRoot);
+	EditorMarker->ArrowSize = 2.0f;
+	EditorMarker->SetHiddenInGame(true);
+	EditorMarker->SetIsVisualizationComponent(true);
+
 	UMeshProviderModifier* MeshProvider = CreateDefaultSubobject<UMeshProviderModifier>(TEXT("EONFORMMeshProvider"));
+	MeshProvider->SetupAttachment(SceneRoot);
 	MeshProviderComponent = MeshProvider;
-	SetRootComponent(MeshProvider);
+
 	SetActorLabel(TEXT("EONFORM Mesh Terrain Bridge"));
 }
 
