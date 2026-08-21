@@ -9,6 +9,7 @@
 #include "GaeaDenoiseNode.h"
 #include "GaeaDistanceNode.h"
 #include "GaeaFlipNode.h"
+#include "GaeaFractalTerracesNode.h"
 #include "GaeaHeightNode.h"
 #include "GaeaInvertNode.h"
 #include "GaeaMultiCombineNode.h"
@@ -53,6 +54,7 @@ public:
 		RegisterGaeaTransformNode();
 		RegisterGaeaZeroBordersNode();
 		RegisterGaeaDistanceNode();
+		RegisterGaeaFractalTerracesNode();
 	}
 };
 
