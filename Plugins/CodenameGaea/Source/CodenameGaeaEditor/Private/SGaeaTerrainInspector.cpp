@@ -3,6 +3,7 @@
 #include "Engine/Texture2D.h"
 #include "GaeaScalarField.h"
 #include "GaeaTerrainFieldNames.h"
+#include "GaeaTerrainPhysicalMetrics.h"
 #include "SGaeaTerrainGraphPanel.h"
 #include "SGaeaTerrainMeshPreview.h"
 #include "Styling/AppStyle.h"
@@ -26,6 +27,9 @@ namespace
 		Height,
 		Slope,
 		Flow,
+		FlowDirection,
+		StreamOrder,
+		Distance,
 		Rainfall,
 		Erosion,
 		Deposition,
@@ -46,6 +50,8 @@ namespace
 		ETerrainInspectorPalette Palette = ETerrainInspectorPalette::Grayscale;
 		const TCHAR* Name = TEXT("Grayscale");
 		const TCHAR* Legend = TEXT("Low -> High");
+		bool bLogarithmic = false;
+		bool bCategorical = false;
 	};
 
 	FString TerrainInspectorFieldUnitToString(EGaeaFieldUnit Unit)
@@ -56,6 +62,8 @@ namespace
 		case EGaeaFieldUnit::Normalized: return TEXT("Normalized");
 		case EGaeaFieldUnit::Centimeters: return TEXT("Centimeters");
 		case EGaeaFieldUnit::Meters: return TEXT("Meters");
+		case EGaeaFieldUnit::Kilometers: return TEXT("Kilometers");
+		case EGaeaFieldUnit::SquareKilometers: return TEXT("Square Kilometers");
 		case EGaeaFieldUnit::Degrees: return TEXT("Degrees");
 		case EGaeaFieldUnit::Celsius: return TEXT("Celsius");
 		default: return TEXT("Unknown");
@@ -70,6 +78,15 @@ namespace
 		case EGaeaInterpolation::Bilinear: return TEXT("Bilinear");
 		default: return TEXT("Unknown");
 		}
+	}
+
+	float TerrainInspectorSampleNearest(const FGaeaScalarField& Field, double X, double Y)
+	{
+		const int32 Width = Field.Domain.Dimensions.X;
+		const int32 Height = Field.Domain.Dimensions.Y;
+		const int32 IX = FMath::Clamp(FMath::RoundToInt(X), 0, Width - 1);
+		const int32 IY = FMath::Clamp(FMath::RoundToInt(Y), 0, Height - 1);
+		return Field.AtInterior(IX, IY);
 	}
 
 	float TerrainInspectorSampleBilinear(const FGaeaScalarField& Field, double X, double Y)
@@ -123,6 +140,16 @@ namespace
 			return { ETerrainInspectorPalette::Slope, TEXT("Slope"), TEXT("Flat -> rolling -> steep -> near-vertical") };
 		if (FieldName == GaeaTerrainFieldNames::Flow)
 			return { ETerrainInspectorPalette::Flow, TEXT("Drainage Flow"), TEXT("Low flow -> channel -> major drainage") };
+		if (FieldName == GaeaTerrainFieldNames::FlowAccumulation)
+			return { ETerrainInspectorPalette::Flow, TEXT("Flow Accumulation (log)"), TEXT("Headwater -> tributary -> trunk channel"), true, false };
+		if (FieldName == GaeaTerrainFieldNames::CatchmentAreaKm2)
+			return { ETerrainInspectorPalette::Flow, TEXT("Catchment Area (log)"), TEXT("Small contributing area -> major catchment"), true, false };
+		if (FieldName == GaeaTerrainFieldNames::FlowDirection)
+			return { ETerrainInspectorPalette::FlowDirection, TEXT("D8 Flow Direction"), TEXT("Outlet + eight discrete D8 directions"), false, true };
+		if (FieldName == GaeaTerrainFieldNames::StreamOrder)
+			return { ETerrainInspectorPalette::StreamOrder, TEXT("Strahler Stream Order"), TEXT("Order 1 headwater -> higher-order trunk"), false, true };
+		if (FieldName == GaeaTerrainFieldNames::DistanceToOutletKm)
+			return { ETerrainInspectorPalette::Distance, TEXT("Distance To Outlet"), TEXT("Outlet -> increasingly distant headwater") };
 		if (FieldName == GaeaTerrainFieldNames::Rainfall)
 			return { ETerrainInspectorPalette::Rainfall, TEXT("Rainfall"), TEXT("Dry -> moderate precipitation -> high precipitation") };
 		if (FieldName == GaeaTerrainFieldNames::HydraulicErosion || FieldName == GaeaTerrainFieldNames::Wear)
@@ -152,10 +179,39 @@ namespace
 		return {};
 	}
 
+	FLinearColor TerrainInspectorDirectionColor(float Value)
+	{
+		const int32 Direction = FMath::RoundToInt(Value);
+		if (Direction < 0) return FLinearColor(0.025f, 0.025f, 0.03f);
+		static const FLinearColor Colors[8] =
+		{
+			FLinearColor(0.92f, 0.20f, 0.18f),
+			FLinearColor(0.98f, 0.56f, 0.12f),
+			FLinearColor(0.90f, 0.86f, 0.16f),
+			FLinearColor(0.28f, 0.78f, 0.22f),
+			FLinearColor(0.12f, 0.72f, 0.72f),
+			FLinearColor(0.14f, 0.38f, 0.90f),
+			FLinearColor(0.50f, 0.22f, 0.88f),
+			FLinearColor(0.88f, 0.22f, 0.68f)
+		};
+		return Colors[FMath::Clamp(Direction, 0, 7)];
+	}
+
 	FLinearColor TerrainInspectorColorForValue(const FTerrainInspectorVisualisation& Visualisation, float Value, float Minimum, float Maximum)
 	{
+		if (!FMath::IsFinite(Value)) return FLinearColor(1.0f, 0.0f, 1.0f);
+		if (Visualisation.Palette == ETerrainInspectorPalette::FlowDirection) return TerrainInspectorDirectionColor(Value);
+
 		const float Range = FMath::Max(Maximum - Minimum, UE_SMALL_NUMBER);
 		float T = FMath::Clamp((Value - Minimum) / Range, 0.0f, 1.0f);
+		if (Visualisation.bLogarithmic)
+		{
+			const double Shifted = FMath::Max(static_cast<double>(Value - Minimum), 0.0);
+			const double LogRange = FMath::Loge(1.0 + static_cast<double>(Range));
+			T = LogRange > UE_DOUBLE_SMALL_NUMBER
+				? static_cast<float>(FMath::Loge(1.0 + Shifted) / LogRange)
+				: 0.0f;
+		}
 
 		switch (Visualisation.Palette)
 		{
@@ -176,8 +232,16 @@ namespace
 		case ETerrainInspectorPalette::Slope:
 			return TerrainInspectorFourStop(T, FLinearColor(0.05f, 0.25f, 0.08f), FLinearColor(0.75f, 0.72f, 0.08f), FLinearColor(0.92f, 0.28f, 0.015f), FLinearColor(0.98f, 0.95f, 0.90f));
 		case ETerrainInspectorPalette::Flow:
-			T = FMath::Pow(T, 0.35f);
+			if (!Visualisation.bLogarithmic) T = FMath::Pow(T, 0.35f);
 			return TerrainInspectorFourStop(T, FLinearColor(0.005f, 0.008f, 0.025f), FLinearColor(0.015f, 0.12f, 0.42f), FLinearColor(0.02f, 0.70f, 0.92f), FLinearColor(0.92f, 1.0f, 1.0f));
+		case ETerrainInspectorPalette::StreamOrder:
+		{
+			const int32 Order = FMath::Max(1, FMath::RoundToInt(Value));
+			const float OrderT = FMath::Clamp(static_cast<float>(Order - 1) / FMath::Max(Maximum - 1.0f, 1.0f), 0.0f, 1.0f);
+			return TerrainInspectorFourStop(OrderT, FLinearColor(0.12f, 0.34f, 0.78f), FLinearColor(0.08f, 0.72f, 0.78f), FLinearColor(0.92f, 0.72f, 0.12f), FLinearColor(0.96f, 0.18f, 0.10f));
+		}
+		case ETerrainInspectorPalette::Distance:
+			return TerrainInspectorFourStop(T, FLinearColor(0.02f, 0.03f, 0.10f), FLinearColor(0.08f, 0.28f, 0.72f), FLinearColor(0.16f, 0.78f, 0.70f), FLinearColor(0.96f, 0.90f, 0.36f));
 		case ETerrainInspectorPalette::Rainfall:
 			return TerrainInspectorFourStop(T, FLinearColor(0.35f, 0.20f, 0.06f), FLinearColor(0.62f, 0.55f, 0.18f), FLinearColor(0.08f, 0.48f, 0.34f), FLinearColor(0.08f, 0.42f, 0.90f));
 		case ETerrainInspectorPalette::Erosion:
@@ -206,6 +270,7 @@ namespace
 			return TerrainInspectorThreeStop(T, FLinearColor(0.01f, 0.01f, 0.015f), FLinearColor(0.02f, 0.20f, 0.34f), FLinearColor(0.04f, 0.92f, 0.94f));
 		case ETerrainInspectorPalette::Convexity:
 			return TerrainInspectorThreeStop(T, FLinearColor(0.01f, 0.01f, 0.015f), FLinearColor(0.32f, 0.05f, 0.32f), FLinearColor(0.96f, 0.20f, 0.78f));
+		case ETerrainInspectorPalette::FlowDirection:
 		case ETerrainInspectorPalette::Grayscale:
 		default:
 			return FLinearColor(T, T, T, 1.0f);
@@ -362,9 +427,6 @@ void SGaeaTerrainInspector::Construct(const FArguments& InArgs)
 void SGaeaTerrainInspector::RefreshFromRegistry()
 {
 	FGaeaTerrainDatasetSnapshot NewSnapshot;
-	// Keep the inspector, embedded mesh preview, and Generate Terrain on the exact
-	// same EONFORM graph snapshot. "Latest" can legitimately belong to another
-	// terrain publisher and must never change what the EONFORM output panes display.
 	if (FGaeaTerrainDatasetRegistry::Get(TEXT("CodenameGaeaGraph"), NewSnapshot) && NewSnapshot.IsValid())
 	{
 		Snapshot = MoveTemp(NewSnapshot);
@@ -435,6 +497,7 @@ void SGaeaTerrainInspector::ClearPreview()
 	PreviewMeanValue = 0.0f;
 	PreviewStdDev = 0.0f;
 	PreviewSampleCount = 0;
+	PreviewNonFiniteCount = 0;
 	if (PreviewImage.IsValid()) PreviewImage->Invalidate(EInvalidateWidgetReason::Paint);
 }
 
@@ -456,6 +519,11 @@ void SGaeaTerrainInspector::RebuildPreview()
 		for (int32 X = 0; X < Dimensions.X; ++X)
 		{
 			const float Value = Field->AtInterior(X, Y);
+			if (!FMath::IsFinite(Value))
+			{
+				++PreviewNonFiniteCount;
+				continue;
+			}
 			PreviewMinValue = FMath::Min(PreviewMinValue, Value);
 			PreviewMaxValue = FMath::Max(PreviewMaxValue, Value);
 			Sum += static_cast<double>(Value);
@@ -470,6 +538,7 @@ void SGaeaTerrainInspector::RebuildPreview()
 	PreviewStdDev = static_cast<float>(FMath::Sqrt(Variance));
 
 	const FTerrainInspectorVisualisation Visualisation = TerrainInspectorGetVisualisation(SelectedFieldName);
+	const bool bUseNearest = Visualisation.bCategorical || Field->Descriptor.Interpolation == EGaeaInterpolation::Nearest;
 	TArray<FColor> Pixels;
 	Pixels.SetNumUninitialized(TerrainInspectorPreviewResolution * TerrainInspectorPreviewResolution);
 
@@ -479,7 +548,9 @@ void SGaeaTerrainInspector::RebuildPreview()
 		for (int32 PreviewX = 0; PreviewX < TerrainInspectorPreviewResolution; ++PreviewX)
 		{
 			const double SourceX = static_cast<double>(PreviewX) / static_cast<double>(TerrainInspectorPreviewResolution - 1) * static_cast<double>(Dimensions.X - 1);
-			const float Value = TerrainInspectorSampleBilinear(*Field, SourceX, SourceY);
+			const float Value = bUseNearest
+				? TerrainInspectorSampleNearest(*Field, SourceX, SourceY)
+				: TerrainInspectorSampleBilinear(*Field, SourceX, SourceY);
 			const FLinearColor Color = TerrainInspectorColorForValue(Visualisation, Value, PreviewMinValue, PreviewMaxValue);
 			Pixels[PreviewY * TerrainInspectorPreviewResolution + PreviewX] = Color.ToFColor(true);
 		}
@@ -489,7 +560,7 @@ void SGaeaTerrainInspector::RebuildPreview()
 	if (!Texture || !Texture->GetPlatformData() || Texture->GetPlatformData()->Mips.IsEmpty()) { ClearPreview(); return; }
 
 	Texture->SRGB = true;
-	Texture->Filter = TF_Bilinear;
+	Texture->Filter = bUseNearest ? TF_Nearest : TF_Bilinear;
 	Texture->AddressX = TA_Clamp;
 	Texture->AddressY = TA_Clamp;
 	Texture->NeverStream = true;
@@ -517,17 +588,66 @@ FText SGaeaTerrainInspector::GetFieldMetadataText() const
 	if (!Field) return FText::FromString(TEXT("Select a terrain field to inspect it."));
 
 	const FGaeaGridDomain& Domain = Field->Domain;
-	const FVector2d CellSize = Domain.GetCellSize();
+	const FVector2d AuthoredCellSize = Domain.GetCellSize();
 	const FTerrainInspectorVisualisation Visualisation = TerrainInspectorGetVisualisation(SelectedFieldName);
+	const FGaeaTerrainPhysicalMetrics Physical = FGaeaTerrainPhysicalContext::GetActive();
+	const bool bUseNearest = Visualisation.bCategorical || Field->Descriptor.Interpolation == EGaeaInterpolation::Nearest;
+	const FString PreviewMode = Visualisation.bLogarithmic
+		? FString::Printf(TEXT("%s, logarithmic display"), bUseNearest ? TEXT("nearest") : TEXT("bilinear"))
+		: FString(bUseNearest ? TEXT("nearest") : TEXT("bilinear"));
+
+	FString PhysicalText;
+	if (Physical.HasWorldDimensions())
+	{
+		const FVector2d PhysicalSpacing = Physical.ResolveSampleSpacingMeters(Domain.Dimensions, AuthoredCellSize);
+		PhysicalText = FString::Printf(
+			TEXT("\nPhysical world: %.3f x %.3f km   Sample spacing: %.3f x %.3f m"),
+			Physical.WorldWidthMeters / 1000.0,
+			Physical.WorldDepthMeters / 1000.0,
+			PhysicalSpacing.X,
+			PhysicalSpacing.Y);
+	}
+	if (Physical.HasElevationScale())
+	{
+		PhysicalText += FString::Printf(
+			TEXT("\nElevation scale: %.3f m   Sea level: %.3f m"),
+			Physical.ElevationScaleMeters,
+			Physical.SeaLevelMeters);
+	}
+
 	return FText::FromString(FString::Printf(
-		TEXT("%s\nUnit: %s   Interpolation: %s\nResolution: %d x %d   Border: %d\nWorld: [%.1f, %.1f] to [%.1f, %.1f]\nCell size: %.2f x %.2f\nVisualisation: %s\nLegend: %s\nPreview: %d x %d, bilinear"),
-		*Field->Descriptor.Name.ToString(), *TerrainInspectorFieldUnitToString(Field->Descriptor.Unit), *TerrainInspectorInterpolationToString(Field->Descriptor.Interpolation), Domain.Dimensions.X, Domain.Dimensions.Y, Domain.BorderSamples, Domain.WorldMin.X, Domain.WorldMin.Y, Domain.WorldMax.X, Domain.WorldMax.Y, CellSize.X, CellSize.Y, Visualisation.Name, Visualisation.Legend, TerrainInspectorPreviewResolution, TerrainInspectorPreviewResolution));
+		TEXT("%s\nUnit: %s   Interpolation: %s\nResolution: %d x %d   Border: %d\nAuthored domain: [%.1f, %.1f] to [%.1f, %.1f] cm\nAuthored cell: %.2f x %.2f cm%s\nVisualisation: %s\nLegend: %s\nPreview: %d x %d, %s"),
+		*Field->Descriptor.Name.ToString(),
+		*TerrainInspectorFieldUnitToString(Field->Descriptor.Unit),
+		*TerrainInspectorInterpolationToString(Field->Descriptor.Interpolation),
+		Domain.Dimensions.X,
+		Domain.Dimensions.Y,
+		Domain.BorderSamples,
+		Domain.WorldMin.X,
+		Domain.WorldMin.Y,
+		Domain.WorldMax.X,
+		Domain.WorldMax.Y,
+		AuthoredCellSize.X,
+		AuthoredCellSize.Y,
+		*PhysicalText,
+		Visualisation.Name,
+		Visualisation.Legend,
+		TerrainInspectorPreviewResolution,
+		TerrainInspectorPreviewResolution,
+		*PreviewMode));
 }
 
 FText SGaeaTerrainInspector::GetPreviewStatsText() const
 {
 	if (PreviewSampleCount <= 0) return FText::GetEmpty();
-	return FText::FromString(FString::Printf(TEXT("Min %.6g   Max %.6g   Mean %.6g   StdDev %.6g   Samples %lld"), PreviewMinValue, PreviewMaxValue, PreviewMeanValue, PreviewStdDev, static_cast<long long>(PreviewSampleCount)));
+	return FText::FromString(FString::Printf(
+		TEXT("Min %.6g   Max %.6g   Mean %.6g   StdDev %.6g   Finite %lld   NonFinite %lld"),
+		PreviewMinValue,
+		PreviewMaxValue,
+		PreviewMeanValue,
+		PreviewStdDev,
+		static_cast<long long>(PreviewSampleCount),
+		static_cast<long long>(PreviewNonFiniteCount)));
 }
 
 FText SGaeaTerrainInspector::GetEmptyStateText() const
