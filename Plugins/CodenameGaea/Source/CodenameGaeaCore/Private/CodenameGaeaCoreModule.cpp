@@ -11,6 +11,7 @@
 #include "GaeaHeightNode.h"
 #include "GaeaInvertNode.h"
 #include "GaeaMultiCombineNode.h"
+#include "GaeaSharpenNode.h"
 #include "GaeaTerrainNodeDescriptor.h"
 #include "GaeaTerrainRecipe.h"
 #include "GaeaThermalErosionNode.h"
@@ -41,6 +42,7 @@ public:
 		RegisterGaeaFlipNode();
 		RegisterGaeaInvertNode();
 		RegisterGaeaMultiCombineNode();
+		RegisterGaeaSharpenNode();
 	}
 };
 
