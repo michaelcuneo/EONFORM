@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GaeaTerrainDataset.h"
+#include "GaeaTerrainPhysicalMetrics.h"
 #include "GaeaTerrainRecipe.h"
 #include "GaeaTerrainValue.h"
 
@@ -9,6 +10,9 @@ struct CODENAMEGAEACORE_API FGaeaTerrainEvaluationContext
 {
 	FGaeaTerrainDataset SourceDataset;
 	float HeightScale = 1000.0f;
+
+	/** Optional physical world contract supplied by EONFORM's graph asset/output settings. */
+	FGaeaTerrainPhysicalMetrics PhysicalMetrics;
 };
 
 struct CODENAMEGAEACORE_API FGaeaTerrainEvaluationResult
