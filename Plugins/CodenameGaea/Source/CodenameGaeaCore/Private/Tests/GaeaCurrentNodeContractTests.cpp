@@ -35,7 +35,14 @@ bool FGaeaCurrentNodeContractTest::RunTest(const FString& Parameters)
 	CheckNode(*this, GaeaTerrainNodeTypes::Gabor, TEXT("Gabor"), TEXT("Primitive"), 6);
 	CheckNode(*this, GaeaTerrainNodeTypes::Hemisphere, TEXT("Hemisphere"), TEXT("Primitive"), 5);
 	CheckNode(*this, GaeaTerrainNodeTypes::LinearGradient, TEXT("LinearGradient"), TEXT("Primitive"), 3);
+	CheckNode(*this, GaeaTerrainNodeTypes::LineNoise, TEXT("LineNoise"), TEXT("Primitive"), 5);
+	CheckNode(*this, GaeaTerrainNodeTypes::MultiFractal, TEXT("MultiFractal"), TEXT("Primitive"), 26);
+	CheckNode(*this, GaeaTerrainNodeTypes::Noise, TEXT("Noise"), TEXT("Primitive"), 6);
+	CheckNode(*this, GaeaTerrainNodeTypes::Pattern, TEXT("Pattern"), TEXT("Primitive"), 7);
 	CheckNode(*this, GaeaTerrainNodeTypes::RadialGradient, TEXT("RadialGradient"), TEXT("Primitive"), 4);
+	CheckNode(*this, GaeaTerrainNodeTypes::Shape, TEXT("Shape"), TEXT("Primitive"), 10);
+	CheckNode(*this, GaeaTerrainNodeTypes::Voronoi, TEXT("Voronoi"), TEXT("Primitive"), 15);
+	CheckNode(*this, GaeaTerrainNodeTypes::WaveShine, TEXT("WaveShine"), TEXT("Primitive"), 15);
 	CheckNode(*this, GaeaTerrainNodeTypes::HydraulicErosion, TEXT("Erosion"), TEXT("Simulate"), 20);
 	CheckNode(*this, GaeaTerrainNodeTypes::ThermalErosion, TEXT("Thermal"), TEXT("Simulate"), 11);
 	CheckNode(*this, GaeaTerrainNodeTypes::AutoLevel, TEXT("Autolevel"), TEXT("Modify"), 0);
