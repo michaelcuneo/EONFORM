@@ -33,9 +33,12 @@ namespace
 		{
 			return Fail(TEXT("HeightScale must be greater than zero."));
 		}
-		if (Options.HorizontalScale <= UE_SMALL_NUMBER || Options.VerticalScale <= UE_SMALL_NUMBER)
+		if (Options.HorizontalScale <= UE_SMALL_NUMBER
+			|| Options.HorizontalScaleXY.X <= UE_DOUBLE_SMALL_NUMBER
+			|| Options.HorizontalScaleXY.Y <= UE_DOUBLE_SMALL_NUMBER
+			|| Options.VerticalScale <= UE_SMALL_NUMBER)
 		{
-			return Fail(TEXT("HorizontalScale and VerticalScale must be greater than zero."));
+			return Fail(TEXT("Terrain materialization scales must be greater than zero."));
 		}
 
 		OutTargetResolution = FGaeaTerrainMeshMaterializer::ResolveTargetResolution(Dataset, Options);
@@ -129,6 +132,7 @@ bool FGaeaTerrainMeshMaterializer::BuildDynamicMeshRegion(
 	const FVector2d MaxWorld = Height->Domain.InteriorSampleToWorld(
 		Height->Domain.Dimensions.X - 1,
 		Height->Domain.Dimensions.Y - 1);
+	const FVector2d WorldCenter = (MinWorld + MaxWorld) * 0.5;
 
 	const int32 LocalWidth = EndSample.X - StartSample.X + 1;
 	const int32 LocalHeight = EndSample.Y - StartSample.Y + 1;
@@ -155,9 +159,10 @@ bool FGaeaTerrainMeshMaterializer::BuildDynamicMeshRegion(
 				FMath::Lerp(MinWorld.X, MaxWorld.X, U),
 				FMath::Lerp(MinWorld.Y, MaxWorld.Y, V));
 			const float HeightValue = Height->SampleWorld(SourceWorld, true);
+			const FVector2d FromCenter = SourceWorld - WorldCenter;
 			const FVector3d Position(
-				SourceWorld.X * Options.HorizontalScale,
-				SourceWorld.Y * Options.HorizontalScale,
+				WorldCenter.X + FromCenter.X * Options.HorizontalScale * Options.HorizontalScaleXY.X,
+				WorldCenter.Y + FromCenter.Y * Options.HorizontalScale * Options.HorizontalScaleXY.Y,
 				static_cast<double>(HeightValue) * static_cast<double>(Options.HeightScale) * Options.VerticalScale);
 
 			VertexIds[LocalY * LocalWidth + LocalX] = OutMesh.AppendVertex(Position);
