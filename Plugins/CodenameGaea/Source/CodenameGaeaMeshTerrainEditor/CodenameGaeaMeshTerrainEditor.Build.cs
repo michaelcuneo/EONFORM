@@ -12,7 +12,9 @@ public class CodenameGaeaMeshTerrainEditor : ModuleRules
             "CoreUObject",
             "Engine",
             "CodenameGaeaCore",
-            "CodenameGaeaRuntime"
+            "CodenameGaeaRuntime",
+            "MeshPartition",
+            "MeshPartitionEditor"
         });
 
         PrivateDependencyModuleNames.AddRange(new string[]
@@ -20,8 +22,6 @@ public class CodenameGaeaMeshTerrainEditor : ModuleRules
             "DynamicMesh",
             "GeometryCore",
             "GeometryFramework",
-            "MeshPartition",
-            "MeshPartitionEditor",
             "UnrealEd"
         });
     }
