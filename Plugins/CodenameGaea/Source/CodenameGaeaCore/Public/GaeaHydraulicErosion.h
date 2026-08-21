@@ -24,6 +24,10 @@ struct CODENAMEGAEACORE_API FGaeaHydraulicErosionSettings
 	bool bAggressiveMode = false;
 	bool bDeterministic = true;
 
+	/** Optional physical overrides supplied by graph evaluation. Zero preserves legacy domain units. */
+	double PhysicalSampleSpacingMeters = 0.0;
+	double PhysicalElevationScaleMeters = 0.0;
+
 	// Internal solver coefficients. These remain implementation details rather
 	// than user-facing graph controls.
 	float Rainfall = 0.01f;
