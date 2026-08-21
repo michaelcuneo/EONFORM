@@ -14,6 +14,7 @@
 namespace
 {
 	constexpr double UnrealUnitsPerMetre = 100.0;
+	constexpr double Wgs84EquatorialRadiusMetres = 6378137.0;
 
 	FString ResolveFileNodePath(const FGaeaTerrainNode& Node)
 	{
@@ -59,6 +60,60 @@ namespace
 		return true;
 	}
 
+	bool ResolveCoordinateBoundsMetres(
+		const FGaeaTerrainNode& Node,
+		double& OutExtentXMetres,
+		double& OutExtentYMetres,
+		FString& Error)
+	{
+		const double XMin = Node.GetNumber(TEXT("XMin"), 0.0);
+		const double YMin = Node.GetNumber(TEXT("YMin"), 0.0);
+		const double XMax = Node.GetNumber(TEXT("XMax"), 0.0);
+		const double YMax = Node.GetNumber(TEXT("YMax"), 0.0);
+		if (!FMath::IsFinite(XMin) || !FMath::IsFinite(YMin) || !FMath::IsFinite(XMax) || !FMath::IsFinite(YMax))
+		{
+			Error = TEXT("File coordinate bounds must be finite.");
+			return false;
+		}
+		if (XMax <= XMin || YMax <= YMin)
+		{
+			Error = TEXT("File coordinate bounds require XMax > XMin and YMax > YMin.");
+			return false;
+		}
+
+		if (Node.GetBool(TEXT("BoundsAreGeographic"), true))
+		{
+			if (XMin < -180.0 || XMax > 180.0 || YMin < -90.0 || YMax > 90.0)
+			{
+				Error = TEXT("Geographic File bounds must be valid WGS84 longitude/latitude values.");
+				return false;
+			}
+
+			// Convert the WGS84 angular span to a local metric span at the centre
+			// latitude. This equirectangular approximation is extremely accurate for
+			// terrain-sized regions and avoids treating longitude/latitude degrees as metres.
+			const double MidLatitudeRadians = FMath::DegreesToRadians((YMin + YMax) * 0.5);
+			const double DeltaLongitudeRadians = FMath::DegreesToRadians(XMax - XMin);
+			const double DeltaLatitudeRadians = FMath::DegreesToRadians(YMax - YMin);
+			OutExtentXMetres = Wgs84EquatorialRadiusMetres * FMath::Cos(MidLatitudeRadians) * DeltaLongitudeRadians;
+			OutExtentYMetres = Wgs84EquatorialRadiusMetres * DeltaLatitudeRadians;
+		}
+		else
+		{
+			// Projected bounds are expected to already be expressed in metres.
+			OutExtentXMetres = XMax - XMin;
+			OutExtentYMetres = YMax - YMin;
+		}
+
+		if (!FMath::IsFinite(OutExtentXMetres) || !FMath::IsFinite(OutExtentYMetres)
+			|| OutExtentXMetres <= UE_DOUBLE_SMALL_NUMBER || OutExtentYMetres <= UE_DOUBLE_SMALL_NUMBER)
+		{
+			Error = TEXT("File coordinate bounds produced invalid physical extents.");
+			return false;
+		}
+		return true;
+	}
+
 	bool ResolveFileNodeSpatialExtents(
 		const FGaeaTerrainNode& Node,
 		int32 SourceWidth,
@@ -76,11 +131,16 @@ namespace
 		}
 
 		const double XYScale = FMath::Clamp(Node.GetNumber(TEXT("XYScale"), 1.0), 0.0001, 10000.0);
+		const bool bUseCoordinateBounds = Node.GetBool(TEXT("UseCoordinateBounds"), false);
 		const bool bUseGroundSampleDistance = Node.GetBool(TEXT("UseGroundSampleDistance"), false);
 
 		double SourceExtentXMetres = 0.0;
 		double SourceExtentYMetres = 0.0;
-		if (bUseGroundSampleDistance)
+		if (bUseCoordinateBounds)
+		{
+			if (!ResolveCoordinateBoundsMetres(Node, SourceExtentXMetres, SourceExtentYMetres, Error)) return false;
+		}
+		else if (bUseGroundSampleDistance)
 		{
 			const double GroundSampleDistanceXMetres = FMath::Clamp(
 				Node.GetNumber(TEXT("GroundSampleDistanceXMetres"), 1.0),
