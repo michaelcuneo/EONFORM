@@ -143,7 +143,12 @@ void UGaeaEditorGraphNode::AllocateDefaultPins()
 	}
 	for (const FGaeaTerrainPortDescriptor& Output : Descriptor.Outputs)
 	{
-		UEdGraphPin* Pin = CreatePin(EGPD_Output, PinCategoryForDataType(Output.DataType), Output.Name, PinParams);
+		// The public Gaea-facing output is named Out, while the editor recipe has
+		// historically used Terrain as the terminal terrain channel. Keep that
+		// stable internal name so save/reopen and Terrain Output reconstruction
+		// work end-to-end, while the visible pin remains exactly "Out".
+		const FName EditorPinName = Output.Name == TEXT("Out") ? TerrainPinName : Output.Name;
+		UEdGraphPin* Pin = CreatePin(EGPD_Output, PinCategoryForDataType(Output.DataType), EditorPinName, PinParams);
 		if (Pin) Pin->PinFriendlyName = FriendlyPinName(Output, EGPD_Output);
 	}
 }
