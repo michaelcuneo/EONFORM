@@ -5,9 +5,6 @@
 #include "GaeaTerrainEvaluator.h"
 #include "GaeaTerrainGraphAsset.h"
 #include "GaeaTerrainMeshMaterializer.h"
-#include "MeshPartition.h"
-#include "MeshPartitionDefinition.h"
-#include "Modifiers/MeshPartitionMeshProvider.h"
 #include "Engine/World.h"
 
 using UE::Geometry::FDynamicMesh3;
@@ -18,7 +15,7 @@ AGaeaMeshTerrainBridgeActor::AGaeaMeshTerrainBridgeActor()
 	bIsEditorOnlyActor = true;
 
 	MeshProvider = CreateDefaultSubobject<UMeshProviderModifier>(TEXT("EONFORMMeshProvider"));
-	SetRootComponent(MeshProvider);
+	SetRootComponent(MeshProvider.Get());
 
 	SetActorLabel(TEXT("EONFORM Mesh Terrain Bridge"));
 }
@@ -38,9 +35,9 @@ void AGaeaMeshTerrainBridgeActor::SetStatus(const FString& Message, bool bError)
 
 AMeshPartition* AGaeaMeshTerrainBridgeActor::ResolveOrCreateMeshPartition()
 {
-	if (IsValid(TargetMeshPartition))
+	if (IsValid(TargetMeshPartition.Get()))
 	{
-		return TargetMeshPartition;
+		return TargetMeshPartition.Get();
 	}
 
 	UWorld* World = GetWorld();
@@ -63,7 +60,7 @@ AMeshPartition* AGaeaMeshTerrainBridgeActor::ResolveOrCreateMeshPartition()
 
 	if (!Partition)
 	{
-		SetStatus(TEXT("UE 5.8 failed to spawn an AMeshPartition. Ensure the Mesh Partition plugin is enabled and this is an editor world."), true);
+		SetStatus(TEXT("UE 5.8 failed to spawn an AMeshPartition. Ensure Mesh Partition is enabled and this is an editor world."), true);
 		return nullptr;
 	}
 
@@ -113,7 +110,9 @@ void AGaeaMeshTerrainBridgeActor::BuildMeshTerrain()
 		return;
 	}
 
-	if (DynamicMesh.TriangleCount() <= 0 || DynamicMesh.VertexCount() <= 0)
+	const int32 VertexCount = DynamicMesh.VertexCount();
+	const int32 TriangleCount = DynamicMesh.TriangleCount();
+	if (TriangleCount <= 0 || VertexCount <= 0)
 	{
 		SetStatus(TEXT("The evaluated graph produced an empty terrain mesh."), true);
 		return;
@@ -128,26 +127,28 @@ void AGaeaMeshTerrainBridgeActor::BuildMeshTerrain()
 	Partition->Modify();
 	MeshProvider->Modify();
 
-	UMeshPartitionDefinition* Definition = MeshPartitionDefinition;
+	UMeshPartitionDefinition* Definition = MeshPartitionDefinition.Get();
 	if (!Definition)
 	{
 		Definition = const_cast<UMeshPartitionDefinition*>(UMeshPartitionDefinition::GetDefaultMegaMeshDefinition());
 	}
-	if (Definition && Partition->GetMeshPartitionDefinition() != Definition)
+	if (!Definition)
+	{
+		SetStatus(TEXT("No Mesh Partition Definition is available. Assign an MPD asset to the bridge."), true);
+		return;
+	}
+	if (Partition->GetMeshPartitionDefinition() != Definition)
 	{
 		Partition->SetMeshPartitionDefinition(Definition);
 	}
 
-	// UMeshProviderModifier is Epic's intended base layer for supplying an
-	// FDynamicMesh3 directly to a Mesh Partition. No heightmap/static-mesh
-	// conversion is required, which keeps EONFORM ready for true 3D topology.
 	MeshProvider->BP_SetAffectedMegaMesh(Partition);
 	MeshProvider->SetMesh(MoveTemp(DynamicMesh), true);
 
 	SetStatus(FString::Printf(
 		TEXT("Built Mesh Terrain: %d vertices, %d triangles, graph hash %u."),
-		MeshProvider->GetMesh() ? MeshProvider->GetMesh()->VertexCount() : 0,
-		MeshProvider->GetMesh() ? MeshProvider->GetMesh()->TriangleCount() : 0,
+		VertexCount,
+		TriangleCount,
 		Result.RecipeHash),
 		false);
 }
