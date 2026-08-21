@@ -35,6 +35,46 @@ namespace
 			Factory,
 			TEXT("CodenameGaea")));
 	}
+
+	UEdGraphPin* ResolveTerrainGraphOutputPin(UGaeaEditorGraphNode* Node, FName RequestedName)
+	{
+		if (!Node) return nullptr;
+		if (UEdGraphPin* Exact = Node->FindPin(RequestedName, EGPD_Output)) return Exact;
+
+		// During the Gaea 2 cleanup public node outputs changed from Terrain to
+		// Out. The editor now keeps Terrain as the stable internal name while the
+		// pin is displayed as Out. Accept either spelling when rebuilding assets.
+		if (RequestedName == TEXT("Out")) return Node->FindPin(TEXT("Terrain"), EGPD_Output);
+		if (RequestedName == TEXT("Terrain")) return Node->FindPin(TEXT("Out"), EGPD_Output);
+		return nullptr;
+	}
+
+	UEdGraphPin* ResolveTerrainGraphInputPin(UGaeaEditorGraphNode* Node, FName RequestedName)
+	{
+		if (!Node) return nullptr;
+		if (UEdGraphPin* Exact = Node->FindPin(RequestedName, EGPD_Input)) return Exact;
+
+		// Handle the short-lived connection names produced during the Gaea 1 ->
+		// Gaea 2 public-contract cleanup. This is deliberately narrow: it repairs
+		// known migrations without silently connecting unrelated ports.
+		if (Node->RecipeNodeType == GaeaTerrainNodeTypes::Combine)
+		{
+			if (RequestedName == TEXT("Primary")) return Node->FindPin(TEXT("Input1"), EGPD_Input);
+			if (RequestedName == TEXT("Secondary")) return Node->FindPin(TEXT("Input2"), EGPD_Input);
+		}
+		else if (Node->RecipeNodeType == GaeaTerrainNodeTypes::HydraulicErosion)
+		{
+			if (RequestedName == TEXT("Mask")) return Node->FindPin(TEXT("Area"), EGPD_Input);
+		}
+		return nullptr;
+	}
+
+	bool ConnectTerrainGraphPins(UEdGraph* Graph, UEdGraphPin* OutputPin, UEdGraphPin* InputPin)
+	{
+		if (!Graph || !OutputPin || !InputPin) return false;
+		const UEdGraphSchema* Schema = Graph->GetSchema();
+		return Schema && Schema->TryCreateConnection(OutputPin, InputPin);
+	}
 }
 
 void SGaeaTerrainGraphPanel::Construct(const FArguments& InArgs)
@@ -217,12 +257,9 @@ void SGaeaTerrainGraphPanel::BuildEditorGraphFromRecipe(
 			continue;
 		}
 
-		UEdGraphPin* OutputPin = (*FromNode)->FindPin(Connection.FromOutput, EGPD_Output);
-		UEdGraphPin* InputPin = (*ToNode)->FindPin(Connection.ToInput, EGPD_Input);
-		if (OutputPin && InputPin)
-		{
-			OutputPin->MakeLinkTo(InputPin);
-		}
+		UEdGraphPin* OutputPin = ResolveTerrainGraphOutputPin(*FromNode, Connection.FromOutput);
+		UEdGraphPin* InputPin = ResolveTerrainGraphInputPin(*ToNode, Connection.ToInput);
+		ConnectTerrainGraphPins(EditorGraph.Get(), OutputPin, InputPin);
 	}
 
 	UGaeaEditorGraphNode* TerrainOutputNode = NewObject<UGaeaEditorGraphNode>(EditorGraph.Get());
@@ -236,12 +273,9 @@ void SGaeaTerrainGraphPanel::BuildEditorGraphFromRecipe(
 
 	if (UGaeaEditorGraphNode* const* RecipeOutputNode = NodeMap.Find(Recipe.OutputNode))
 	{
-		UEdGraphPin* SourcePin = (*RecipeOutputNode)->FindPin(TEXT("Terrain"), EGPD_Output);
+		UEdGraphPin* SourcePin = ResolveTerrainGraphOutputPin(*RecipeOutputNode, TEXT("Terrain"));
 		UEdGraphPin* OutputInputPin = TerrainOutputNode->FindPin(TEXT("Terrain"), EGPD_Input);
-		if (SourcePin && OutputInputPin)
-		{
-			SourcePin->MakeLinkTo(OutputInputPin);
-		}
+		ConnectTerrainGraphPins(EditorGraph.Get(), SourcePin, OutputInputPin);
 	}
 
 	if (GraphHost.IsValid())
@@ -320,7 +354,7 @@ bool SGaeaTerrainGraphPanel::BuildRecipeFromEditorGraph(
 
 	if (TerrainOutputInput->LinkedTo.Num() != 1)
 	{
-		OutError = TEXT("Terrain Output must have exactly one Terrain connection when the graph contains terrain nodes.");
+		OutError = TEXT("Terrain Output must have exactly one Terrain connection when the graph contains terrain nodes."));
 		return false;
 	}
 
@@ -332,7 +366,6 @@ bool SGaeaTerrainGraphPanel::BuildRecipeFromEditorGraph(
 	}
 	OutRecipe.OutputNode = OutputSourceNode->RecipeNodeId;
 
-	TSet<FGuid> NodesWithOutgoingConnections;
 	for (UGaeaEditorGraphNode* TerrainNode : TerrainNodes)
 	{
 		for (UEdGraphPin* Pin : TerrainNode->Pins)
@@ -347,13 +380,7 @@ bool SGaeaTerrainGraphPanel::BuildRecipeFromEditorGraph(
 				UGaeaEditorGraphNode* ToNode = LinkedPin
 					? Cast<UGaeaEditorGraphNode>(LinkedPin->GetOwningNode())
 					: nullptr;
-				if (!ToNode)
-				{
-					continue;
-				}
-
-				NodesWithOutgoingConnections.Add(TerrainNode->RecipeNodeId);
-				if (ToNode->RecipeNodeType == GaeaEditorNodeTypes::TerrainOutput)
+				if (!ToNode || ToNode->RecipeNodeType == GaeaEditorNodeTypes::TerrainOutput)
 				{
 					continue;
 				}
@@ -368,21 +395,9 @@ bool SGaeaTerrainGraphPanel::BuildRecipeFromEditorGraph(
 		}
 	}
 
-	for (const UGaeaEditorGraphNode* TerrainNode : TerrainNodes)
-	{
-		if (TerrainNode->RecipeNodeId == OutRecipe.OutputNode)
-		{
-			continue;
-		}
-		if (!NodesWithOutgoingConnections.Contains(TerrainNode->RecipeNodeId))
-		{
-			OutError = FString::Printf(
-				TEXT("Node '%s' is not connected to Terrain Output."),
-				*TerrainNode->GetNodeTitle(ENodeTitleType::ListView).ToString());
-			return false;
-		}
-	}
-
+	// Unused/disconnected authoring nodes are valid. Only the subgraph reachable
+	// from Terrain Output participates in evaluation; retaining other nodes is
+	// essential for normal graph experimentation and matches node-editor usage.
 	return OutRecipe.Validate(&OutError);
 }
 
@@ -710,6 +725,62 @@ void SGaeaTerrainGraphPanel::RebuildParameterPanel()
 					}
 				});
 			break;
+
+		case EGaeaTerrainParameterType::Range:
+		{
+			const FName MinName(*(ParameterName.ToString() + TEXT("Min")));
+			const FName MaxName(*(ParameterName.ToString() + TEXT("Max")));
+			ValueWidget = SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot()
+				.FillWidth(1.0f)
+				.Padding(0.0f, 0.0f, 2.0f, 0.0f)
+				[
+					SNew(SNumericEntryBox<double>)
+					.Value_Lambda([WeakNode, MinName]() -> TOptional<double>
+					{
+						if (const UGaeaEditorGraphNode* Current = WeakNode.Get())
+						{
+							if (const double* Value = Current->NumericParameters.Find(MinName)) return *Value;
+						}
+						return TOptional<double>();
+					})
+					.MinValue(Parameter.bHasMinimum ? TOptional<double>(Parameter.Minimum) : TOptional<double>())
+					.MaxValue(Parameter.bHasMaximum ? TOptional<double>(Parameter.Maximum) : TOptional<double>())
+					.OnValueCommitted_Lambda([WeakNode, MinName, MaxName](double Value, ETextCommit::Type)
+					{
+						if (UGaeaEditorGraphNode* Current = WeakNode.Get())
+						{
+							const double Maximum = Current->NumericParameters.FindRef(MaxName);
+							Current->NumericParameters.Add(MinName, FMath::Min(Value, Maximum));
+						}
+					})
+				]
+				+ SHorizontalBox::Slot()
+				.FillWidth(1.0f)
+				.Padding(2.0f, 0.0f, 0.0f, 0.0f)
+				[
+					SNew(SNumericEntryBox<double>)
+					.Value_Lambda([WeakNode, MaxName]() -> TOptional<double>
+					{
+						if (const UGaeaEditorGraphNode* Current = WeakNode.Get())
+						{
+							if (const double* Value = Current->NumericParameters.Find(MaxName)) return *Value;
+						}
+						return TOptional<double>();
+					})
+					.MinValue(Parameter.bHasMinimum ? TOptional<double>(Parameter.Minimum) : TOptional<double>())
+					.MaxValue(Parameter.bHasMaximum ? TOptional<double>(Parameter.Maximum) : TOptional<double>())
+					.OnValueCommitted_Lambda([WeakNode, MinName, MaxName](double Value, ETextCommit::Type)
+					{
+						if (UGaeaEditorGraphNode* Current = WeakNode.Get())
+						{
+							const double Minimum = Current->NumericParameters.FindRef(MinName);
+							Current->NumericParameters.Add(MaxName, FMath::Max(Value, Minimum));
+						}
+					})
+				];
+			break;
+		}
 		}
 
 		ParameterPanel->AddSlot()
