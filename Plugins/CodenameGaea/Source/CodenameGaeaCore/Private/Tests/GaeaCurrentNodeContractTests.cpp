@@ -6,13 +6,7 @@
 
 namespace GaeaCurrentNodeContractTests
 {
-	bool CheckNode(
-		FAutomationTestBase& Test,
-		FName Type,
-		const TCHAR* DisplayName,
-		const TCHAR* Category,
-		int32 ParameterCount,
-		bool bHidden = false)
+	bool CheckNode(FAutomationTestBase& Test, FName Type, const TCHAR* DisplayName, const TCHAR* Category, int32 ParameterCount, bool bHidden = false)
 	{
 		FGaeaTerrainNodeDescriptor Descriptor;
 		const FString Prefix = FString::Printf(TEXT("%s: "), DisplayName);
@@ -25,15 +19,11 @@ namespace GaeaCurrentNodeContractTests
 	}
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FGaeaCurrentNodeContractTest,
-	"CodenameGaea.Core.Graph.CurrentGaeaNodeContracts",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGaeaCurrentNodeContractTest, "CodenameGaea.Core.Graph.CurrentGaeaNodeContracts", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 bool FGaeaCurrentNodeContractTest::RunTest(const FString& Parameters)
 {
 	using namespace GaeaCurrentNodeContractTests;
-
 	CheckNode(*this, GaeaTerrainNodeTypes::PerlinNoise, TEXT("Perlin"), TEXT("Primitive"), 14);
 	CheckNode(*this, GaeaTerrainNodeTypes::Cellular, TEXT("Cellular"), TEXT("Primitive"), 10);
 	CheckNode(*this, GaeaTerrainNodeTypes::Cellular3D, TEXT("Cellular3D"), TEXT("Primitive"), 10);
@@ -41,9 +31,13 @@ bool FGaeaCurrentNodeContractTest::RunTest(const FString& Parameters)
 	CheckNode(*this, GaeaTerrainNodeTypes::Constant, TEXT("Constant"), TEXT("Primitive"), 3);
 	CheckNode(*this, GaeaTerrainNodeTypes::Cracks, TEXT("Cracks"), TEXT("Primitive"), 10);
 	CheckNode(*this, GaeaTerrainNodeTypes::DotNoise, TEXT("DotNoise"), TEXT("Primitive"), 7);
+	CheckNode(*this, GaeaTerrainNodeTypes::DriftNoise, TEXT("DriftNoise"), TEXT("Primitive"), 10);
+	CheckNode(*this, GaeaTerrainNodeTypes::Gabor, TEXT("Gabor"), TEXT("Primitive"), 6);
+	CheckNode(*this, GaeaTerrainNodeTypes::Hemisphere, TEXT("Hemisphere"), TEXT("Primitive"), 5);
+	CheckNode(*this, GaeaTerrainNodeTypes::LinearGradient, TEXT("LinearGradient"), TEXT("Primitive"), 3);
+	CheckNode(*this, GaeaTerrainNodeTypes::RadialGradient, TEXT("RadialGradient"), TEXT("Primitive"), 4);
 	CheckNode(*this, GaeaTerrainNodeTypes::HydraulicErosion, TEXT("Erosion"), TEXT("Simulate"), 20);
 	CheckNode(*this, GaeaTerrainNodeTypes::ThermalErosion, TEXT("Thermal"), TEXT("Simulate"), 11);
-
 	CheckNode(*this, GaeaTerrainNodeTypes::AutoLevel, TEXT("Autolevel"), TEXT("Modify"), 0);
 	CheckNode(*this, GaeaTerrainNodeTypes::Blur, TEXT("Blur"), TEXT("Modify"), 1);
 	CheckNode(*this, GaeaTerrainNodeTypes::Clamp, TEXT("Clamp"), TEXT("Modify"), 3);
@@ -56,24 +50,19 @@ bool FGaeaCurrentNodeContractTest::RunTest(const FString& Parameters)
 	CheckNode(*this, GaeaTerrainNodeTypes::SoftClip, TEXT("SoftClip"), TEXT("Modify"), 4);
 	CheckNode(*this, GaeaTerrainNodeTypes::Threshold, TEXT("Threshold"), TEXT("Modify"), 1);
 	CheckNode(*this, GaeaTerrainNodeTypes::Transform, TEXT("Transform"), TEXT("Modify"), 11);
-
 	CheckNode(*this, GaeaTerrainNodeTypes::FractalTerraces, TEXT("FractalTerraces"), TEXT("Surface"), 20);
 	CheckNode(*this, GaeaTerrainNodeTypes::Terrace, TEXT("Terraces"), TEXT("Surface"), 5);
-
 	CheckNode(*this, GaeaTerrainNodeTypes::Angle, TEXT("Angle"), TEXT("Derive"), 3);
 	CheckNode(*this, GaeaTerrainNodeTypes::Curvature, TEXT("Curvature"), TEXT("Derive"), 3);
 	CheckNode(*this, GaeaTerrainNodeTypes::Height, TEXT("Height"), TEXT("Derive"), 2);
 	CheckNode(*this, GaeaTerrainNodeTypes::Slope, TEXT("Slope"), TEXT("Derive"), 4);
-
 	CheckNode(*this, GaeaTerrainNodeTypes::Combine, TEXT("Combine"), TEXT("Utility"), 4);
 	CheckNode(*this, GaeaTerrainNodeTypes::ZeroBorders, TEXT("Edge"), TEXT("Utility"), 4);
-
 	CheckNode(*this, GaeaTerrainNodeTypes::SourceDataset, TEXT("Source Dataset"), TEXT("Internal"), 0, true);
 	CheckNode(*this, GaeaTerrainNodeTypes::TerrainShape, TEXT("Terrain Shape"), TEXT("Internal"), 8, true);
 	CheckNode(*this, GaeaTerrainNodeTypes::Invert, TEXT("Invert"), TEXT("Legacy"), 0, true);
 	CheckNode(*this, GaeaTerrainNodeTypes::Sine, TEXT("Sine"), TEXT("Legacy"), 1, true);
 	CheckNode(*this, GaeaTerrainNodeTypes::MultiCombine, TEXT("MultiCombine"), TEXT("Legacy"), 12, true);
-
 	return true;
 }
 
