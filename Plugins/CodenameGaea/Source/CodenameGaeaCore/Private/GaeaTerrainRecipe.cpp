@@ -78,6 +78,25 @@ namespace GaeaTerrainNodeTypes
 	const FName ZeroBorders(TEXT("ZeroBorders"));
 	const FName FractalTerraces(TEXT("FractalTerraces"));
 	const FName Terrace(TEXT("Terrace"));
+	const FName Bomber(TEXT("Bomber"));
+	const FName Bulbous(TEXT("Bulbous"));
+	const FName Contours(TEXT("Contours"));
+	const FName Craggy(TEXT("Craggy"));
+	const FName Distress(TEXT("Distress"));
+	const FName Grid(TEXT("Grid"));
+	const FName GroundTexture(TEXT("GroundTexture"));
+	const FName Outcrops(TEXT("Outcrops"));
+	const FName Pockmarks(TEXT("Pockmarks"));
+	const FName RockNoise(TEXT("RockNoise"));
+	const FName Rockscape(TEXT("Rockscape"));
+	const FName Roughen(TEXT("Roughen"));
+	const FName Sand(TEXT("Sand"));
+	const FName Sandstone(TEXT("Sandstone"));
+	const FName Shatter(TEXT("Shatter"));
+	const FName Shear(TEXT("Shear"));
+	const FName Steps(TEXT("Steps"));
+	const FName Stones(TEXT("Stones"));
+	const FName Stratify(TEXT("Stratify"));
 	const FName Slope(TEXT("Slope"));
 	const FName Angle(TEXT("Angle"));
 	const FName Curvature(TEXT("Curvature"));
@@ -175,7 +194,7 @@ bool FGaeaTerrainRecipe::Validate(FString* OutError) const
 	{
 		if (!Connection.IsValid()) return Fail(TEXT("Recipe contains an invalid connection."));
 		if (!NodeIds.Contains(Connection.FromNode) || !NodeIds.Contains(Connection.ToNode)) return Fail(TEXT("Connection references a missing node."));
-		const FString Key = Connection.ToNode.ToString(EGuidFormats::Digits) + TEXT(":") + Connection.ToInput.ToString();
+		const FString Key = Connection.ToNode.ToString(EGuidFormats::Digits) + TEXT(":" ) + Connection.ToInput.ToString();
 		if (InputKeys.Contains(Key)) return Fail(TEXT("More than one connection targets the same node input."));
 		InputKeys.Add(Key);
 	}
