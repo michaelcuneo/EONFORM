@@ -47,6 +47,9 @@ public:
 	static bool Get(FName SourceId, FGaeaTerrainDatasetSnapshot& OutSnapshot);
 	static bool GetLatest(FGaeaTerrainDatasetSnapshot& OutSnapshot);
 
+	/** Cheap summary query for UI/layout estimation without copying the full dataset. */
+	static bool GetHeightResolution(FName SourceId, FIntPoint& OutResolution, uint64* OutRevision = nullptr);
+
 	static bool Remove(FName SourceId);
 	static void Reset();
 };
