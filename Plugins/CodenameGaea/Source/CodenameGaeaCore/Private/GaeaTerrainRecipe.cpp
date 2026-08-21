@@ -85,14 +85,12 @@ bool FGaeaTerrainRecipe::Validate(FString* OutError) const
 	if (Nodes.IsEmpty())
 	{
 		if (OutputNode.IsValid()) return Fail(TEXT("Empty recipe must not reference an output node."));
-		if (!OutputName.IsNone()) return Fail(TEXT("Empty recipe must not reference an output pin."));
 		if (!Connections.IsEmpty()) return Fail(TEXT("Empty recipe must not contain connections."));
 		if (OutError) OutError->Reset();
 		return true;
 	}
 
 	if (!OutputNode.IsValid()) return Fail(TEXT("Recipe has no valid output node."));
-	if (OutputName.IsNone()) return Fail(TEXT("Recipe has no valid output pin."));
 
 	TSet<FGuid> NodeIds;
 	for (const FGaeaTerrainNode& Node : Nodes)
@@ -121,7 +119,6 @@ uint32 FGaeaTerrainRecipe::GetDeterministicHash() const
 {
 	uint32 Hash = GetTypeHash(Version);
 	Hash = HashCombineFast(Hash, GetTypeHash(OutputNode));
-	Hash = HashCombineFast(Hash, GetTypeHash(OutputName));
 
 	TArray<const FGaeaTerrainNode*> SortedNodes;
 	for (const FGaeaTerrainNode& Node : Nodes) SortedNodes.Add(&Node);
