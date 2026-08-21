@@ -1,6 +1,7 @@
 #include "GaeaTerrainGraphAssetFactory.h"
 
 #include "GaeaTerrainGraphAsset.h"
+#include "GaeaTerrainOutputEditorState.h"
 
 UGaeaTerrainGraphAssetFactory::UGaeaTerrainGraphAssetFactory()
 {
@@ -17,5 +18,12 @@ UObject* UGaeaTerrainGraphAssetFactory::FactoryCreateNew(
 	UObject* Context,
 	FFeedbackContext* Warn)
 {
-	return NewObject<UGaeaTerrainGraphAsset>(InParent, Class, Name, Flags | RF_Transactional);
+	UGaeaTerrainGraphAsset* Asset = NewObject<UGaeaTerrainGraphAsset>(InParent, Class, Name, Flags | RF_Transactional);
+	if (Asset)
+	{
+		// A graph can be configured before its first save. Seed newly-created assets
+		// from the live Terrain Output state so those physical settings are not lost.
+		Asset->OutputSettings = FGaeaTerrainOutputEditorState::Get().GetSettings();
+	}
+	return Asset;
 }
