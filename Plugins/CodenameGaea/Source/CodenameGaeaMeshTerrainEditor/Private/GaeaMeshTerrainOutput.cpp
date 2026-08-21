@@ -18,6 +18,8 @@ using UE::MeshPartition::UMeshProviderModifier;
 namespace
 {
 	const FName EonformBaseRegionTag(TEXT("EONFORM.MeshTerrain.BaseRegion"));
+	const FName EonformMeshTerrainFolder(TEXT("EONFORM/Mesh Terrain"));
+	const FName EonformBaseRegionsFolder(TEXT("EONFORM/Mesh Terrain/Base Regions"));
 
 	void ClearProviderMesh(UMeshProviderModifier* Provider)
 	{
@@ -171,6 +173,11 @@ FGaeaMeshTerrainBuildResult FGaeaMeshTerrainOutput::Build(
 
 	Partition->Modify();
 	Partition->SetMeshPartitionDefinition(Definition);
+#if WITH_EDITOR
+	// Keep the generated Mesh Partition and its implementation regions together in the
+	// World Outliner. This also migrates an existing root-level EONFORM Mesh Terrain actor.
+	Partition->SetFolderPath(EonformMeshTerrainFolder);
+#endif
 
 	// Invalidate any obsolete bridge provider still targeting this partition.
 	for (TActorIterator<AGaeaMeshTerrainBridgeActor> It(World); It; ++It)
@@ -285,9 +292,7 @@ FGaeaMeshTerrainBuildResult FGaeaMeshTerrainOutput::Build(
 			RegionActor->Tags.AddUnique(EonformBaseRegionTag);
 #if WITH_EDITOR
 			RegionActor->SetActorLabel(FString::Printf(TEXT("EONFORM Base Region %d,%d"), SectionX, SectionY));
-			// Do not manufacture World Outliner folders for generated regions. The actors are
-			// implementation details of the Mesh Terrain output and are reused in place.
-			RegionActor->SetFolderPath(NAME_None);
+			RegionActor->SetFolderPath(EonformBaseRegionsFolder);
 #endif
 
 			USceneComponent* RegionRoot = EnsureRegionRoot(RegionActor);
