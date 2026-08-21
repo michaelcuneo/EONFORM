@@ -7,6 +7,7 @@
 #include "GaeaCellularNode.h"
 #include "GaeaClampNode.h"
 #include "GaeaCombineNode.h"
+#include "GaeaConeNode.h"
 #include "GaeaCurvatureNode.h"
 #include "GaeaDenoiseNode.h"
 #include "GaeaDistanceNode.h"
@@ -54,6 +55,7 @@ public:
 		RegisterGaeaPerlinNode();
 		RegisterGaeaCellularNode();
 		RegisterGaeaCellular3DNode();
+		RegisterGaeaConeNode();
 		RegisterGaeaErosionNode();
 		RegisterGaeaThermalErosionNode();
 		RegisterGaeaCurvatureNode();
@@ -86,6 +88,7 @@ public:
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::PerlinNoise, TEXT("Perlin"), TEXT("Primitive"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Cellular, TEXT("Cellular"), TEXT("Primitive"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Cellular3D, TEXT("Cellular3D"), TEXT("Primitive"));
+		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Cone, TEXT("Cone"), TEXT("Primitive"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::HydraulicErosion, TEXT("Erosion"), TEXT("Simulate"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::ThermalErosion, TEXT("Thermal"), TEXT("Simulate"));
 
