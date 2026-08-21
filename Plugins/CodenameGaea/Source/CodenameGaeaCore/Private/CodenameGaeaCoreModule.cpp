@@ -3,6 +3,7 @@
 #include "GaeaAngleNode.h"
 #include "GaeaAutoLevelNode.h"
 #include "GaeaBlurNode.h"
+#include "GaeaCellular3DNode.h"
 #include "GaeaCellularNode.h"
 #include "GaeaClampNode.h"
 #include "GaeaCombineNode.h"
@@ -52,6 +53,7 @@ public:
 
 		RegisterGaeaPerlinNode();
 		RegisterGaeaCellularNode();
+		RegisterGaeaCellular3DNode();
 		RegisterGaeaErosionNode();
 		RegisterGaeaThermalErosionNode();
 		RegisterGaeaCurvatureNode();
@@ -78,14 +80,12 @@ public:
 		RegisterGaeaSoftClipNode();
 		RegisterGaeaTerraceNode();
 
-		// Keep the public graph menu aligned with the current Gaea 2.x Node Map.
-		// Integration-only and superseded Gaea 1 nodes remain registered for the
-		// runtime but are not presented as authorable Gaea nodes.
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::SourceDataset, TEXT("Source Dataset"), TEXT("Internal"), true);
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::TerrainShape, TEXT("Terrain Shape"), TEXT("Internal"), true);
 
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::PerlinNoise, TEXT("Perlin"), TEXT("Primitive"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Cellular, TEXT("Cellular"), TEXT("Primitive"));
+		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Cellular3D, TEXT("Cellular3D"), TEXT("Primitive"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::HydraulicErosion, TEXT("Erosion"), TEXT("Simulate"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::ThermalErosion, TEXT("Thermal"), TEXT("Simulate"));
 
@@ -113,10 +113,6 @@ public:
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Combine, TEXT("Combine"), TEXT("Utility"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::ZeroBorders, TEXT("Edge"), TEXT("Utility"));
 
-		// These old public nodes do not exist in the current Gaea Node Map. Keep
-		// their evaluators available for existing recipes while removing them
-		// from the authoring surface. MultiCombine will return as current Layers
-		// once its current stack contract is implemented rather than relabelled.
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Invert, TEXT("Invert"), TEXT("Legacy"), true);
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Sine, TEXT("Sine"), TEXT("Legacy"), true);
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::MultiCombine, TEXT("MultiCombine"), TEXT("Legacy"), true);
