@@ -13,6 +13,7 @@ namespace GaeaTerrainNodeTypes
 	const FName Combine(TEXT("Combine"));
 	const FName Clamp(TEXT("Clamp"));
 	const FName AutoLevel(TEXT("AutoLevel"));
+	const FName Blur(TEXT("Blur"));
 	const FName Slope(TEXT("Slope"));
 	const FName Angle(TEXT("Angle"));
 	const FName Curvature(TEXT("Curvature"));
