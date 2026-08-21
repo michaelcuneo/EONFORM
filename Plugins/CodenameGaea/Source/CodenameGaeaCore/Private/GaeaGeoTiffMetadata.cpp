@@ -42,9 +42,9 @@ namespace
 			if (!CanRead(Offset, 8)) return 0.0;
 			uint8 Bytes[8];
 			for (int32 I = 0; I < 8; ++I) Bytes[I] = Data[Offset + (bLittleEndian ? I : 7 - I)];
-		double Value = 0.0;
-		FMemory::Memcpy(&Value, Bytes, sizeof(double));
-		return Value;
+			double Value = 0.0;
+			FMemory::Memcpy(&Value, Bytes, sizeof(double));
+			return Value;
 		}
 	};
 
@@ -52,13 +52,13 @@ namespace
 	{
 		switch (Type)
 		{
-		case 1: return 1; // BYTE
-		case 2: return 1; // ASCII
-		case 3: return 2; // SHORT
-		case 4: return 4; // LONG
-		case 5: return 8; // RATIONAL
-		case 11: return 4; // FLOAT
-		case 12: return 8; // DOUBLE
+		case 1: return 1;
+		case 2: return 1;
+		case 3: return 2;
+		case 4: return 4;
+		case 5: return 8;
+		case 11: return 4;
+		case 12: return 8;
 		default: return 0;
 		}
 	}
@@ -96,7 +96,7 @@ namespace
 		return true;
 	}
 
-	void ParseGeoKeys(const TArray<uint16>& Keys, bool& bOutGeographic, int32& OutEpsg)
+	void ParseGeoKeys(TArrayView<const uint16> Keys, FGaeaGeoTiffMetadata& OutMetadata)
 	{
 		if (Keys.Num() < 4) return;
 		const int32 KeyCount = Keys[3];
@@ -112,11 +112,21 @@ namespace
 
 			if (KeyId == 1024) // GTModelTypeGeoKey
 			{
-				bOutGeographic = Value == 2;
+				OutMetadata.bGeographic = Value == 2;
 			}
 			else if (KeyId == 2048 || KeyId == 3072) // GeographicType / ProjectedCSType
 			{
-				if (Value > 0 && Value != 32767) OutEpsg = Value;
+				if (Value > 0 && Value != 32767) OutMetadata.EpsgCode = Value;
+			}
+			else if (KeyId == 3076) // ProjLinearUnitsGeoKey
+			{
+				switch (Value)
+				{
+				case 9001: OutMetadata.LinearUnitsToMetres = 1.0; break; // metre
+				case 9002: OutMetadata.LinearUnitsToMetres = 0.3048; break; // international foot
+				case 9003: OutMetadata.LinearUnitsToMetres = 1200.0 / 3937.0; break; // US survey foot
+				default: break;
+				}
 			}
 		}
 	}
@@ -139,8 +149,8 @@ bool GaeaReadGeoTiffMetadata(
 	else if (Data[0] == 'M' && Data[1] == 'M') Reader.bLittleEndian = false;
 	else return false;
 
-	// Classic TIFF. BigTIFF raster decoding can still work through ImageWrapper,
-	// but its 64-bit IFD layout is deliberately not guessed here.
+	// Classic TIFF. BigTIFF raster decoding still works through ImageWrapper;
+	// 64-bit BigTIFF georeferencing metadata can be added independently later.
 	if (Reader.U16(2) != 42) return false;
 	const int64 IfdOffset = static_cast<int64>(Reader.U32(4));
 	if (!Reader.CanRead(IfdOffset, 2)) return false;
@@ -156,13 +166,13 @@ bool GaeaReadGeoTiffMetadata(
 		const int64 Entry = IfdOffset + 2 + static_cast<int64>(I) * 12;
 		if (!Reader.CanRead(Entry, 12)) break;
 		const uint16 Tag = Reader.U16(Entry);
-		if (Tag == 33550) ReadDoubles(Reader, Entry, PixelScale);      // ModelPixelScaleTag
-		else if (Tag == 33922) ReadDoubles(Reader, Entry, TiePoints); // ModelTiepointTag
-		else if (Tag == 34264) ReadDoubles(Reader, Entry, Transform); // ModelTransformationTag
-		else if (Tag == 34735) ReadShorts(Reader, Entry, GeoKeys);    // GeoKeyDirectoryTag
+		if (Tag == 33550) ReadDoubles(Reader, Entry, PixelScale);
+		else if (Tag == 33922) ReadDoubles(Reader, Entry, TiePoints);
+		else if (Tag == 34264) ReadDoubles(Reader, Entry, Transform);
+		else if (Tag == 34735) ReadShorts(Reader, Entry, GeoKeys);
 	}
 
-	ParseGeoKeys(GeoKeys, OutMetadata.bGeographic, OutMetadata.EpsgCode);
+	ParseGeoKeys(GeoKeys, OutMetadata);
 
 	auto StoreBounds = [&OutMetadata](double X0, double Y0, double X1, double Y1)
 	{
