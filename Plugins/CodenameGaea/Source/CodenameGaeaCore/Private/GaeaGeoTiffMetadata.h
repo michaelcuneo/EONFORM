@@ -10,6 +10,7 @@ struct FGaeaGeoTiffMetadata
 	double YMin = 0.0;
 	double XMax = 0.0;
 	double YMax = 0.0;
+	double LinearUnitsToMetres = 1.0;
 	int32 EpsgCode = 0;
 };
 
