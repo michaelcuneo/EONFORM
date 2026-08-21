@@ -7,6 +7,7 @@ namespace GaeaEditorGraphPins
 {
 	const FName Terrain(TEXT("GaeaTerrain"));
 	const FName ScalarField(TEXT("GaeaScalarField"));
+	const FName Color(TEXT("GaeaColor"));
 	const FName Any(TEXT("GaeaAny"));
 }
 
@@ -22,6 +23,7 @@ namespace
 	FName PinCategoryForDataType(FName DataType)
 	{
 		if (DataType == TEXT("ScalarField")) return GaeaEditorGraphPins::ScalarField;
+		if (DataType == TEXT("Color")) return GaeaEditorGraphPins::Color;
 		if (DataType == TEXT("Any")) return GaeaEditorGraphPins::Any;
 		return GaeaEditorGraphPins::Terrain;
 	}
@@ -30,49 +32,51 @@ namespace
 	{
 		return Category == GaeaEditorGraphPins::Terrain
 			|| Category == GaeaEditorGraphPins::ScalarField
+			|| Category == GaeaEditorGraphPins::Color
 			|| Category == GaeaEditorGraphPins::Any;
+	}
+
+	FName EffectivePinCategory(const UEdGraphPin* Pin)
+	{
+		if (!Pin) return NAME_None;
+		FName Category = Pin->PinType.PinCategory;
+		if (Category != GaeaEditorGraphPins::Any || Pin->Direction != EGPD_Output) return Category;
+
+		const UGaeaEditorGraphNode* Node = Cast<UGaeaEditorGraphNode>(Pin->GetOwningNode());
+		if (Node && Node->RecipeNodeType == GaeaTerrainNodeTypes::Constant)
+		{
+			const FName Mode = Node->NameParameters.FindRef(TEXT("Output"));
+			return Mode == TEXT("Color") ? GaeaEditorGraphPins::Color : GaeaEditorGraphPins::Terrain;
+		}
+		return Category;
 	}
 
 	bool ArePinCategoriesCompatible(FName OutputCategory, FName InputCategory)
 	{
 		if (OutputCategory == InputCategory) return true;
 		if (OutputCategory == GaeaEditorGraphPins::Any || InputCategory == GaeaEditorGraphPins::Any) return true;
-
-		// Gaea allows any grayscale heightfield to be used as a mask. A full
-		// terrain output therefore feeds ScalarField inputs through its Height
-		// channel. The reverse promotion remains disabled until the runtime can
-		// preserve a meaningful terrain scale for standalone masks.
 		return OutputCategory == GaeaEditorGraphPins::Terrain
 			&& InputCategory == GaeaEditorGraphPins::ScalarField;
 	}
 
 	FText FriendlyPinName(const FGaeaTerrainPortDescriptor& Port, EEdGraphPinDirection Direction)
 	{
-		if (!Port.DisplayName.IsEmpty())
-		{
-			return FText::FromString(Port.DisplayName);
-		}
-		if (Port.DataType == TEXT("Terrain"))
-		{
-			return FText::FromString(Direction == EGPD_Input ? TEXT("In") : TEXT("Out"));
-		}
+		if (!Port.DisplayName.IsEmpty()) return FText::FromString(Port.DisplayName);
+		if (Port.DataType == TEXT("Terrain")) return FText::FromString(Direction == EGPD_Input ? TEXT("In") : TEXT("Out"));
 		return FText::FromName(Port.Name);
 	}
 
 	bool CanReachNode(const UEdGraphNode* StartNode, const UEdGraphNode* TargetNode)
 	{
 		if (!StartNode || !TargetNode) return false;
-
 		TArray<const UEdGraphNode*> Stack;
 		TSet<const UEdGraphNode*> Visited;
 		Stack.Add(StartNode);
-
 		while (!Stack.IsEmpty())
 		{
 			const UEdGraphNode* Current = Stack.Pop(EAllowShrinking::No);
 			if (!Current || Visited.Contains(Current)) continue;
 			if (Current == TargetNode) return true;
-
 			Visited.Add(Current);
 			for (const UEdGraphPin* Pin : Current->Pins)
 			{
@@ -100,28 +104,18 @@ void UGaeaEditorGraphNode::InitializeParameterDefaults()
 	IntegerParameters.Reset();
 	BoolParameters.Reset();
 	NameParameters.Reset();
-
 	if (RecipeNodeType == GaeaEditorNodeTypes::TerrainOutput) return;
 
 	FGaeaTerrainNodeDescriptor Descriptor;
 	if (!FGaeaTerrainNodeDescriptorRegistry::Get(RecipeNodeType, Descriptor)) return;
-
 	for (const FGaeaTerrainParameterDescriptor& Parameter : Descriptor.Parameters)
 	{
 		switch (Parameter.Type)
 		{
-		case EGaeaTerrainParameterType::Number:
-			NumericParameters.Add(Parameter.Name, Parameter.DefaultNumber);
-			break;
-		case EGaeaTerrainParameterType::Integer:
-			IntegerParameters.Add(Parameter.Name, Parameter.DefaultInteger);
-			break;
-		case EGaeaTerrainParameterType::Boolean:
-			BoolParameters.Add(Parameter.Name, Parameter.DefaultBoolean);
-			break;
-		case EGaeaTerrainParameterType::Name:
-			NameParameters.Add(Parameter.Name, Parameter.DefaultName);
-			break;
+		case EGaeaTerrainParameterType::Number: NumericParameters.Add(Parameter.Name, Parameter.DefaultNumber); break;
+		case EGaeaTerrainParameterType::Integer: IntegerParameters.Add(Parameter.Name, Parameter.DefaultInteger); break;
+		case EGaeaTerrainParameterType::Boolean: BoolParameters.Add(Parameter.Name, Parameter.DefaultBoolean); break;
+		case EGaeaTerrainParameterType::Name: NameParameters.Add(Parameter.Name, Parameter.DefaultName); break;
 		case EGaeaTerrainParameterType::Range:
 			NumericParameters.Add(FName(*(Parameter.Name.ToString() + TEXT("Min"))), Parameter.DefaultRangeMin);
 			NumericParameters.Add(FName(*(Parameter.Name.ToString() + TEXT("Max"))), Parameter.DefaultRangeMax);
@@ -142,7 +136,6 @@ void UGaeaEditorGraphNode::AllocateDefaultPins()
 
 	FGaeaTerrainNodeDescriptor Descriptor;
 	if (!FGaeaTerrainNodeDescriptorRegistry::Get(RecipeNodeType, Descriptor)) return;
-
 	for (const FGaeaTerrainPortDescriptor& Input : Descriptor.Inputs)
 	{
 		UEdGraphPin* Pin = CreatePin(EGPD_Input, PinCategoryForDataType(Input.DataType), Input.Name, PinParams);
@@ -159,7 +152,6 @@ void UGaeaEditorGraphNode::AllocateDefaultPins()
 FText UGaeaEditorGraphNode::GetNodeTitle(ENodeTitleType::Type TitleType) const
 {
 	if (RecipeNodeType == GaeaEditorNodeTypes::TerrainOutput) return FText::FromString(TEXT("Terrain Output"));
-
 	FGaeaTerrainNodeDescriptor Descriptor;
 	if (FGaeaTerrainNodeDescriptorRegistry::Get(RecipeNodeType, Descriptor)) return FText::FromString(Descriptor.DisplayName);
 	return FText::FromName(RecipeNodeType);
@@ -171,7 +163,6 @@ FText UGaeaEditorGraphNode::GetTooltipText() const
 	{
 		return FText::FromString(TEXT("The terrain connected here is the graph result used by Evaluate Graph and terrain outputs."));
 	}
-
 	FGaeaTerrainNodeDescriptor Descriptor;
 	if (FGaeaTerrainNodeDescriptorRegistry::Get(RecipeNodeType, Descriptor)) return FText::FromString(Descriptor.Description);
 	return FText::GetEmpty();
@@ -210,7 +201,6 @@ UEdGraphNode* FGaeaGraphSchemaAction_NewNode::PerformAction(
 	bool bSelectNewNode)
 {
 	if (!ParentGraph || NodeType.IsNone()) return nullptr;
-
 	UGaeaEditorGraphNode* NewNode = NewObject<UGaeaEditorGraphNode>(ParentGraph);
 	NewNode->Initialize(FGuid::NewGuid(), NodeType);
 	NewNode->NodePosX = FMath::RoundToInt(Location.X);
@@ -218,7 +208,6 @@ UEdGraphNode* FGaeaGraphSchemaAction_NewNode::PerformAction(
 	ParentGraph->AddNode(NewNode, true, bSelectNewNode);
 	NewNode->CreateNewGuid();
 	NewNode->AllocateDefaultPins();
-
 	if (FromPin)
 	{
 		const UEdGraphSchema* Schema = ParentGraph->GetSchema();
@@ -231,14 +220,11 @@ UEdGraphNode* FGaeaGraphSchemaAction_NewNode::PerformAction(
 	return NewNode;
 }
 
-const FPinConnectionResponse UGaeaEditorGraphSchema::CanCreateConnection(
-	const UEdGraphPin* A,
-	const UEdGraphPin* B) const
+const FPinConnectionResponse UGaeaEditorGraphSchema::CanCreateConnection(const UEdGraphPin* A, const UEdGraphPin* B) const
 {
 	if (!A || !B) return FPinConnectionResponse(CONNECT_RESPONSE_DISALLOW, TEXT("Invalid graph pin."));
 	if (A->GetOwningNode() == B->GetOwningNode()) return FPinConnectionResponse(CONNECT_RESPONSE_DISALLOW, TEXT("A node cannot connect to itself."));
 	if (A->Direction == B->Direction) return FPinConnectionResponse(CONNECT_RESPONSE_DISALLOW, TEXT("Connect an output pin to an input pin."));
-
 	if (!IsSupportedPinCategory(A->PinType.PinCategory) || !IsSupportedPinCategory(B->PinType.PinCategory))
 	{
 		return FPinConnectionResponse(CONNECT_RESPONSE_DISALLOW, TEXT("Unsupported EONFORM graph value type."));
@@ -246,18 +232,14 @@ const FPinConnectionResponse UGaeaEditorGraphSchema::CanCreateConnection(
 
 	const UEdGraphPin* OutputPin = A->Direction == EGPD_Output ? A : B;
 	const UEdGraphPin* InputPin = A->Direction == EGPD_Input ? A : B;
-	if (!ArePinCategoriesCompatible(OutputPin->PinType.PinCategory, InputPin->PinType.PinCategory))
+	if (!ArePinCategoriesCompatible(EffectivePinCategory(OutputPin), EffectivePinCategory(InputPin)))
 	{
-		return FPinConnectionResponse(CONNECT_RESPONSE_DISALLOW, TEXT("This heightfield cannot be promoted to the requested input type yet."));
+		return FPinConnectionResponse(CONNECT_RESPONSE_DISALLOW, TEXT("The selected output type is incompatible with this input."));
 	}
-
-	const UEdGraphNode* SourceNode = OutputPin->GetOwningNode();
-	const UEdGraphNode* DestinationNode = InputPin->GetOwningNode();
-	if (CanReachNode(DestinationNode, SourceNode))
+	if (CanReachNode(InputPin->GetOwningNode(), OutputPin->GetOwningNode()))
 	{
 		return FPinConnectionResponse(CONNECT_RESPONSE_DISALLOW, TEXT("This connection would create a cycle."));
 	}
-
 	if (!InputPin->LinkedTo.IsEmpty())
 	{
 		return A == InputPin
@@ -271,7 +253,6 @@ void UGaeaEditorGraphSchema::GetGraphContextActions(FGraphContextMenuBuilder& Co
 {
 	TArray<FGaeaTerrainNodeDescriptor> Descriptors;
 	FGaeaTerrainNodeDescriptorRegistry::GetAll(Descriptors);
-
 	for (const FGaeaTerrainNodeDescriptor& Descriptor : Descriptors)
 	{
 		if (Descriptor.bHiddenInGraph) continue;
