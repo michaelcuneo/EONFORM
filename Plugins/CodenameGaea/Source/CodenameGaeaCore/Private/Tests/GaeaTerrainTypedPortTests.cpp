@@ -47,6 +47,13 @@ namespace GaeaTypedPortTests
 		SecondErosion.IntegerParameters.Add(TEXT("Iterations"), 3);
 		SecondErosion.NumericParameters.Add(TEXT("Rainfall"), 0.025);
 		SecondErosion.NumericParameters.Add(TEXT("Strength"), 1.5);
+		if (bRouteFlowToMask)
+		{
+			// In Gaea, the Area input is a Selective Processing bias, not a generic
+			// post-process mask. With Area Effect/Selective Processing set to None,
+			// a connected Area map is intentionally ignored.
+			SecondErosion.NameParameters.Add(TEXT("SelectiveProcessing"), TEXT("ErosionStrength"));
+		}
 
 		Recipe.Nodes = { Source, FirstErosion, SecondErosion };
 		Connect(Recipe, Source.Id, TEXT("Terrain"), FirstErosion.Id, TEXT("Terrain"));
@@ -76,7 +83,7 @@ bool FGaeaTerrainTypedHydraulicRoutingTest::RunTest(const FString& Parameters)
 		Context);
 
 	TestTrue(TEXT("Unmasked double erosion evaluates"), Unmasked.bSuccess);
-	TestTrue(TEXT("Flow-routed double erosion evaluates"), FlowMasked.bSuccess);
+	TestTrue(TEXT("Flow-routed selective erosion evaluates"), FlowMasked.bSuccess);
 	if (!Unmasked.bSuccess)
 	{
 		AddError(Unmasked.Error);
@@ -106,7 +113,7 @@ bool FGaeaTerrainTypedHydraulicRoutingTest::RunTest(const FString& Parameters)
 			break;
 		}
 	}
-	TestTrue(TEXT("Routing Flow into Mask changes downstream erosion"), bAnyHeightDifference);
+	TestTrue(TEXT("Flow-driven Erosion Strength changes downstream erosion"), bAnyHeightDifference);
 	return true;
 }
 
