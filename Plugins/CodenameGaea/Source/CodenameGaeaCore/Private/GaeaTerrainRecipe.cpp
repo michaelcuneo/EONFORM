@@ -24,6 +24,7 @@ namespace GaeaTerrainNodeTypes
 	const FName Transform(TEXT("Transform"));
 	const FName ZeroBorders(TEXT("ZeroBorders"));
 	const FName Distance(TEXT("Distance"));
+	const FName FractalTerraces(TEXT("FractalTerraces"));
 	const FName Slope(TEXT("Slope"));
 	const FName Angle(TEXT("Angle"));
 	const FName Curvature(TEXT("Curvature"));
