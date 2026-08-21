@@ -174,7 +174,7 @@ namespace
 			}
 			return TerrainInspectorFourStop(T, FLinearColor(0.12f, 0.30f, 0.12f), FLinearColor(0.42f, 0.42f, 0.18f), FLinearColor(0.42f, 0.38f, 0.34f), FLinearColor(0.96f, 0.98f, 1.0f));
 		case ETerrainInspectorPalette::Slope:
-			return TerrainInspectorFourStop(T, FLinearColor(0.05f, 0.25f, 0.08f), FLinearColor(0.75f, 0.72f, 0.08f), FLinearColor(0.92f, 0.28f, 0.03f), FLinearColor(0.98f, 0.95f, 0.90f));
+			return TerrainInspectorFourStop(T, FLinearColor(0.05f, 0.25f, 0.08f), FLinearColor(0.75f, 0.72f, 0.08f), FLinearColor(0.92f, 0.28f, 0.015f), FLinearColor(0.98f, 0.95f, 0.90f));
 		case ETerrainInspectorPalette::Flow:
 			T = FMath::Pow(T, 0.35f);
 			return TerrainInspectorFourStop(T, FLinearColor(0.005f, 0.008f, 0.025f), FLinearColor(0.015f, 0.12f, 0.42f), FLinearColor(0.02f, 0.70f, 0.92f), FLinearColor(0.92f, 1.0f, 1.0f));
@@ -238,8 +238,7 @@ void SGaeaTerrainInspector::Construct(const FArguments& InArgs)
 				.FillWidth(1.0f)
 				.VAlign(VAlign_Center)
 				[
-					SNew(STextBlock)
-					.Text(this, &SGaeaTerrainInspector::GetSourceText)
+					SNew(STextBlock).Text(this, &SGaeaTerrainInspector::GetSourceText)
 				]
 				+ SHorizontalBox::Slot()
 				.AutoWidth()
@@ -262,8 +261,7 @@ void SGaeaTerrainInspector::Construct(const FArguments& InArgs)
 			.FillHeight(0.46f)
 			[
 				SNew(SSplitter)
-				+ SSplitter::Slot()
-				.Value(0.18f)
+				+ SSplitter::Slot().Value(0.20f)
 				[
 					SNew(SBorder)
 					.Padding(6.0f)
@@ -284,8 +282,7 @@ void SGaeaTerrainInspector::Construct(const FArguments& InArgs)
 					]
 				]
 
-				+ SSplitter::Slot()
-				.Value(0.32f)
+				+ SSplitter::Slot().Value(0.30f)
 				[
 					SNew(SBorder)
 					.Padding(8.0f)
@@ -294,9 +291,7 @@ void SGaeaTerrainInspector::Construct(const FArguments& InArgs)
 						SNew(SVerticalBox)
 						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 8.0f)
 						[
-							SNew(STextBlock)
-							.AutoWrapText(true)
-							.Text(this, &SGaeaTerrainInspector::GetFieldMetadataText)
+							SNew(STextBlock).AutoWrapText(true).Text(this, &SGaeaTerrainInspector::GetFieldMetadataText)
 						]
 						+ SVerticalBox::Slot().FillHeight(1.0f).HAlign(HAlign_Center).VAlign(VAlign_Center)
 						[
@@ -304,9 +299,7 @@ void SGaeaTerrainInspector::Construct(const FArguments& InArgs)
 							.Padding(4.0f)
 							.BorderImage(FAppStyle::GetBrush("ToolPanel.DarkGroupBorder"))
 							[
-								SNew(SBox)
-								.WidthOverride(512.0f)
-								.HeightOverride(512.0f)
+								SNew(SBox).WidthOverride(512.0f).HeightOverride(512.0f)
 								[
 									SAssignNew(PreviewImage, SImage).Image(&PreviewBrush)
 								]
@@ -323,8 +316,7 @@ void SGaeaTerrainInspector::Construct(const FArguments& InArgs)
 					]
 				]
 
-				+ SSplitter::Slot()
-				.Value(0.28f)
+				+ SSplitter::Slot().Value(0.28f)
 				[
 					SNew(SBorder)
 					.Padding(6.0f)
@@ -348,8 +340,7 @@ void SGaeaTerrainInspector::Construct(const FArguments& InArgs)
 					]
 				]
 
-				+ SSplitter::Slot()
-				.Value(0.22f)
+				+ SSplitter::Slot().Value(0.22f)
 				[
 					OutputPanel
 				]
@@ -363,8 +354,17 @@ void SGaeaTerrainInspector::Construct(const FArguments& InArgs)
 void SGaeaTerrainInspector::RefreshFromRegistry()
 {
 	FGaeaTerrainDatasetSnapshot NewSnapshot;
-	if (FGaeaTerrainDatasetRegistry::GetLatest(NewSnapshot)) Snapshot = MoveTemp(NewSnapshot);
-	else Snapshot = FGaeaTerrainDatasetSnapshot();
+	// Keep the inspector, embedded mesh preview, and Generate Terrain on the exact
+	// same EONFORM graph snapshot. "Latest" can legitimately belong to another
+	// terrain publisher and must never change what the EONFORM output panes display.
+	if (FGaeaTerrainDatasetRegistry::Get(TEXT("CodenameGaeaGraph"), NewSnapshot) && NewSnapshot.IsValid())
+	{
+		Snapshot = MoveTemp(NewSnapshot);
+	}
+	else
+	{
+		Snapshot = FGaeaTerrainDatasetSnapshot();
+	}
 
 	FieldItems.Reset();
 	SelectedFieldName = NAME_None;
@@ -524,7 +524,7 @@ FText SGaeaTerrainInspector::GetPreviewStatsText() const
 
 FText SGaeaTerrainInspector::GetEmptyStateText() const
 {
-	if (!Snapshot.IsValid()) return FText::FromString(TEXT("Connect a terrain result to inspect and preview it automatically."));
+	if (!Snapshot.IsValid()) return FText::FromString(TEXT("Connect or edit the graph; EONFORM will analyse it automatically."));
 	if (!GetSelectedField()) return FText::FromString(TEXT("Select a terrain field to inspect it."));
 	return FText::GetEmpty();
 }
