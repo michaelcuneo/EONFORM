@@ -187,7 +187,8 @@ FText SGaeaTerrainOutputPanel::GetOutputEstimateText() const
 
 	const double SpacingXMetres = State.WorldWidthKilometers * 1000.0 / static_cast<double>(Resolution.X - 1);
 	const double SpacingYMetres = State.WorldDepthKilometers * 1000.0 / static_cast<double>(Resolution.Y - 1);
-	return FText::FromString(FString::Printf(
+
+	FString Diagnostics = FString::Printf(
 		TEXT("World: %.3f x %.3f km   Elevation scale: %.1f m   Sea level: 0 m\n")
 		TEXT("Resolution: %d x %d   Sample spacing: %.2f x %.2f m\n")
 		TEXT("Regions: %d x %d (%lld)   Max region: %d x %d samples, %lld tris\n")
@@ -206,7 +207,58 @@ FText SGaeaTerrainOutputPanel::GetOutputEstimateText() const
 		Estimate.MaxSectionResolution.Y,
 		static_cast<long long>(Estimate.MaxSectionTriangleCount),
 		static_cast<long long>(Estimate.TotalVertexCount),
-		static_cast<long long>(Estimate.TotalTriangleCount)));
+		static_cast<long long>(Estimate.TotalTriangleCount));
+
+	FGaeaTerrainHeightStatistics HeightStatistics;
+	if (FGaeaTerrainDatasetRegistry::GetHeightStatistics(TEXT("CodenameGaeaGraph"), HeightStatistics))
+	{
+		const double MinimumMetres = HeightStatistics.Minimum * State.ElevationScaleMeters;
+		const double MaximumMetres = HeightStatistics.Maximum * State.ElevationScaleMeters;
+		const double MeanMetres = HeightStatistics.Mean * State.ElevationScaleMeters;
+		const double LandPercent = HeightStatistics.GetLandFraction() * 100.0;
+		const double UnderwaterPercent = HeightStatistics.GetUnderwaterFraction() * 100.0;
+		const double DatumPercent = HeightStatistics.SampleCount > 0
+			? static_cast<double>(HeightStatistics.SeaLevelSampleCount) * 100.0 / static_cast<double>(HeightStatistics.SampleCount)
+			: 0.0;
+
+		Diagnostics += FString::Printf(
+			TEXT("\nElevation: %.1f m to %.1f m   Mean: %.1f m")
+			TEXT("\nCoverage: %.1f%% land   %.1f%% underwater   %.2f%% at sea datum"),
+			MinimumMetres,
+			MaximumMetres,
+			MeanMetres,
+			LandPercent,
+			UnderwaterPercent,
+			DatumPercent);
+
+		if (!HeightStatistics.CrossesSeaLevel())
+		{
+			Diagnostics += HeightStatistics.UnderwaterSampleCount > 0
+				? TEXT("\nNOTE: Current terrain is entirely at or below sea level.")
+				: TEXT("\nNOTE: Current terrain contains no bathymetry below sea level.");
+		}
+	}
+
+	const double MaxSpacingMetres = FMath::Max(SpacingXMetres, SpacingYMetres);
+	if (MaxSpacingMetres > 250.0)
+	{
+		Diagnostics += TEXT("\nWARNING: Sample spacing exceeds 250 m; this output is macro-scale and will lose local terrain structure.");
+	}
+	else if (MaxSpacingMetres > 100.0)
+	{
+		Diagnostics += TEXT("\nWARNING: Sample spacing exceeds 100 m; fine drainage, cliffs and local erosion features will be under-resolved.");
+	}
+
+	if (Estimate.TotalTriangleCount > 100000000ll)
+	{
+		Diagnostics += TEXT("\nWARNING: Output exceeds 100 million triangles before Mesh Partition compilation. Consider a lower output resolution.");
+	}
+	else if (Estimate.TotalTriangleCount > 50000000ll)
+	{
+		Diagnostics += TEXT("\nWARNING: Output exceeds 50 million triangles; generation and editor memory cost will be substantial.");
+	}
+
+	return FText::FromString(MoveTemp(Diagnostics));
 }
 
 FReply SGaeaTerrainOutputPanel::EditMeshPartitionDefinition()
