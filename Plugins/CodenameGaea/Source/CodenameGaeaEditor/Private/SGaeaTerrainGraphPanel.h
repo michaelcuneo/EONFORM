@@ -21,6 +21,7 @@ public:
 
 	void Construct(const FArguments& InArgs);
 	virtual FReply OnPreviewKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent) override;
+	virtual void Tick(const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime) override;
 
 private:
 	void BuildDefaultRecipeAndGraph();
@@ -42,6 +43,7 @@ private:
 	FReply OpenGraphAsset();
 	FReply SaveGraphAsset();
 	FReply EvaluateGraph();
+	uint32 ComputeAutoPreviewHash() const;
 	FText GetAssetText() const;
 	FText GetStatusText() const;
 
@@ -54,4 +56,9 @@ private:
 	TWeakObjectPtr<UGaeaEditorGraphNode> SelectedNode;
 	FSimpleDelegate OnEvaluated;
 	FText StatusText;
+
+	uint32 LastAutoPreviewHash = 0;
+	float AutoPreviewPollAccumulator = 0.0f;
+	bool bAutoPreviewInitialized = false;
+	bool bAutoPreviewEvaluating = false;
 };
