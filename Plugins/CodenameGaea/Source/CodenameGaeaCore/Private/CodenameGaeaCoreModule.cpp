@@ -26,6 +26,7 @@
 #include "GaeaLinearGradientNode.h"
 #include "GaeaModifyFoundationNodes.h"
 #include "GaeaModifyProfileNodes.h"
+#include "GaeaModifySpatialNodes.h"
 #include "GaeaMultiCombineNode.h"
 #include "GaeaPerlinNode.h"
 #include "GaeaPrimitiveAssetNodes.h"
@@ -108,22 +109,34 @@ public:
 		RegisterGaeaDeflateNode();
 		RegisterGaeaDenoiseNode();
 		RegisterGaeaDilateNode();
+		RegisterGaeaDirectionalWarpNode();
 		RegisterGaeaDistanceNode();
 		RegisterGaeaEqualizeNode();
 		RegisterGaeaExtendNode();
 		RegisterGaeaFilterNode();
 		RegisterGaeaFlipNode();
+		RegisterGaeaFoldNode();
 		RegisterGaeaGraphicEQNode();
 		RegisterGaeaHealNode();
 		RegisterGaeaMatchNode();
 		RegisterGaeaMedianNode();
+		RegisterGaeaMeshifyNode();
+		RegisterGaeaOrigamiNode();
 		RegisterGaeaPixelateNode();
 		RegisterGaeaRecurveNode();
 		RegisterGaeaShaperNode();
 		RegisterGaeaSharpenNode();
+		RegisterGaeaSlopeBlurNode();
+		RegisterGaeaSlopeWarpNode();
 		RegisterGaeaSoftClipNode();
+		RegisterGaeaSwirlNode();
+		RegisterGaeaThermalShaperNode();
 		RegisterGaeaThresholdNode();
 		RegisterGaeaTransformNode();
+		RegisterGaeaTransposeNode();
+		RegisterGaeaVariableBlurNode();
+		RegisterGaeaWarpNode();
+		RegisterGaeaWhorlNode();
 
 		RegisterGaeaInvertNode();
 		RegisterGaeaMultiCombineNode();
@@ -172,34 +185,43 @@ public:
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Deflate, TEXT("Deflate"), TEXT("Modify"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Denoise, TEXT("Denoise"), TEXT("Modify"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Dilate, TEXT("Dilate"), TEXT("Modify"));
+		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::DirectionalWarp, TEXT("DirectionalWarp"), TEXT("Modify"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Distance, TEXT("Distance"), TEXT("Modify"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Equalize, TEXT("Equalize"), TEXT("Modify"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Extend, TEXT("Extend"), TEXT("Modify"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Filter, TEXT("Filter"), TEXT("Modify"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Flip, TEXT("Flip"), TEXT("Modify"));
+		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Fold, TEXT("Fold"), TEXT("Modify"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::GraphicEQ, TEXT("GraphicEQ"), TEXT("Modify"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Heal, TEXT("Heal"), TEXT("Modify"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Match, TEXT("Match"), TEXT("Modify"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Median, TEXT("Median"), TEXT("Modify"));
+		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Meshify, TEXT("Meshify"), TEXT("Modify"));
+		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Origami, TEXT("Origami"), TEXT("Modify"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Pixelate, TEXT("Pixelate"), TEXT("Modify"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Recurve, TEXT("Recurve"), TEXT("Modify"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Shaper, TEXT("Shaper"), TEXT("Modify"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Sharpen, TEXT("Sharpen"), TEXT("Modify"));
+		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::SlopeBlur, TEXT("SlopeBlur"), TEXT("Modify"));
+		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::SlopeWarp, TEXT("SlopeWarp"), TEXT("Modify"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::SoftClip, TEXT("SoftClip"), TEXT("Modify"));
+		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Swirl, TEXT("Swirl"), TEXT("Modify"));
+		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::ThermalShaper, TEXT("ThermalShaper"), TEXT("Modify"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Threshold, TEXT("Threshold"), TEXT("Modify"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Transform, TEXT("Transform"), TEXT("Modify"));
+		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Transpose, TEXT("Transpose"), TEXT("Modify"));
+		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::VariableBlur, TEXT("VariableBlur"), TEXT("Modify"));
+		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Warp, TEXT("Warp"), TEXT("Modify"));
+		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Whorl, TEXT("Whorl"), TEXT("Modify"));
 
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::FractalTerraces, TEXT("FractalTerraces"), TEXT("Surface"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Terrace, TEXT("Terraces"), TEXT("Surface"));
-
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Angle, TEXT("Angle"), TEXT("Derive"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Curvature, TEXT("Curvature"), TEXT("Derive"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Height, TEXT("Height"), TEXT("Derive"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Slope, TEXT("Slope"), TEXT("Derive"));
-
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Combine, TEXT("Combine"), TEXT("Utility"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::ZeroBorders, TEXT("Edge"), TEXT("Utility"));
-
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Invert, TEXT("Invert"), TEXT("Legacy"), true);
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Sine, TEXT("Sine"), TEXT("Legacy"), true);
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::MultiCombine, TEXT("MultiCombine"), TEXT("Legacy"), true);
