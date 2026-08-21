@@ -112,9 +112,6 @@ void SGaeaTerrainGraphPanel::Tick(
 {
 	SCompoundWidget::Tick(AllottedGeometry, InCurrentTime, InDeltaTime);
 
-	// Compatibility cleanup while the graph toolbar is being simplified: the old
-	// explicit Evaluate Graph action remains wired internally, but is no longer part
-	// of the EONFORM workflow because evaluation is automatic.
 	if (!bLegacyEvaluateButtonHidden)
 	{
 		bLegacyEvaluateButtonHidden = HideButtonWithText(SharedThis(this), TEXT("Evaluate Graph"));
@@ -125,23 +122,40 @@ void SGaeaTerrainGraphPanel::Tick(
 	AutoPreviewPollAccumulator = 0.0f;
 
 	const uint32 CurrentHash = ComputeAutoPreviewHash();
+	const UGaeaEditorGraphNode* CurrentPreviewNode = SelectedNode.Get();
+	const FGuid CurrentPreviewNodeId = CurrentPreviewNode ? CurrentPreviewNode->RecipeNodeId : FGuid();
+
 	if (!bAutoPreviewInitialized)
 	{
 		LastAutoPreviewHash = CurrentHash;
+		LastPreviewNodeId = CurrentPreviewNodeId;
 		bAutoPreviewInitialized = true;
 		if (EditorGraph.IsValid() && EditorGraph->Nodes.Num() > 1)
 		{
 			bAutoPreviewEvaluating = true;
 			EvaluateGraph();
+			EvaluateSelectedNodePreview();
 			bAutoPreviewEvaluating = false;
 		}
 		return;
 	}
 
-	if (CurrentHash == LastAutoPreviewHash) return;
+	if (CurrentHash != LastAutoPreviewHash)
+	{
+		LastAutoPreviewHash = CurrentHash;
+		bAutoPreviewEvaluating = true;
+		EvaluateGraph();
+		EvaluateSelectedNodePreview();
+		bAutoPreviewEvaluating = false;
+		LastPreviewNodeId = CurrentPreviewNodeId;
+		return;
+	}
 
-	LastAutoPreviewHash = CurrentHash;
-	bAutoPreviewEvaluating = true;
-	EvaluateGraph();
-	bAutoPreviewEvaluating = false;
+	if (CurrentPreviewNodeId != LastPreviewNodeId)
+	{
+		LastPreviewNodeId = CurrentPreviewNodeId;
+		bAutoPreviewEvaluating = true;
+		EvaluateSelectedNodePreview();
+		bAutoPreviewEvaluating = false;
+	}
 }
