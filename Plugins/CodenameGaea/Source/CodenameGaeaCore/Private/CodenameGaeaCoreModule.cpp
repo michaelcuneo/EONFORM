@@ -13,6 +13,7 @@
 #include "GaeaCurvatureNode.h"
 #include "GaeaDenoiseNode.h"
 #include "GaeaDistanceNode.h"
+#include "GaeaDotNoiseNode.h"
 #include "GaeaErosionNode.h"
 #include "GaeaFlipNode.h"
 #include "GaeaFractalTerracesNode.h"
@@ -60,6 +61,7 @@ public:
 		RegisterGaeaConeNode();
 		RegisterGaeaConstantNode();
 		RegisterGaeaCracksNode();
+		RegisterGaeaDotNoiseNode();
 		RegisterGaeaErosionNode();
 		RegisterGaeaThermalErosionNode();
 		RegisterGaeaCurvatureNode();
@@ -95,6 +97,7 @@ public:
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Cone, TEXT("Cone"), TEXT("Primitive"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Constant, TEXT("Constant"), TEXT("Primitive"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Cracks, TEXT("Cracks"), TEXT("Primitive"));
+		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::DotNoise, TEXT("DotNoise"), TEXT("Primitive"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::HydraulicErosion, TEXT("Erosion"), TEXT("Simulate"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::ThermalErosion, TEXT("Thermal"), TEXT("Simulate"));
 
