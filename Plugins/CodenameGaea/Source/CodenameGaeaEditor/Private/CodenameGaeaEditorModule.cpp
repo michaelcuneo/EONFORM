@@ -86,9 +86,6 @@ private:
 	{
 		TerrainResolutionPresets.Reset();
 
-		// Native keeps Mesh Terrain's arbitrary-resolution workflow intact.
-		// The remaining entries are Epic's recommended Landscape-compatible
-		// square heightfield dimensions in UE 5.8.
 		static constexpr int32 Presets[] =
 		{
 			0,
@@ -308,16 +305,11 @@ private:
 			.Padding(FMargin(8.0f, 6.0f))
 			[
 				SNew(SVerticalBox)
-				+ SVerticalBox::Slot()
-				.AutoHeight()
-				.Padding(0.0f, 0.0f, 0.0f, 6.0f)
+				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 6.0f)
 				[
-					SNew(STextBlock)
-					.Text(LOCTEXT("MeshTerrainSettingsTitle", "Mesh Terrain Output"))
+					SNew(STextBlock).Text(LOCTEXT("MeshTerrainSettingsTitle", "Mesh Terrain Output"))
 				]
-				+ SVerticalBox::Slot()
-				.AutoHeight()
-				.Padding(0.0f, 2.0f)
+				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 2.0f)
 				[
 					SNew(SHorizontalBox)
 					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.0f, 0.0f, 8.0f, 0.0f)
@@ -372,8 +364,7 @@ private:
 					SNew(SHorizontalBox)
 					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.0f, 0.0f, 8.0f, 0.0f)
 					[
-						SNew(STextBlock)
-						.Text(LOCTEXT("ResolutionPresetLabel", "Output Resolution"))
+						SNew(STextBlock).Text(LOCTEXT("ResolutionPresetLabel", "Output Resolution"))
 					]
 					+ SHorizontalBox::Slot().FillWidth(1.0f)
 					[
@@ -383,8 +374,7 @@ private:
 						.ToolTipText(LOCTEXT("ResolutionPresetTooltip", "Use the EONFORM source resolution, or resample to one of Epic's recommended UE Landscape-compatible square dimensions. Mesh Terrain itself can use arbitrary mesh resolution."))
 						.OnGenerateWidget_Lambda([this](TSharedPtr<int32> Item)
 						{
-							return SNew(STextBlock)
-								.Text(GetResolutionPresetLabel(Item.IsValid() ? *Item : 0));
+							return SNew(STextBlock).Text(GetResolutionPresetLabel(Item.IsValid() ? *Item : 0));
 						})
 						.OnSelectionChanged_Lambda([this](TSharedPtr<int32> Item, ESelectInfo::Type)
 						{
@@ -394,8 +384,7 @@ private:
 							}
 						})
 						[
-							SNew(STextBlock)
-							.Text_Lambda([this]() { return GetResolutionPresetLabel(TerrainResolutionPreset); })
+							SNew(STextBlock).Text_Lambda([this]() { return GetResolutionPresetLabel(TerrainResolutionPreset); })
 						]
 					]
 				]
@@ -419,7 +408,33 @@ private:
 						.OnValueChanged_Lambda([this](int32 Value) { TerrainSectionsY = FMath::Max(Value, 1); })
 					]
 				]
-				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 4.0f, 0.0f, 0.0f)
+				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 6.0f, 0.0f, 0.0f)
+				[
+					SNew(SHorizontalBox)
+					+ SHorizontalBox::Slot().FillWidth(1.0f)
+					[
+						SNew(SButton)
+						.Text(LOCTEXT("PreviewTerrainLabel", "Preview Mesh"))
+						.ToolTipText(LOCTEXT("PreviewTerrainTooltip", "Build or refresh the lightweight Dynamic Mesh preview using the current EONFORM scale and resolution settings."))
+						.OnClicked_Lambda([this]()
+						{
+							BuildPreviewMesh();
+							return FReply::Handled();
+						})
+					]
+					+ SHorizontalBox::Slot().FillWidth(1.0f).Padding(8.0f, 0.0f, 0.0f, 0.0f)
+					[
+						SNew(SButton)
+						.Text(LOCTEXT("GenerateTerrainLabel", "Generate Terrain"))
+						.ToolTipText(LOCTEXT("GenerateTerrainTooltip", "Build or refresh the committed UE 5.8 Mesh Terrain using the current output and streaming settings."))
+						.OnClicked_Lambda([this]()
+						{
+							BuildMeshTerrain();
+							return FReply::Handled();
+						})
+					]
+				]
+				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 6.0f, 0.0f, 0.0f)
 				[
 					SNew(STextBlock)
 					.Text(LOCTEXT("OutputSettingsHint", "1.0 scale = authored 1:1 size. Resolution presets use Epic's recommended Landscape-compatible dimensions; Native preserves EONFORM/Mesh Terrain's source resolution. Section counts control EONFORM base regions."))
@@ -430,56 +445,13 @@ private:
 
 	TSharedRef<SDockTab> SpawnCodenameGaeaTab(const FSpawnTabArgs& Args)
 	{
+		TSharedRef<SWidget> OutputPanel = MakeOutputSettingsPanel();
+
 		return SNew(SDockTab)
 			.TabRole(ETabRole::NomadTab)
 			[
-				SNew(SHorizontalBox)
-				+ SHorizontalBox::Slot()
-				.FillWidth(1.0f)
-				.Padding(0.0f, 6.0f, 6.0f, 0.0f)
-				[
-					SNew(SGaeaTerrainInspector)
-				]
-				+ SHorizontalBox::Slot()
-				.FillWidth(0.42f)
-				.VAlign(VAlign_Bottom)
-				.Padding(6.0f, 6.0f, 10.0f, 10.0f)
-				[
-					SNew(SVerticalBox)
-					+ SVerticalBox::Slot()
-					.AutoHeight()
-					[
-						MakeOutputSettingsPanel()
-					]
-					+ SVerticalBox::Slot()
-					.AutoHeight()
-					.Padding(0.0f, 6.0f, 0.0f, 0.0f)
-					[
-						SNew(SHorizontalBox)
-						+ SHorizontalBox::Slot().FillWidth(1.0f)
-						[
-							SNew(SButton)
-							.Text(LOCTEXT("PreviewTerrainLabel", "Preview Mesh"))
-							.ToolTipText(LOCTEXT("PreviewTerrainTooltip", "Build or refresh the lightweight Dynamic Mesh preview using the current EONFORM scale and resolution settings."))
-							.OnClicked_Lambda([this]()
-							{
-								BuildPreviewMesh();
-								return FReply::Handled();
-							})
-						]
-						+ SHorizontalBox::Slot().FillWidth(1.0f).Padding(8.0f, 0.0f, 0.0f, 0.0f)
-						[
-							SNew(SButton)
-							.Text(LOCTEXT("GenerateTerrainLabel", "Generate Terrain"))
-							.ToolTipText(LOCTEXT("GenerateTerrainTooltip", "Build or refresh the committed UE 5.8 Mesh Terrain using the current output and streaming settings."))
-							.OnClicked_Lambda([this]()
-							{
-								BuildMeshTerrain();
-								return FReply::Handled();
-							})
-						]
-					]
-				]
+				SNew(SGaeaTerrainInspector)
+				.OutputPanel(OutputPanel)
 			];
 	}
 
