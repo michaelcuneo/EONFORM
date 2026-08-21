@@ -25,6 +25,7 @@
 #include "GaeaLinearGradientNode.h"
 #include "GaeaMultiCombineNode.h"
 #include "GaeaPerlinNode.h"
+#include "GaeaPrimitiveCoverageNodes.h"
 #include "GaeaRadialGradientNode.h"
 #include "GaeaRecurveNode.h"
 #include "GaeaShaperNode.h"
@@ -71,7 +72,14 @@ public:
 		RegisterGaeaGaborNode();
 		RegisterGaeaHemisphereNode();
 		RegisterGaeaLinearGradientNode();
+		RegisterGaeaLineNoiseNode();
+		RegisterGaeaMultiFractalNode();
+		RegisterGaeaNoiseNode();
+		RegisterGaeaPatternNode();
 		RegisterGaeaRadialGradientNode();
+		RegisterGaeaShapeNode();
+		RegisterGaeaVoronoiNode();
+		RegisterGaeaWaveShineNode();
 		RegisterGaeaErosionNode();
 		RegisterGaeaThermalErosionNode();
 		RegisterGaeaCurvatureNode();
@@ -112,7 +120,14 @@ public:
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Gabor, TEXT("Gabor"), TEXT("Primitive"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Hemisphere, TEXT("Hemisphere"), TEXT("Primitive"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::LinearGradient, TEXT("LinearGradient"), TEXT("Primitive"));
+		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::LineNoise, TEXT("LineNoise"), TEXT("Primitive"));
+		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::MultiFractal, TEXT("MultiFractal"), TEXT("Primitive"));
+		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Noise, TEXT("Noise"), TEXT("Primitive"));
+		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Pattern, TEXT("Pattern"), TEXT("Primitive"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::RadialGradient, TEXT("RadialGradient"), TEXT("Primitive"));
+		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Shape, TEXT("Shape"), TEXT("Primitive"));
+		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Voronoi, TEXT("Voronoi"), TEXT("Primitive"));
+		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::WaveShine, TEXT("WaveShine"), TEXT("Primitive"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::HydraulicErosion, TEXT("Erosion"), TEXT("Simulate"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::ThermalErosion, TEXT("Thermal"), TEXT("Simulate"));
 
