@@ -16,12 +16,7 @@ namespace
 		return Port;
 	}
 
-	FGaeaTerrainParameterDescriptor RecurveNumberParameter(
-		FName Name,
-		const TCHAR* DisplayName,
-		double DefaultValue,
-		double Minimum,
-		double Maximum)
+	FGaeaTerrainParameterDescriptor RecurveNumberParameter(FName Name, const TCHAR* DisplayName, double DefaultValue, double Minimum, double Maximum)
 	{
 		FGaeaTerrainParameterDescriptor Parameter;
 		Parameter.Name = Name;
@@ -35,12 +30,7 @@ namespace
 		return Parameter;
 	}
 
-	FGaeaTerrainParameterDescriptor RecurveIntegerParameter(
-		FName Name,
-		const TCHAR* DisplayName,
-		int64 DefaultValue,
-		int64 Minimum,
-		int64 Maximum)
+	FGaeaTerrainParameterDescriptor RecurveIntegerParameter(FName Name, const TCHAR* DisplayName, int64 DefaultValue, int64 Minimum, int64 Maximum)
 	{
 		FGaeaTerrainParameterDescriptor Parameter;
 		Parameter.Name = Name;
@@ -54,23 +44,15 @@ namespace
 		return Parameter;
 	}
 
-	FGaeaTerrainParameterDescriptor RecurveBooleanParameter(FName Name, const TCHAR* DisplayName, bool DefaultValue)
-	{
-		FGaeaTerrainParameterDescriptor Parameter;
-		Parameter.Name = Name;
-		Parameter.DisplayName = DisplayName;
-		Parameter.Type = EGaeaTerrainParameterType::Boolean;
-		Parameter.DefaultBoolean = DefaultValue;
-		return Parameter;
-	}
-
-	FGaeaTerrainParameterDescriptor RecurveNameParameter(FName Name, const TCHAR* DisplayName)
+	FGaeaTerrainParameterDescriptor RecurveNameParameter(FName Name, const TCHAR* DisplayName, FName DefaultValue)
 	{
 		FGaeaTerrainParameterDescriptor Parameter;
 		Parameter.Name = Name;
 		Parameter.DisplayName = DisplayName;
 		Parameter.Type = EGaeaTerrainParameterType::Name;
-		Parameter.DefaultName = NAME_None;
+		Parameter.DefaultName = DefaultValue;
+		Parameter.NameOptions.Add(TEXT("Inward"));
+		Parameter.NameOptions.Add(TEXT("Outward"));
 		return Parameter;
 	}
 
@@ -96,11 +78,7 @@ namespace
 		return Count > 0 ? Sum / static_cast<float>(Count) : Field.AtInterior(X, Y);
 	}
 
-	bool RecurveHeightField(
-		const FGaeaTerrainNode& Node,
-		const FGaeaScalarField& Source,
-		FGaeaScalarField& OutField,
-		FString& Error)
+	bool RecurveHeightField(const FGaeaTerrainNode& Node, const FGaeaScalarField& Source, FGaeaScalarField& OutField, FString& Error)
 	{
 		if (!Source.IsValid())
 		{
@@ -110,20 +88,20 @@ namespace
 
 		const float Power = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Power"), 0.5)), 0.0f, 4.0f);
 		const float Scale = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Scale"), 0.5)), 0.0f, 1.0f);
-		const int32 Duration = FMath::Clamp(static_cast<int32>(Node.GetInteger(TEXT("Duration"), 1)), 1, 32);
-		const float Degrees = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Degrees"), 45.0)), 0.0f, 90.0f);
-		const bool bInflate = Node.GetBool(TEXT("Inflate"), true);
-		const bool bPreserveFidelity = Node.GetBool(TEXT("PreserveFidelity"), false);
+		const int32 Iterations = FMath::Clamp(static_cast<int32>(Node.GetInteger(TEXT("Iterations"), 1)), 1, 32);
+		const FName Style = Node.GetName(TEXT("Style"), TEXT("Inward"));
+		if (Style != TEXT("Inward") && Style != TEXT("Outward"))
+		{
+			Error = TEXT("Recurve Style must be Inward or Outward.");
+			return false;
+		}
 
-		const float AngleResponse = FMath::Sin(FMath::DegreesToRadians(Degrees));
-		const int32 ResolutionScale = FMath::Max(1, FMath::RoundToInt(static_cast<float>(FMath::Min(Source.Domain.Dimensions.X, Source.Domain.Dimensions.Y)) / 1024.0f));
-		const int32 BaseRadius = FMath::Clamp(1 + FMath::RoundToInt((1.0f - Scale) * 3.0f), 1, 4);
-		const int32 Radius = bPreserveFidelity ? BaseRadius : FMath::Clamp(BaseRadius * ResolutionScale, 1, 8);
-		const float Direction = bInflate ? 1.0f : -1.0f;
+		const int32 Radius = FMath::Clamp(1 + FMath::RoundToInt((1.0f - Scale) * 5.0f), 1, 6);
+		const float Direction = Style == TEXT("Inward") ? 1.0f : -1.0f;
 
 		FGaeaScalarField Current = Source;
 		FGaeaScalarField Next = Source;
-		for (int32 Pass = 0; Pass < Duration; ++Pass)
+		for (int32 Pass = 0; Pass < Iterations; ++Pass)
 		{
 			for (int32 Y = 0; Y < Source.Domain.Dimensions.Y; ++Y)
 			{
@@ -133,8 +111,7 @@ namespace
 					const float Mean = RecurveNeighborhoodMean(Current, X, Y, Radius);
 					const float Curvature = Center - Mean;
 					const float ShapedCurvature = FMath::Sign(Curvature) * FMath::Pow(FMath::Abs(Curvature), 0.75f);
-					const float Delta = Direction * ShapedCurvature * Power * (0.25f + 0.75f * AngleResponse);
-					Next.AtInterior(X, Y) = FMath::Clamp(Center + Delta, -1.0f, 1.0f);
+					Next.AtInterior(X, Y) = FMath::Clamp(Center + Direction * ShapedCurvature * Power, -1.0f, 1.0f);
 				}
 			}
 			Swap(Current, Next);
@@ -144,12 +121,7 @@ namespace
 		return OutField.IsValid();
 	}
 
-	bool EvaluateRecurveNode(
-		const FGaeaTerrainNode& Node,
-		const FGaeaTerrainNodeInputs& Inputs,
-		const FGaeaTerrainEvaluationContext&,
-		FGaeaTerrainNodeEvaluation& Out,
-		FString& Error)
+	bool EvaluateRecurveNode(const FGaeaTerrainNode& Node, const FGaeaTerrainNodeInputs& Inputs, const FGaeaTerrainEvaluationContext&, FGaeaTerrainNodeEvaluation& Out, FString& Error)
 	{
 		const FGaeaTerrainValue* const* InputPtr = Inputs.Find(TEXT("Terrain"));
 		const FGaeaTerrainValue* Input = InputPtr ? *InputPtr : nullptr;
@@ -194,17 +166,14 @@ void RegisterGaeaRecurveNode()
 	FGaeaTerrainNodeDescriptor Descriptor;
 	Descriptor.Type = GaeaTerrainNodeTypes::Recurve;
 	Descriptor.DisplayName = TEXT("Recurve");
-	Descriptor.Category = TEXT("Profile");
-	Descriptor.Description = TEXT("Curvature-based terrain expansion that inflates or deflates terrain to strengthen slopes and broaden formations.");
+	Descriptor.Category = TEXT("Modify");
+	Descriptor.Description = TEXT("Curvature-based terrain expander that inflates or shrinks formations while preserving detail according to Scale.");
 	Descriptor.Inputs.Add(RecurveTerrainPort(TEXT("Terrain"), TEXT("Input")));
 	Descriptor.Outputs.Add(RecurveTerrainPort(TEXT("Out"), TEXT("Out")));
-	Descriptor.Parameters.Add(RecurveNameParameter(TEXT("Mode"), TEXT("Mode")));
 	Descriptor.Parameters.Add(RecurveNumberParameter(TEXT("Power"), TEXT("Power"), 0.5, 0.0, 4.0));
 	Descriptor.Parameters.Add(RecurveNumberParameter(TEXT("Scale"), TEXT("Scale"), 0.5, 0.0, 1.0));
-	Descriptor.Parameters.Add(RecurveIntegerParameter(TEXT("Duration"), TEXT("Duration"), 1, 1, 32));
-	Descriptor.Parameters.Add(RecurveNumberParameter(TEXT("Degrees"), TEXT("Degrees"), 45.0, 0.0, 90.0));
-	Descriptor.Parameters.Add(RecurveBooleanParameter(TEXT("Inflate"), TEXT("Inflate"), true));
-	Descriptor.Parameters.Add(RecurveBooleanParameter(TEXT("PreserveFidelity"), TEXT("Preserve Fidelity"), false));
+	Descriptor.Parameters.Add(RecurveIntegerParameter(TEXT("Iterations"), TEXT("Iterations"), 1, 1, 32));
+	Descriptor.Parameters.Add(RecurveNameParameter(TEXT("Style"), TEXT("Style"), TEXT("Inward")));
 
 	FGaeaTerrainNodeDescriptorRegistry::Register(Descriptor);
 	FGaeaTerrainNodeRegistry::Register(GaeaTerrainNodeTypes::Recurve, EvaluateRecurveNode);
