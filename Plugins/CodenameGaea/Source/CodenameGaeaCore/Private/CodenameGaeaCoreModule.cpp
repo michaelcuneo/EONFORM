@@ -33,13 +33,6 @@ public:
 	{
 		FGaeaTerrainNodeDescriptorRegistry::RegisterBuiltIns();
 
-		FGaeaTerrainNodeDescriptor HydraulicDescriptor;
-		if (FGaeaTerrainNodeDescriptorRegistry::Get(GaeaTerrainNodeTypes::HydraulicErosion, HydraulicDescriptor))
-		{
-			HydraulicDescriptor.DisplayName = TEXT("Hydraulic Erosion");
-			FGaeaTerrainNodeDescriptorRegistry::Register(HydraulicDescriptor);
-		}
-
 		RegisterGaeaThermalErosionNode();
 		RegisterGaeaCurvatureNode();
 		RegisterGaeaHeightNode();
