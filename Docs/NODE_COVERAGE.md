@@ -70,36 +70,37 @@ Adjust, Aperture, Autolevel, BlobRemover, Blur, Clamp, Clip, Curve, Deflate, Den
 
 Status: COMPLETE by public node coverage; several implementations still need exact-behaviour/fidelity hardening.
 
-## Surface - 2 / 21 represented before Surface expansion
+## Surface - 21 / 21 represented
 
-Existing:
+All current public Surface node names now have runtime graph descriptors and evaluators:
 
+- Bomber - COMPLETE foundation
+- Bulbous - COMPLETE foundation
+- Contours - COMPLETE foundation
+- Craggy - COMPLETE foundation
+- Distress - COMPLETE foundation
 - FractalTerraces - COMPLETE
+- Grid - COMPLETE foundation
+- GroundTexture - COMPLETE foundation
+- Outcrops - COMPLETE foundation
+- Pockmarks - COMPLETE foundation
+- RockNoise - COMPLETE foundation
+- Rockscape - COMPLETE foundation
+- Roughen - COMPLETE foundation
+- Sand - COMPLETE foundation
+- Sandstone - COMPLETE foundation
+- Shatter - COMPLETE foundation
+- Shear - COMPLETE foundation
+- Steps - COMPLETE foundation
+- Stones - COMPLETE foundation
+- Stratify - COMPLETE foundation
 - Terraces - COMPLETE
 
-Missing at audit start:
+The new Surface implementations share reusable deterministic operations for scatter/stamping, layered noise, ridged rock breakup, cellular crack structure, strata, slope/curvature bias, directional sand, and spatial resampling. These operations are intended to become building blocks for later Terrain composites rather than duplicated secret algorithms.
 
-- Bomber
-- Bulbous
-- Contours
-- Craggy
-- Distress
-- Grid
-- GroundTexture
-- Outcrops
-- Pockmarks
-- RockNoise
-- Rockscape
-- Roughen
-- Sand
-- Sandstone
-- Shatter
-- Shear
-- Steps
-- Stones
-- Stratify
+`CodenameGaea.Core.Graph.SurfaceNodeCoverage` enforces that all 21 Surface nodes have descriptors and runtime evaluators, can evaluate from a real Perlin terrain source, publish a valid Height field, and contain finite samples.
 
-These are the first implementation target because Terrain composites depend heavily on rock breakup, strata, scatter, terracing, shear, sand, and superficial detail.
+Surface fidelity remains an iterative product task: coverage here means the nodes are real executable EONFORM operations, not a claim of byte-for-byte equivalence with QuadSpinner's proprietary implementations.
 
 ## Simulate - 2 / 26 represented before expansion
 
