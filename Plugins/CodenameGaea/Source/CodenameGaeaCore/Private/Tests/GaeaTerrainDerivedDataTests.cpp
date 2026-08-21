@@ -81,6 +81,11 @@ bool FGaeaTerrainImplicitAnalysisGraphTest::RunTest(const FString& Parameters)
 		GaeaTerrainFieldNames::RockHardness,
 		GaeaTerrainFieldNames::Weathering,
 		GaeaTerrainFieldNames::SoilDepth,
+		GaeaTerrainFieldNames::FlowDirection,
+		GaeaTerrainFieldNames::FlowAccumulation,
+		GaeaTerrainFieldNames::CatchmentAreaKm2,
+		GaeaTerrainFieldNames::DistanceToOutletKm,
+		GaeaTerrainFieldNames::StreamOrder,
 		GaeaTerrainFieldNames::Wear,
 		GaeaTerrainFieldNames::Deposits,
 		GaeaTerrainFieldNames::Flow
@@ -93,7 +98,7 @@ bool FGaeaTerrainImplicitAnalysisGraphTest::RunTest(const FString& Parameters)
 			Result.Dataset.HasScalarField(FieldName));
 	}
 
-	TestEqual(TEXT("Implicit analysis pipeline publishes all canonical fields"), Result.Dataset.NumScalarFields(), 19);
+	TestEqual(TEXT("Implicit analysis pipeline publishes all canonical fields"), Result.Dataset.NumScalarFields(), 24);
 	return true;
 }
 
