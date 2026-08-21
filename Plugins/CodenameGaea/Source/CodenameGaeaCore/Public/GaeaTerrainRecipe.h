@@ -17,6 +17,7 @@ namespace GaeaTerrainNodeTypes
 	CODENAMEGAEACORE_API extern const FName Clamp;
 	CODENAMEGAEACORE_API extern const FName AutoLevel;
 	CODENAMEGAEACORE_API extern const FName Blur;
+	CODENAMEGAEACORE_API extern const FName Denoise;
 	CODENAMEGAEACORE_API extern const FName Slope;
 	CODENAMEGAEACORE_API extern const FName Angle;
 	CODENAMEGAEACORE_API extern const FName Curvature;
