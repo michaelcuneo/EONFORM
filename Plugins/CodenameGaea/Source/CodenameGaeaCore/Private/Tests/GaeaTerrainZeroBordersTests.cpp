@@ -20,28 +20,36 @@ namespace GaeaZeroBordersTests
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FGaeaTerrainZeroBordersDescriptorTest,
-	"CodenameGaea.Core.Graph.ZeroBordersDescriptor",
+	"CodenameGaea.Core.Graph.EdgeDescriptor",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 bool FGaeaTerrainZeroBordersDescriptorTest::RunTest(const FString& Parameters)
 {
 	FGaeaTerrainNodeDescriptor Descriptor;
-	TestTrue(TEXT("Zero Borders descriptor exists"), FGaeaTerrainNodeDescriptorRegistry::Get(GaeaTerrainNodeTypes::ZeroBorders, Descriptor));
-	TestEqual(TEXT("Zero Borders display name"), Descriptor.DisplayName, FString(TEXT("Zero Borders")));
-	TestEqual(TEXT("Zero Borders category"), Descriptor.Category, FString(TEXT("Adjustments")));
-	TestEqual(TEXT("Zero Borders input count"), Descriptor.Inputs.Num(), 1);
-	TestEqual(TEXT("Zero Borders output count"), Descriptor.Outputs.Num(), 1);
-	TestEqual(TEXT("Zero Borders parameter count"), Descriptor.Parameters.Num(), 6);
+	TestTrue(TEXT("Edge descriptor exists"), FGaeaTerrainNodeDescriptorRegistry::Get(GaeaTerrainNodeTypes::ZeroBorders, Descriptor));
+	TestEqual(TEXT("Edge display name"), Descriptor.DisplayName, FString(TEXT("Edge")));
+	TestEqual(TEXT("Edge category"), Descriptor.Category, FString(TEXT("Utility")));
+	TestEqual(TEXT("Edge input count"), Descriptor.Inputs.Num(), 1);
+	TestEqual(TEXT("Edge output count"), Descriptor.Outputs.Num(), 1);
+	TestEqual(TEXT("Edge parameter count"), Descriptor.Parameters.Num(), 4);
+	if (Descriptor.Parameters.Num() == 4)
+	{
+		TestEqual(TEXT("Edge Style"), Descriptor.Parameters[0].Name, FName(TEXT("Style")));
+		TestEqual(TEXT("Edge Size"), Descriptor.Parameters[1].Name, FName(TEXT("Size")));
+		TestEqual(TEXT("Edge Pixels"), Descriptor.Parameters[2].Name, FName(TEXT("Pixels")));
+		TestEqual(TEXT("Edge Softness"), Descriptor.Parameters[3].Name, FName(TEXT("Softness")));
+		TestEqual(TEXT("Edge Style option count"), Descriptor.Parameters[0].NameOptions.Num(), 3);
+	}
 	if (Descriptor.Outputs.Num() == 1)
 	{
-		TestEqual(TEXT("Zero Borders output pin"), Descriptor.Outputs[0].Name, FName(TEXT("Out")));
+		TestEqual(TEXT("Edge output pin"), Descriptor.Outputs[0].Name, FName(TEXT("Out")));
 	}
 	return true;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FGaeaTerrainZeroBordersTerminalTest,
-	"CodenameGaea.Core.Graph.ZeroBordersTerminalOut",
+	"CodenameGaea.Core.Graph.EdgeTerminalOut",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 bool FGaeaTerrainZeroBordersTerminalTest::RunTest(const FString& Parameters)
@@ -57,23 +65,21 @@ bool FGaeaTerrainZeroBordersTerminalTest::RunTest(const FString& Parameters)
 	Source.NumericParameters.Add(TEXT("HeightScale"), 3200.0);
 	Source.NumericParameters.Add(TEXT("Frequency"), 0.0017);
 
-	FGaeaTerrainNode ZeroBorders;
-	ZeroBorders.Id = FGuid(0xA2000001, 0xA2000002, 0xA2000003, 0xA2000004);
-	ZeroBorders.Type = GaeaTerrainNodeTypes::ZeroBorders;
-	ZeroBorders.NameParameters.Add(TEXT("Mode"), TEXT("Square"));
-	ZeroBorders.NumericParameters.Add(TEXT("Margin"), 0.1);
-	ZeroBorders.NumericParameters.Add(TEXT("Falloff"), 0.2);
-	ZeroBorders.BoolParameters.Add(TEXT("Auto"), false);
-	ZeroBorders.NumericParameters.Add(TEXT("BlurPower"), 0.0);
-	ZeroBorders.IntegerParameters.Add(TEXT("Iterations"), 1);
+	FGaeaTerrainNode Edge;
+	Edge.Id = FGuid(0xA2000001, 0xA2000002, 0xA2000003, 0xA2000004);
+	Edge.Type = GaeaTerrainNodeTypes::ZeroBorders;
+	Edge.NameParameters.Add(TEXT("Style"), TEXT("Square"));
+	Edge.NumericParameters.Add(TEXT("Size"), 0.2);
+	Edge.IntegerParameters.Add(TEXT("Pixels"), 0);
+	Edge.NumericParameters.Add(TEXT("Softness"), 0.5);
 
-	Recipe.Nodes = { Source, ZeroBorders };
-	GaeaZeroBordersTests::Connect(Recipe, Source.Id, TEXT("Terrain"), ZeroBorders.Id, TEXT("Terrain"));
-	Recipe.OutputNode = ZeroBorders.Id;
+	Recipe.Nodes = { Source, Edge };
+	GaeaZeroBordersTests::Connect(Recipe, Source.Id, TEXT("Terrain"), Edge.Id, TEXT("Terrain"));
+	Recipe.OutputNode = Edge.Id;
 
 	FGaeaTerrainEvaluationContext Context;
 	const FGaeaTerrainEvaluationResult Result = FGaeaTerrainEvaluator::Evaluate(Recipe, Context);
-	TestTrue(TEXT("Zero Borders terminal Out evaluates"), Result.bSuccess);
+	TestTrue(TEXT("Edge terminal Out evaluates"), Result.bSuccess);
 	if (!Result.bSuccess)
 	{
 		AddError(Result.Error);
@@ -81,7 +87,7 @@ bool FGaeaTerrainZeroBordersTerminalTest::RunTest(const FString& Parameters)
 	}
 
 	const FGaeaScalarField* Height = Result.Dataset.FindScalarField(GaeaTerrainFieldNames::Height);
-	TestNotNull(TEXT("Zero Borders result has Height"), Height);
+	TestNotNull(TEXT("Edge result has Height"), Height);
 	if (!Height) return false;
 
 	const int32 LastX = Height->Domain.Dimensions.X - 1;
