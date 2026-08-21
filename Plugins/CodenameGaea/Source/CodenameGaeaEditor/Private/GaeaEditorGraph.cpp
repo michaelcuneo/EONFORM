@@ -12,16 +12,19 @@ namespace
 {
 	const FName TerrainPinCategory(TEXT("GaeaTerrain"));
 	const FName ScalarFieldPinCategory(TEXT("GaeaScalarField"));
+	const FName AnyPinCategory(TEXT("GaeaAny"));
 	const FName TerrainPinName(TEXT("Terrain"));
 
 	FName PinCategoryForDataType(FName DataType)
 	{
-		return DataType == TEXT("ScalarField") ? ScalarFieldPinCategory : TerrainPinCategory;
+		if (DataType == TEXT("ScalarField")) return ScalarFieldPinCategory;
+		if (DataType == TEXT("Any")) return AnyPinCategory;
+		return TerrainPinCategory;
 	}
 
 	bool IsSupportedPinCategory(FName Category)
 	{
-		return Category == TerrainPinCategory || Category == ScalarFieldPinCategory;
+		return Category == TerrainPinCategory || Category == ScalarFieldPinCategory || Category == AnyPinCategory;
 	}
 
 	FText FriendlyPinName(const FGaeaTerrainPortDescriptor& Port, EEdGraphPinDirection Direction)
@@ -216,7 +219,8 @@ const FPinConnectionResponse UGaeaEditorGraphSchema::CanCreateConnection(
 	{
 		return FPinConnectionResponse(CONNECT_RESPONSE_DISALLOW, TEXT("Unsupported terrain graph value type."));
 	}
-	if (A->PinType.PinCategory != B->PinType.PinCategory)
+	const bool bWildcardConnection = A->PinType.PinCategory == AnyPinCategory || B->PinType.PinCategory == AnyPinCategory;
+	if (!bWildcardConnection && A->PinType.PinCategory != B->PinType.PinCategory)
 	{
 		return FPinConnectionResponse(CONNECT_RESPONSE_DISALLOW, TEXT("These graph value types are not compatible."));
 	}
