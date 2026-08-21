@@ -7,11 +7,26 @@
  *
  * Terrain fields remain resolution/domain independent and normalized where appropriate,
  * while process solvers can resolve real sample spacing, catchment area and elevation.
- * A zero/invalid dimension means "use the authored grid-domain fallback" so existing
- * runtime callers and tests preserve their historical behaviour.
+ * With no active physical contract these values are zero and solvers use their authored
+ * grid-domain fallback, preserving existing runtime callers and tests.
  */
 struct CODENAMEGAEACORE_API FGaeaTerrainPhysicalMetrics
 {
+	/** Snapshots the currently active physical contract, or zero metrics when none is active. */
+	FGaeaTerrainPhysicalMetrics();
+
+	FGaeaTerrainPhysicalMetrics(
+		double InWorldWidthMeters,
+		double InWorldDepthMeters,
+		double InElevationScaleMeters,
+		double InSeaLevelMeters)
+		: WorldWidthMeters(InWorldWidthMeters)
+		, WorldDepthMeters(InWorldDepthMeters)
+		, ElevationScaleMeters(InElevationScaleMeters)
+		, SeaLevelMeters(InSeaLevelMeters)
+	{
+	}
+
 	double WorldWidthMeters = 0.0;
 	double WorldDepthMeters = 0.0;
 	double ElevationScaleMeters = 0.0;
@@ -99,11 +114,7 @@ struct CODENAMEGAEACORE_API FGaeaTerrainPhysicalMetrics
 	}
 };
 
-/**
- * Optional active physical contract for editor-driven graph evaluation.
- * Runtime callers do not need this: if nothing publishes an active contract,
- * GetActive() returns zero/default metrics and all solvers keep their legacy behaviour.
- */
+/** Optional active physical contract for editor-driven graph evaluation. */
 class CODENAMEGAEACORE_API FGaeaTerrainPhysicalContext
 {
 public:
