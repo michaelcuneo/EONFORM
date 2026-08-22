@@ -44,6 +44,10 @@ private:
 	FReply SaveGraphAsset();
 	FReply EvaluateGraph();
 	bool EvaluateSelectedNodePreview();
+	void RequestFinalEvaluationAsync();
+	void RequestInspectionEvaluationAsync(const FGuid& NodeId);
+	void StartNextAsyncEvaluation();
+	void ClearInspectionPreview();
 	void SyncOutputSettingsState();
 	uint32 ComputeAutoPreviewHash() const;
 	FText GetAssetText() const;
@@ -64,7 +68,11 @@ private:
 	float AutoPreviewPollAccumulator = 0.0f;
 	FGuid LastPreviewNodeId;
 	uint64 LastOutputSettingsRevision = 0;
+	uint64 GraphEvaluationGeneration = 0;
+	uint64 InspectionEvaluationGeneration = 0;
+	FGuid PendingInspectionNodeId;
 	bool bAutoPreviewInitialized = false;
 	bool bAutoPreviewEvaluating = false;
+	bool bFinalEvaluationPending = false;
 	bool bLegacyEvaluateButtonHidden = false;
 };
