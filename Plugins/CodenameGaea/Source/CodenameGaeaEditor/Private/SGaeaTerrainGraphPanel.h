@@ -23,14 +23,6 @@ public:
 	virtual FReply OnPreviewKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent) override;
 	virtual void Tick(const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime) override;
 
-	/**
-	 * Synchronously evaluates the graph currently displayed in the EONFORM graph panel,
-	 * publishes the authoritative Terrain Output snapshot, and refreshes the inspector.
-	 * Generate Terrain uses this as a correctness barrier; it must never depend on an
-	 * optional/stale automatic preview having completed first.
-	 */
-	static bool EvaluateActiveGraphAndPublish(FString& OutError);
-
 private:
 	void BuildDefaultRecipeAndGraph();
 	void BuildEditorGraphFromRecipe(const FGaeaTerrainRecipe& Recipe, const UGaeaTerrainGraphAsset* Asset = nullptr);
@@ -52,15 +44,10 @@ private:
 	FReply SaveGraphAsset();
 	FReply EvaluateGraph();
 	bool EvaluateSelectedNodePreview();
-	void RequestAutoPreviewEvaluation();
-	void RequestSelectedNodePreview(const FGuid& NodeId);
-	void StartAutoPreviewEvaluation();
 	void SyncOutputSettingsState();
 	uint32 ComputeAutoPreviewHash() const;
 	FText GetAssetText() const;
 	FText GetStatusText() const;
-
-	static TWeakPtr<SGaeaTerrainGraphPanel> ActivePanel;
 
 	TStrongObjectPtr<UGaeaEditorGraph> EditorGraph;
 	TStrongObjectPtr<UGaeaTerrainGraphAsset> CurrentAsset;
@@ -76,13 +63,8 @@ private:
 	uint32 LastAutoPreviewHash = 0;
 	float AutoPreviewPollAccumulator = 0.0f;
 	FGuid LastPreviewNodeId;
-	FGuid PendingSelectedPreviewNodeId;
-	FGuid ActiveAutoPreviewNodeId;
 	uint64 LastOutputSettingsRevision = 0;
-	uint64 AutoPreviewRequestSerial = 0;
 	bool bAutoPreviewInitialized = false;
 	bool bAutoPreviewEvaluating = false;
-	bool bAutoPreviewRestartPending = false;
-	bool bFinalAutoPreviewPending = false;
 	bool bLegacyEvaluateButtonHidden = false;
 };
