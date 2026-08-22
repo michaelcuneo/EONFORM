@@ -11,6 +11,7 @@ namespace
 {
 	constexpr double PreviewCentimetersPerKilometer = 100000.0;
 	constexpr double PreviewCentimetersPerMeter = 100.0;
+	constexpr int32 PreviewMeshResolution = 257;
 }
 
 SGaeaTerrainMeshPreview::SGaeaTerrainMeshPreview()
@@ -95,11 +96,18 @@ void SGaeaTerrainMeshPreview::SetTerrain(const FGaeaTerrainDatasetSnapshot& Snap
 	Options.HeightScale = Snapshot.Metadata.HeightScale;
 	Options.HorizontalScale = 1.0;
 	Options.VerticalScale = 1.0;
-	Options.TargetResolution = FIntPoint::ZeroValue;
 
+	// This is an editor viewport thumbnail, not the generated terrain. Never build a
+	// native-resolution DynamicMesh here: a 4K source would otherwise create ~16M
+	// preview vertices on the game thread. The output panel still uses the requested
+	// full resolution when Generate Terrain is pressed.
 	const FGaeaScalarField* Height = Snapshot.Dataset.FindScalarField(GaeaTerrainFieldNames::Height);
 	if (Height && Height->IsValid())
 	{
+		Options.TargetResolution = FIntPoint(
+			FMath::Min(PreviewMeshResolution, Height->Domain.Dimensions.X),
+			FMath::Min(PreviewMeshResolution, Height->Domain.Dimensions.Y));
+
 		const FVector2d SourceSize = Height->Domain.WorldSize();
 		const double SourceWidth = FMath::Abs(SourceSize.X);
 		const double SourceDepth = FMath::Abs(SourceSize.Y);
@@ -113,6 +121,10 @@ void SGaeaTerrainMeshPreview::SetTerrain(const FGaeaTerrainDatasetSnapshot& Snap
 				Output.ElevationScaleMeters * PreviewCentimetersPerMeter /
 				FMath::Max(static_cast<double>(Snapshot.Metadata.HeightScale), UE_DOUBLE_SMALL_NUMBER);
 		}
+	}
+	else
+	{
+		Options.TargetResolution = FIntPoint(PreviewMeshResolution, PreviewMeshResolution);
 	}
 
 	UE::Geometry::FDynamicMesh3 Mesh;
@@ -132,7 +144,10 @@ void SGaeaTerrainMeshPreview::SetTerrain(const FGaeaTerrainDatasetSnapshot& Snap
 	const int32 VertexCount = Mesh.VertexCount();
 	const int32 TriangleCount = Mesh.TriangleCount();
 	PreviewMeshComponent->SetMesh(MoveTemp(Mesh));
-	StatusText = FText::FromString(FString::Printf(TEXT("%d vertices   %d triangles   sea level 0 m"), VertexCount, TriangleCount));
+	StatusText = FText::FromString(FString::Printf(
+		TEXT("Preview %d vertices   %d triangles   sea level 0 m"),
+		VertexCount,
+		TriangleCount));
 	FrameTerrain();
 }
 
