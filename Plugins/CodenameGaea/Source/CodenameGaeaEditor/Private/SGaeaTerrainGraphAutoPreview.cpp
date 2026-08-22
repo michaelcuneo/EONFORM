@@ -36,34 +36,6 @@ namespace
 		return A.FromPin.LexicalLess(B.FromPin);
 	}
 
-	bool NodeFeedsTerrainOutput(const UGaeaEditorGraphNode* StartNode)
-	{
-		if (!StartNode) return false;
-
-		TSet<const UEdGraphNode*> Visited;
-		TArray<const UGaeaEditorGraphNode*> Pending;
-		Pending.Add(StartNode);
-		while (!Pending.IsEmpty())
-		{
-			const UGaeaEditorGraphNode* Node = Pending.Pop(EAllowShrinking::No);
-			if (!Node || Visited.Contains(Node)) continue;
-			Visited.Add(Node);
-
-			for (const UEdGraphPin* Pin : Node->Pins)
-			{
-				if (!Pin || Pin->Direction != EGPD_Output) continue;
-				for (const UEdGraphPin* LinkedPin : Pin->LinkedTo)
-				{
-					const UGaeaEditorGraphNode* Downstream = LinkedPin ? Cast<UGaeaEditorGraphNode>(LinkedPin->GetOwningNode()) : nullptr;
-					if (!Downstream) continue;
-					if (Downstream->RecipeNodeType == GaeaEditorNodeTypes::TerrainOutput) return true;
-					Pending.Add(Downstream);
-				}
-			}
-		}
-		return false;
-	}
-
 	bool WidgetTreeContainsText(const TSharedRef<SWidget>& Widget, const FString& Text)
 	{
 		if (Widget->GetTypeAsString() == TEXT("STextBlock"))
@@ -213,8 +185,10 @@ void SGaeaTerrainGraphPanel::Tick(
 		bLegacyEvaluateButtonHidden = HideButtonWithText(SharedThis(this), TEXT("Evaluate Graph"));
 	}
 
+	// Keep observing semantic edits even while a worker is running so newer graph
+	// states can supersede stale work. This poll only hashes lightweight editor data.
 	AutoPreviewPollAccumulator += InDeltaTime;
-	if (AutoPreviewPollAccumulator < 0.75f || bAutoPreviewEvaluating) return;
+	if (AutoPreviewPollAccumulator < 0.75f) return;
 	AutoPreviewPollAccumulator = 0.0f;
 
 	const uint32 CurrentHash = ComputeAutoPreviewHash();
@@ -223,9 +197,6 @@ void SGaeaTerrainGraphPanel::Tick(
 
 	if (!bAutoPreviewInitialized)
 	{
-		// Loading/opening a graph establishes the semantic baseline only. Never run
-		// the terrain simulation simply because an asset became visible in the editor.
-		// Expensive evaluation is reserved for a real semantic edit after this point.
 		LastAutoPreviewHash = CurrentHash;
 		LastPreviewNodeId = CurrentPreviewNodeId;
 		bAutoPreviewInitialized = true;
@@ -235,24 +206,16 @@ void SGaeaTerrainGraphPanel::Tick(
 	if (CurrentHash != LastAutoPreviewHash)
 	{
 		LastAutoPreviewHash = CurrentHash;
-		bAutoPreviewEvaluating = true;
-		EvaluateGraph();
-		bAutoPreviewEvaluating = false;
-		if (CurrentPreviewNodeId.IsValid()) LastPreviewNodeId = CurrentPreviewNodeId;
+		LastPreviewNodeId = CurrentPreviewNodeId;
+		RequestAutoPreviewEvaluation();
 		return;
 	}
 
+	// Selection is intentionally UI-only. Intermediate-node simulation used to execute
+	// synchronously here and could freeze Slate for many seconds. It will only return
+	// once it can use the same asynchronous/cached evaluation path as the main preview.
 	if (CurrentPreviewNodeId.IsValid() && CurrentPreviewNodeId != LastPreviewNodeId)
 	{
 		LastPreviewNodeId = CurrentPreviewNodeId;
-
-		// Newly placed/disconnected scratch nodes are editing state, not terrain state.
-		// Do not run an expensive intermediate evaluation until the node actually feeds
-		// Terrain Output. This also prevents placement from blocking the Slate thread.
-		if (!NodeFeedsTerrainOutput(CurrentPreviewNode)) return;
-
-		bAutoPreviewEvaluating = true;
-		EvaluateSelectedNodePreview();
-		bAutoPreviewEvaluating = false;
 	}
 }
