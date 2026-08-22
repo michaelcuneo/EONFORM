@@ -36,6 +36,34 @@ namespace
 		return A.FromPin.LexicalLess(B.FromPin);
 	}
 
+	bool NodeFeedsTerrainOutput(const UGaeaEditorGraphNode* StartNode)
+	{
+		if (!StartNode) return false;
+
+		TSet<const UEdGraphNode*> Visited;
+		TArray<const UGaeaEditorGraphNode*> Pending;
+		Pending.Add(StartNode);
+		while (!Pending.IsEmpty())
+		{
+			const UGaeaEditorGraphNode* Node = Pending.Pop(EAllowShrinking::No);
+			if (!Node || Visited.Contains(Node)) continue;
+			Visited.Add(Node);
+
+			for (const UEdGraphPin* Pin : Node->Pins)
+			{
+				if (!Pin || Pin->Direction != EGPD_Output) continue;
+				for (const UEdGraphPin* LinkedPin : Pin->LinkedTo)
+				{
+					const UGaeaEditorGraphNode* Downstream = LinkedPin ? Cast<UGaeaEditorGraphNode>(LinkedPin->GetOwningNode()) : nullptr;
+					if (!Downstream) continue;
+					if (Downstream->RecipeNodeType == GaeaEditorNodeTypes::TerrainOutput) return true;
+					Pending.Add(Downstream);
+				}
+			}
+		}
+		return false;
+	}
+
 	bool WidgetTreeContainsText(const TSharedRef<SWidget>& Widget, const FString& Text)
 	{
 		if (Widget->GetTypeAsString() == TEXT("STextBlock"))
@@ -178,7 +206,6 @@ void SGaeaTerrainGraphPanel::Tick(
 	const float InDeltaTime)
 {
 	SCompoundWidget::Tick(AllottedGeometry, InCurrentTime, InDeltaTime);
-	ActivePanel = SharedThis(this);
 	SyncOutputSettingsState();
 
 	if (!bLegacyEvaluateButtonHidden)
@@ -186,9 +213,8 @@ void SGaeaTerrainGraphPanel::Tick(
 		bLegacyEvaluateButtonHidden = HideButtonWithText(SharedThis(this), TEXT("Evaluate Graph"));
 	}
 
-	// Poll semantic editor state only; simulation itself always runs on the background queue.
 	AutoPreviewPollAccumulator += InDeltaTime;
-	if (AutoPreviewPollAccumulator < 0.50f) return;
+	if (AutoPreviewPollAccumulator < 0.75f || bAutoPreviewEvaluating) return;
 	AutoPreviewPollAccumulator = 0.0f;
 
 	const uint32 CurrentHash = ComputeAutoPreviewHash();
@@ -200,35 +226,26 @@ void SGaeaTerrainGraphPanel::Tick(
 		LastAutoPreviewHash = CurrentHash;
 		LastPreviewNodeId = CurrentPreviewNodeId;
 		bAutoPreviewInitialized = true;
-
-		// Opening a graph should still produce a real inspection/mesh preview, but it no
-		// longer blocks Slate. Queue the authoritative Terrain Output in the background.
-		RequestAutoPreviewEvaluation();
 		return;
 	}
 
 	if (CurrentHash != LastAutoPreviewHash)
 	{
 		LastAutoPreviewHash = CurrentHash;
-		LastPreviewNodeId = CurrentPreviewNodeId;
-
-		// Keep the final Terrain Output authoritative, then refresh the selected node's
-		// inspection if there is one. The queue coalesces newer edits while work runs.
-		RequestAutoPreviewEvaluation();
-		if (CurrentPreviewNodeId.IsValid())
-		{
-			RequestSelectedNodePreview(CurrentPreviewNodeId);
-		}
+		bAutoPreviewEvaluating = true;
+		EvaluateGraph();
+		bAutoPreviewEvaluating = false;
+		if (CurrentPreviewNodeId.IsValid()) LastPreviewNodeId = CurrentPreviewNodeId;
 		return;
 	}
 
 	if (CurrentPreviewNodeId.IsValid() && CurrentPreviewNodeId != LastPreviewNodeId)
 	{
 		LastPreviewNodeId = CurrentPreviewNodeId;
-		RequestSelectedNodePreview(CurrentPreviewNodeId);
-	}
-	else if (!CurrentPreviewNodeId.IsValid())
-	{
-		LastPreviewNodeId.Invalidate();
+		if (!NodeFeedsTerrainOutput(CurrentPreviewNode)) return;
+
+		bAutoPreviewEvaluating = true;
+		EvaluateSelectedNodePreview();
+		bAutoPreviewEvaluating = false;
 	}
 }
