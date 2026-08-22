@@ -5,6 +5,7 @@
 #include "GaeaTerrainDerivedData.h"
 #include "GaeaTerrainEvaluator.h"
 #include "GaeaTerrainPhysicalMetrics.h"
+#include "Modules/ModuleManager.h"
 
 void SGaeaTerrainGraphPanel::RequestAutoPreviewEvaluation()
 {
@@ -101,6 +102,17 @@ void SGaeaTerrainGraphPanel::StartAutoPreviewEvaluation()
 		}
 		Context.SourceDataset = SourceSnapshot.Dataset;
 		Context.HeightScale = SourceSnapshot.Metadata.HeightScale;
+	}
+
+	// File decoding uses ImageWrapper. Loading Unreal modules from a generic worker
+	// thread is unsafe, so prepare the module while we are still on the game thread.
+	const bool bUsesFileNode = Recipe.Nodes.ContainsByPredicate([](const FGaeaTerrainNode& Node)
+	{
+		return Node.Type == GaeaTerrainNodeTypes::File;
+	});
+	if (bUsesFileNode && !FModuleManager::Get().IsModuleLoaded(TEXT("ImageWrapper")))
+	{
+		FModuleManager::Get().LoadModule(TEXT("ImageWrapper"));
 	}
 
 	const uint64 RequestSerial = AutoPreviewRequestSerial;
