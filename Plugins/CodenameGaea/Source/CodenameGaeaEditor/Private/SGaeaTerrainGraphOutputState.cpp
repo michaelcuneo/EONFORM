@@ -1,5 +1,6 @@
 #include "SGaeaTerrainGraphPanel.h"
 
+#include "GaeaTerrainDatasetRegistry.h"
 #include "GaeaTerrainOutputEditorState.h"
 
 void SGaeaTerrainGraphPanel::SyncOutputSettingsState()
@@ -20,9 +21,14 @@ void SGaeaTerrainGraphPanel::SyncOutputSettingsState()
 		}
 		LastOutputSettingsRevision = OutputState.GetRevision();
 
-		// Opening/switching assets is editor navigation, not a terrain edit. Reset the
-		// semantic-preview baseline so the newly loaded graph is accepted as-is on the
-		// next poll instead of being compared against the previous asset and evaluated.
+		// Invalidate all work captured from the previous asset. A worker may finish,
+		// but its generation can no longer match and therefore it cannot publish.
+		++GraphEvaluationGeneration;
+		++InspectionEvaluationGeneration;
+		bFinalEvaluationPending = false;
+		PendingInspectionNodeId.Invalidate();
+		FGaeaTerrainDatasetRegistry::Remove(TEXT("CodenameGaeaInspection"));
+
 		bAutoPreviewInitialized = false;
 		AutoPreviewPollAccumulator = 0.0f;
 		LastAutoPreviewHash = 0;
