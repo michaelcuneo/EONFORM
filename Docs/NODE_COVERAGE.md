@@ -60,47 +60,53 @@ The Surface implementations share reusable deterministic operations for scatter/
 
 Surface fidelity remains an iterative product task: coverage here means the nodes are real executable EONFORM operations, not a claim of byte-for-byte equivalence with QuadSpinner's proprietary implementations.
 
-## Simulate - 7 / 26 represented
+## Simulate - 12 / 26 represented
 
-Existing before this expansion:
+Existing physical/core nodes:
 
 - Erosion - COMPLETE / physical-scale aware
 - Thermal - COMPLETE
-
-First physical foundation batch now represented:
-
 - HydroFix - COMPLETE foundation; physical D8 drainage continuity/downcutting
 - Rivers - COMPLETE foundation; physical catchment-driven network, optional Headwaters mask, channel/valley carving, River and RiverDepth outputs
 - Sediments - COMPLETE foundation; low-slope/concavity-biased sediment accumulation and Deposits output
 - Debris - COMPLETE foundation; loose-rock terrain accumulation and Debris output
 - Scree - COMPLETE foundation; slope/edge-biased scree accumulation and Scree output
 
+Erosion-evolution batch now represented:
+
+- EasyErosion - COMPLETE foundation; current published style list mapped onto the shared physical hydraulic solver with Influence, directional bias and deterministic Seed controls
+- Erosion2 - COMPLETE foundation; advanced physical hydraulic pass with Duration, Downcutting, Erosion Scale, suspended/bed/coarse sediment classes, deposition boosts, shape controls and optional directional/orographic rainfall
+- Thermal2 - COMPLETE foundation; physical-scale thermal erosion with Duration, Strength, Anisotropy, talus Angle, Sediment Removal and Feature Scale in metres
+- Crumble - COMPLETE foundation; edge/crevice/flow-sensitive terrain collapse with horizontal/vertical bias, hardness, Edge, Downcutting, Depth and directional controls
+- Hillify - COMPLETE foundation; deterministic hill-form creep with Coverage, Moderate/Aggressive creep and Smooth/Eroded surface modes
+
 The `Rivers` implementation deliberately sits on EONFORM's physical hydrology rather than introducing a parallel river solver. Catchment area, drainage direction, distance-to-outlet, physical elevation scale and world dimensions are the reusable engine beneath the graph node.
 
-`CodenameGaea.Core.Graph.SimulateFoundationChain` evaluates a real chain:
+`CodenameGaea.Core.Graph.SimulateFoundationChain` evaluates:
 
 ```text
 Perlin -> HydroFix -> Rivers -> Sediments -> Debris -> Scree
 ```
 
-and verifies finite final terrain plus persistent River, RiverDepth, Deposits, Debris and Scree fields.
+`CodenameGaea.Core.Graph.SimulateEvolutionChain` evaluates:
 
-Still missing:
+```text
+Perlin -> EasyErosion -> Erosion2 -> Thermal2 -> Crumble -> Hillify
+```
+
+and verifies the final terrain plus hydraulic Wear/Deposits/Flow, Thermal2 Talus, Crumble and Hillify fields remain valid and finite.
+
+Still missing from the currently tracked Simulate roadmap:
 
 - Anastomosis
-- Crumble
 - Dusting
-- EasyErosion
-- Erosion2
 - Glacier
-- Hillify
 - IceFloe
 - Lake
 - Lichtenberg
 - Shrubs
 - Snow
 - Snowfield
-- Thermal2
 - Trees
 - Sea
 - Wizard
@@ -110,14 +116,12 @@ This remains the largest geomorphology gap. EONFORM's physical hydrology, catchm
 
 Next Simulate priority:
 
-1. Erosion2 / EasyErosion
-2. Thermal2 / Crumble / Hillify
-3. Lake
-4. Sea
-5. Snow / Snowfield / Glacier / IceFloe / Dusting
-6. Anastomosis / Lichtenberg
-7. Trees / Shrubs
-8. Wizard / Wizard2 as high-level simulation composites
+1. Lake
+2. Sea
+3. Snow / Snowfield / Glacier / IceFloe / Dusting
+4. Anastomosis / Lichtenberg
+5. Trees / Shrubs
+6. Wizard / Wizard2 as high-level simulation composites
 
 ## Derive - 4 / 14 represented before expansion
 
