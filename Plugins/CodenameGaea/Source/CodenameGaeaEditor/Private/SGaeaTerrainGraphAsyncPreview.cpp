@@ -89,12 +89,15 @@ void SGaeaTerrainGraphPanel::StartAutoPreviewEvaluation()
 
 			Panel->bAutoPreviewEvaluating = false;
 
-			// A newer semantic edit arrived while this worker was running. Never publish
-			// stale terrain over the latest graph state; immediately start the newest job.
+			// Never publish stale terrain. A semantic edit sets RestartPending and will
+			// launch the newest recipe; an asset switch invalidates the serial but clears
+			// RestartPending, so navigation cannot accidentally start a new simulation.
 			if (RequestSerial != Panel->AutoPreviewRequestSerial)
 			{
-				Panel->bAutoPreviewRestartPending = true;
-				Panel->StartAutoPreviewEvaluation();
+				if (Panel->bAutoPreviewRestartPending)
+				{
+					Panel->StartAutoPreviewEvaluation();
+				}
 				return;
 			}
 
