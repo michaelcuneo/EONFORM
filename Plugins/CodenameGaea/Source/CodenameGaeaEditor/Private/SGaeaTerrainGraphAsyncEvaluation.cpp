@@ -4,6 +4,7 @@
 #include "GaeaTerrainDatasetRegistry.h"
 #include "GaeaTerrainDerivedData.h"
 #include "GaeaTerrainEvaluator.h"
+#include "GaeaTerrainOutputEditorState.h"
 #include "GaeaTerrainPhysicalMetrics.h"
 #include "Modules/ModuleManager.h"
 
@@ -59,6 +60,13 @@ void SGaeaTerrainGraphPanel::RequestFinalEvaluationAsync()
 {
 	++GraphEvaluationGeneration;
 	bFinalEvaluationPending = true;
+
+	// The graph has changed, so any previously published final snapshot is stale.
+	// Remove it immediately and explicitly mark analysis pending. Generate Terrain
+	// can now queue behind this state instead of accidentally consuming old data.
+	FGaeaTerrainDatasetRegistry::Remove(FinalTerrainSource);
+	FGaeaTerrainOutputEditorState::Get().BeginAnalysis();
+
 	if (!bAutoPreviewEvaluating)
 	{
 		StartNextAsyncEvaluation();
@@ -101,8 +109,15 @@ void SGaeaTerrainGraphPanel::StartNextAsyncEvaluation()
 	FString Error;
 	if (!BuildRecipeFromEditorGraph(Recipe, Error))
 	{
-		if (bEvaluateFinal) bFinalEvaluationPending = false;
-		else PendingInspectionNodeId.Invalidate();
+		if (bEvaluateFinal)
+		{
+			bFinalEvaluationPending = false;
+			FGaeaTerrainOutputEditorState::Get().FailAnalysis(Error);
+		}
+		else
+		{
+			PendingInspectionNodeId.Invalidate();
+		}
 		StatusText = FText::FromString(FString::Printf(TEXT("Graph is invalid: %s"), *Error));
 		return;
 	}
@@ -121,8 +136,15 @@ void SGaeaTerrainGraphPanel::StartNextAsyncEvaluation()
 	FGaeaTerrainEvaluationContext Context;
 	if (!PrepareEvaluationContext(Recipe, Context, Error))
 	{
-		if (bEvaluateFinal) bFinalEvaluationPending = false;
-		else PendingInspectionNodeId.Invalidate();
+		if (bEvaluateFinal)
+		{
+			bFinalEvaluationPending = false;
+			FGaeaTerrainOutputEditorState::Get().FailAnalysis(Error);
+		}
+		else
+		{
+			PendingInspectionNodeId.Invalidate();
+		}
 		StatusText = FText::FromString(Error);
 		return;
 	}
@@ -195,10 +217,15 @@ void SGaeaTerrainGraphPanel::StartNextAsyncEvaluation()
 
 					if (!EvaluationError.IsEmpty() || !Result.bSuccess)
 					{
+						const FString Failure = EvaluationError.IsEmpty() ? Result.Error : EvaluationError;
+						if (bEvaluateFinal)
+						{
+							FGaeaTerrainOutputEditorState::Get().FailAnalysis(Failure);
+						}
 						Panel->StatusText = FText::FromString(FString::Printf(
 							TEXT("%s failed: %s"),
 							bEvaluateFinal ? TEXT("Terrain analysis") : TEXT("Node inspection"),
-							EvaluationError.IsEmpty() ? *Result.Error : *EvaluationError));
+							*Failure));
 						Panel->StartNextAsyncEvaluation();
 						return;
 					}
@@ -215,6 +242,10 @@ void SGaeaTerrainGraphPanel::StartNextAsyncEvaluation()
 						Metadata);
 					if (Revision == 0)
 					{
+						if (bEvaluateFinal)
+						{
+							FGaeaTerrainOutputEditorState::Get().FailAnalysis(TEXT("Publishing the evaluated terrain snapshot failed."));
+						}
 						Panel->StatusText = FText::FromString(TEXT("Terrain evaluated successfully, but publishing the snapshot failed."));
 						Panel->StartNextAsyncEvaluation();
 						return;
@@ -222,8 +253,7 @@ void SGaeaTerrainGraphPanel::StartNextAsyncEvaluation()
 
 					if (bEvaluateFinal)
 					{
-						// Final Terrain Output is permanent and authoritative. Inspection data uses
-						// a different source and can never remove/replace this snapshot.
+						FGaeaTerrainOutputEditorState::Get().CompleteAnalysis(Revision);
 						Panel->StatusText = FText::FromString(FString::Printf(
 							TEXT("Analysis %08X -> revision %llu (%d fields, height scale %.1f)."),
 							RecipeHash,
