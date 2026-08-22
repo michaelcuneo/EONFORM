@@ -37,6 +37,11 @@ namespace GaeaTerrainNodeTypes
 	const FName Sediments(TEXT("Sediments"));
 	const FName Debris(TEXT("Debris"));
 	const FName Scree(TEXT("Scree"));
+	const FName EasyErosion(TEXT("EasyErosion"));
+	const FName Erosion2(TEXT("Erosion2"));
+	const FName Thermal2(TEXT("Thermal2"));
+	const FName Crumble(TEXT("Crumble"));
+	const FName Hillify(TEXT("Hillify"));
 	const FName Combine(TEXT("Combine"));
 	const FName Clamp(TEXT("Clamp"));
 	const FName Adjust(TEXT("Adjust"));
