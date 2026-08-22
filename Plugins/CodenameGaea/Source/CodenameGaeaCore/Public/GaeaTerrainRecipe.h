@@ -40,6 +40,11 @@ namespace GaeaTerrainNodeTypes
 	CODENAMEGAEACORE_API extern const FName Sediments;
 	CODENAMEGAEACORE_API extern const FName Debris;
 	CODENAMEGAEACORE_API extern const FName Scree;
+	CODENAMEGAEACORE_API extern const FName EasyErosion;
+	CODENAMEGAEACORE_API extern const FName Erosion2;
+	CODENAMEGAEACORE_API extern const FName Thermal2;
+	CODENAMEGAEACORE_API extern const FName Crumble;
+	CODENAMEGAEACORE_API extern const FName Hillify;
 	CODENAMEGAEACORE_API extern const FName Combine;
 	CODENAMEGAEACORE_API extern const FName Clamp;
 	CODENAMEGAEACORE_API extern const FName Adjust;
