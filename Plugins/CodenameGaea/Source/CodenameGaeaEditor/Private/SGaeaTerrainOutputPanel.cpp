@@ -277,20 +277,64 @@ FReply SGaeaTerrainOutputPanel::EditMeshPartitionDefinition()
 	return FReply::Handled();
 }
 
+FText SGaeaTerrainOutputPanel::GetGenerateButtonText() const
+{
+	if (bGenerateQueued)
+	{
+		return FText::FromString(TEXT("Generate Terrain (waiting for analysis...)"));
+	}
+	return FText::FromString(TEXT("Generate Terrain"));
+}
+
 FReply SGaeaTerrainOutputPanel::GenerateTerrain()
 {
-	FGaeaTerrainDatasetSnapshot Snapshot;
-	if (!FGaeaTerrainDatasetRegistry::Get(TEXT("CodenameGaeaGraph"), Snapshot) || !Snapshot.IsValid())
+	FGaeaTerrainOutputEditorState& State = FGaeaTerrainOutputEditorState::Get();
+
+	if (!State.GetAnalysisError().IsEmpty() && !State.IsAnalysisPending())
 	{
-		FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(TEXT("No evaluated EONFORM Terrain Output is available yet.")));
+		FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(FString::Printf(
+			TEXT("EONFORM terrain analysis failed: %s"),
+			*State.GetAnalysisError())));
 		return FReply::Handled();
+	}
+
+	if (State.IsAnalysisPending() || !State.IsAnalysisAvailable())
+	{
+		bGenerateQueued = true;
+		return FReply::Handled();
+	}
+
+	if (!GenerateAvailableTerrain())
+	{
+		// Analysis state and registry publication are completed on the game thread,
+		// but if they are observed between operations simply queue until the exact
+		// published revision is visible. Never fall back to an older snapshot.
+		bGenerateQueued = true;
+	}
+	return FReply::Handled();
+}
+
+bool SGaeaTerrainOutputPanel::GenerateAvailableTerrain()
+{
+	const FGaeaTerrainOutputEditorState& State = FGaeaTerrainOutputEditorState::Get();
+	if (!State.IsAnalysisAvailable() || State.IsAnalysisPending())
+	{
+		return false;
+	}
+
+	FGaeaTerrainDatasetSnapshot Snapshot;
+	if (!FGaeaTerrainDatasetRegistry::Get(TEXT("CodenameGaeaGraph"), Snapshot)
+		|| !Snapshot.IsValid()
+		|| Snapshot.Revision != State.GetPublishedAnalysisRevision())
+	{
+		return false;
 	}
 
 	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
 	if (!World)
 	{
 		FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(TEXT("The editor world is not available.")));
-		return FReply::Handled();
+		return true;
 	}
 
 	FGaeaMeshTerrainOutputSettings Settings = MakeMeshTerrainSettings();
@@ -298,7 +342,7 @@ FReply SGaeaTerrainOutputPanel::GenerateTerrain()
 	if (!ApplyPhysicalScale(Snapshot, Settings, ScaleError))
 	{
 		FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(ScaleError));
-		return FReply::Handled();
+		return true;
 	}
 
 	const FGaeaMeshTerrainBuildResult Result = FGaeaMeshTerrainOutput::Build(
@@ -309,7 +353,7 @@ FReply SGaeaTerrainOutputPanel::GenerateTerrain()
 	if (!Result.bSuccess)
 	{
 		FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(Result.Message));
-		return FReply::Handled();
+		return true;
 	}
 
 	UE_LOG(LogTemp, Display, TEXT("EONFORM: %s"), *Result.Message);
@@ -318,7 +362,33 @@ FReply SGaeaTerrainOutputPanel::GenerateTerrain()
 		GEditor->SelectNone(false, true, false);
 		GEditor->SelectActor(Result.TerrainActor.Get(), true, true, true, true);
 	}
-	return FReply::Handled();
+	return true;
+}
+
+void SGaeaTerrainOutputPanel::Tick(
+	const FGeometry& AllottedGeometry,
+	const double InCurrentTime,
+	const float InDeltaTime)
+{
+	SCompoundWidget::Tick(AllottedGeometry, InCurrentTime, InDeltaTime);
+	if (!bGenerateQueued) return;
+
+	FGaeaTerrainOutputEditorState& State = FGaeaTerrainOutputEditorState::Get();
+	if (State.IsAnalysisPending()) return;
+
+	if (!State.GetAnalysisError().IsEmpty())
+	{
+		bGenerateQueued = false;
+		FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(FString::Printf(
+			TEXT("EONFORM terrain analysis failed: %s"),
+			*State.GetAnalysisError())));
+		return;
+	}
+
+	if (State.IsAnalysisAvailable() && GenerateAvailableTerrain())
+	{
+		bGenerateQueued = false;
+	}
 }
 
 void SGaeaTerrainOutputPanel::Construct(const FArguments& InArgs)
@@ -458,7 +528,7 @@ void SGaeaTerrainOutputPanel::Construct(const FArguments& InArgs)
 			]
 			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 10.0f, 0.0f, 0.0f)
 			[
-				SNew(SButton).Text(FText::FromString(TEXT("Generate Terrain"))).OnClicked(this, &SGaeaTerrainOutputPanel::GenerateTerrain)
+				SNew(SButton).Text(this, &SGaeaTerrainOutputPanel::GetGenerateButtonText).OnClicked(this, &SGaeaTerrainOutputPanel::GenerateTerrain)
 			]
 		]
 	];
