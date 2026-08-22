@@ -198,11 +198,7 @@ void SGaeaTerrainGraphPanel::Tick(
 		LastAutoPreviewHash = CurrentHash;
 		LastPreviewNodeId = CurrentPreviewNodeId;
 		bAutoPreviewInitialized = true;
-
-		// Opening a graph should immediately begin producing its real final analysis,
-		// but never on Slate's UI thread.
 		RequestFinalEvaluationAsync();
-		if (CurrentPreviewNodeId.IsValid()) RequestInspectionEvaluationAsync(CurrentPreviewNodeId);
 		return;
 	}
 
@@ -211,18 +207,11 @@ void SGaeaTerrainGraphPanel::Tick(
 		LastAutoPreviewHash = CurrentHash;
 		LastPreviewNodeId = CurrentPreviewNodeId;
 		RequestFinalEvaluationAsync();
-		if (CurrentPreviewNodeId.IsValid()) RequestInspectionEvaluationAsync(CurrentPreviewNodeId);
 		return;
 	}
 
-	if (CurrentPreviewNodeId.IsValid() && CurrentPreviewNodeId != LastPreviewNodeId)
-	{
-		LastPreviewNodeId = CurrentPreviewNodeId;
-		RequestInspectionEvaluationAsync(CurrentPreviewNodeId);
-	}
-	else if (!CurrentPreviewNodeId.IsValid() && LastPreviewNodeId.IsValid())
-	{
-		LastPreviewNodeId.Invalidate();
-		ClearInspectionPreview();
-	}
+	// Selection and layout are editor-only state. Never launch a second terrain solve
+	// just because the user clicked or dragged a node. Intermediate-node inspection can
+	// be layered back onto the async queue later without touching final Terrain Output.
+	if (CurrentPreviewNodeId.IsValid()) LastPreviewNodeId = CurrentPreviewNodeId;
 }
