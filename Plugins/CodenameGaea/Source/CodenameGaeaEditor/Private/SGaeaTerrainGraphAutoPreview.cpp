@@ -178,6 +178,7 @@ void SGaeaTerrainGraphPanel::Tick(
 	const float InDeltaTime)
 {
 	SCompoundWidget::Tick(AllottedGeometry, InCurrentTime, InDeltaTime);
+	ActivePanel = SharedThis(this);
 	SyncOutputSettingsState();
 
 	if (!bLegacyEvaluateButtonHidden)
