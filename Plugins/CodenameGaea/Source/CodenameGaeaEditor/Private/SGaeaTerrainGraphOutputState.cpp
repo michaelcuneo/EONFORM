@@ -20,10 +20,15 @@ void SGaeaTerrainGraphPanel::SyncOutputSettingsState()
 		}
 		LastOutputSettingsRevision = OutputState.GetRevision();
 
-		// Opening/switching assets is navigation, not a terrain edit. Invalidate any
-		// worker that belongs to the previous graph and establish a fresh baseline.
+		// Opening/switching assets is navigation, not a terrain edit. Invalidate work
+		// belonging to the previous graph and clear both final/selected pending queues.
+		// The next auto-preview poll establishes this graph's baseline and queues its
+		// authoritative final preview in the background.
 		++AutoPreviewRequestSerial;
 		bAutoPreviewRestartPending = false;
+		bFinalAutoPreviewPending = false;
+		PendingSelectedPreviewNodeId.Invalidate();
+		ActiveAutoPreviewNodeId.Invalidate();
 		bAutoPreviewInitialized = false;
 		AutoPreviewPollAccumulator = 0.0f;
 		LastAutoPreviewHash = 0;
