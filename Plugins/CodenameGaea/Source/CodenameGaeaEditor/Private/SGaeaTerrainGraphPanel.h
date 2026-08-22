@@ -45,6 +45,7 @@ private:
 	FReply EvaluateGraph();
 	bool EvaluateSelectedNodePreview();
 	void RequestAutoPreviewEvaluation();
+	void RequestSelectedNodePreview(const FGuid& NodeId);
 	void StartAutoPreviewEvaluation();
 	void SyncOutputSettingsState();
 	uint32 ComputeAutoPreviewHash() const;
