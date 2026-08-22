@@ -19,6 +19,14 @@ void SGaeaTerrainGraphPanel::SyncOutputSettingsState()
 			OutputState.Reset();
 		}
 		LastOutputSettingsRevision = OutputState.GetRevision();
+
+		// Opening/switching assets is editor navigation, not a terrain edit. Reset the
+		// semantic-preview baseline so the newly loaded graph is accepted as-is on the
+		// next poll instead of being compared against the previous asset and evaluated.
+		bAutoPreviewInitialized = false;
+		AutoPreviewPollAccumulator = 0.0f;
+		LastAutoPreviewHash = 0;
+		LastPreviewNodeId.Invalidate();
 		return;
 	}
 
