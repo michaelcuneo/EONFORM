@@ -20,9 +20,10 @@ void SGaeaTerrainGraphPanel::SyncOutputSettingsState()
 		}
 		LastOutputSettingsRevision = OutputState.GetRevision();
 
-		// Opening/switching assets is editor navigation, not a terrain edit. Reset the
-		// semantic-preview baseline so the newly loaded graph is accepted as-is on the
-		// next poll instead of being compared against the previous asset and evaluated.
+		// Opening/switching assets is navigation, not a terrain edit. Invalidate any
+		// worker that belongs to the previous graph and establish a fresh baseline.
+		++AutoPreviewRequestSerial;
+		bAutoPreviewRestartPending = false;
 		bAutoPreviewInitialized = false;
 		AutoPreviewPollAccumulator = 0.0f;
 		LastAutoPreviewHash = 0;
