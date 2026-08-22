@@ -21,13 +21,16 @@ void SGaeaTerrainGraphPanel::SyncOutputSettingsState()
 		}
 		LastOutputSettingsRevision = OutputState.GetRevision();
 
-		// Invalidate all work captured from the previous asset. A worker may finish,
-		// but its generation can no longer match and therefore it cannot publish.
+		// Invalidate all work and all published snapshots from the previous asset.
+		// A worker may finish, but its generation can no longer match and therefore
+		// it cannot publish. Generate Terrain also cannot consume the previous graph.
 		++GraphEvaluationGeneration;
 		++InspectionEvaluationGeneration;
 		bFinalEvaluationPending = false;
 		PendingInspectionNodeId.Invalidate();
+		FGaeaTerrainDatasetRegistry::Remove(TEXT("CodenameGaeaGraph"));
 		FGaeaTerrainDatasetRegistry::Remove(TEXT("CodenameGaeaInspection"));
+		OutputState.InvalidateAnalysis();
 
 		bAutoPreviewInitialized = false;
 		AutoPreviewPollAccumulator = 0.0f;
