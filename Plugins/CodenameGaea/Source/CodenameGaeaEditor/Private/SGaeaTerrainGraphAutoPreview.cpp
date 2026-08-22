@@ -185,10 +185,9 @@ void SGaeaTerrainGraphPanel::Tick(
 		bLegacyEvaluateButtonHidden = HideButtonWithText(SharedThis(this), TEXT("Evaluate Graph"));
 	}
 
-	// Keep observing semantic edits even while a worker is running so newer graph
-	// states can supersede stale work. This poll only hashes lightweight editor data.
+	// Poll semantic editor state only; simulation itself always runs on the background queue.
 	AutoPreviewPollAccumulator += InDeltaTime;
-	if (AutoPreviewPollAccumulator < 0.75f) return;
+	if (AutoPreviewPollAccumulator < 0.50f) return;
 	AutoPreviewPollAccumulator = 0.0f;
 
 	const uint32 CurrentHash = ComputeAutoPreviewHash();
@@ -200,6 +199,10 @@ void SGaeaTerrainGraphPanel::Tick(
 		LastAutoPreviewHash = CurrentHash;
 		LastPreviewNodeId = CurrentPreviewNodeId;
 		bAutoPreviewInitialized = true;
+
+		// Opening a graph should still produce a real inspection/mesh preview, but it no
+		// longer blocks Slate. Queue the authoritative Terrain Output in the background.
+		RequestAutoPreviewEvaluation();
 		return;
 	}
 
@@ -207,15 +210,24 @@ void SGaeaTerrainGraphPanel::Tick(
 	{
 		LastAutoPreviewHash = CurrentHash;
 		LastPreviewNodeId = CurrentPreviewNodeId;
+
+		// Keep the final Terrain Output authoritative, then refresh the selected node's
+		// inspection if there is one. The queue coalesces newer edits while work runs.
 		RequestAutoPreviewEvaluation();
+		if (CurrentPreviewNodeId.IsValid())
+		{
+			RequestSelectedNodePreview(CurrentPreviewNodeId);
+		}
 		return;
 	}
 
-	// Selection is intentionally UI-only. Intermediate-node simulation used to execute
-	// synchronously here and could freeze Slate for many seconds. It will only return
-	// once it can use the same asynchronous/cached evaluation path as the main preview.
 	if (CurrentPreviewNodeId.IsValid() && CurrentPreviewNodeId != LastPreviewNodeId)
 	{
 		LastPreviewNodeId = CurrentPreviewNodeId;
+		RequestSelectedNodePreview(CurrentPreviewNodeId);
+	}
+	else if (!CurrentPreviewNodeId.IsValid())
+	{
+		LastPreviewNodeId.Invalidate();
 	}
 }
