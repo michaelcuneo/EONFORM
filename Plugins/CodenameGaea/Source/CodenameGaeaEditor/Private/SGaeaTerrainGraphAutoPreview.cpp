@@ -223,6 +223,9 @@ void SGaeaTerrainGraphPanel::Tick(
 
 	if (!bAutoPreviewInitialized)
 	{
+		// Loading/opening a graph establishes the semantic baseline only. Never run
+		// the terrain simulation simply because an asset became visible in the editor.
+		// Expensive evaluation is reserved for a real semantic edit after this point.
 		LastAutoPreviewHash = CurrentHash;
 		LastPreviewNodeId = CurrentPreviewNodeId;
 		bAutoPreviewInitialized = true;
@@ -242,6 +245,10 @@ void SGaeaTerrainGraphPanel::Tick(
 	if (CurrentPreviewNodeId.IsValid() && CurrentPreviewNodeId != LastPreviewNodeId)
 	{
 		LastPreviewNodeId = CurrentPreviewNodeId;
+
+		// Newly placed/disconnected scratch nodes are editing state, not terrain state.
+		// Do not run an expensive intermediate evaluation until the node actually feeds
+		// Terrain Output. This also prevents placement from blocking the Slate thread.
 		if (!NodeFeedsTerrainOutput(CurrentPreviewNode)) return;
 
 		bAutoPreviewEvaluating = true;
