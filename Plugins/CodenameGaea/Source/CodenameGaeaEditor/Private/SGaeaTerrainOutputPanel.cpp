@@ -7,6 +7,7 @@
 #include "GaeaTerrainOutputEditorState.h"
 #include "Misc/MessageDialog.h"
 #include "PropertyCustomizationHelpers.h"
+#include "SGaeaTerrainGraphPanel.h"
 #include "Subsystems/AssetEditorSubsystem.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SComboBox.h"
@@ -279,10 +280,22 @@ FReply SGaeaTerrainOutputPanel::EditMeshPartitionDefinition()
 
 FReply SGaeaTerrainOutputPanel::GenerateTerrain()
 {
+	// Generate Terrain must be correct even when automatic preview is still running,
+	// failed, disabled, or stale. Force the exact graph currently shown in the editor
+	// through the authoritative evaluation path before Mesh Terrain reads the registry.
+	FString EvaluationError;
+	if (!SGaeaTerrainGraphPanel::EvaluateActiveGraphAndPublish(EvaluationError))
+	{
+		FMessageDialog::Open(
+			EAppMsgType::Ok,
+			FText::FromString(FString::Printf(TEXT("Could not evaluate the current EONFORM graph:\n%s"), *EvaluationError)));
+		return FReply::Handled();
+	}
+
 	FGaeaTerrainDatasetSnapshot Snapshot;
 	if (!FGaeaTerrainDatasetRegistry::Get(TEXT("CodenameGaeaGraph"), Snapshot) || !Snapshot.IsValid())
 	{
-		FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(TEXT("No evaluated EONFORM Terrain Output is available yet.")));
+		FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(TEXT("EONFORM evaluated the graph but no valid Terrain Output was published.")));
 		return FReply::Handled();
 	}
 
