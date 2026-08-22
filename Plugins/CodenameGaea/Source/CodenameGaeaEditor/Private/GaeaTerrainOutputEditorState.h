@@ -46,6 +46,46 @@ public:
 
 	uint64 GetRevision() const { return Revision; }
 
+	/**
+	 * Automatic graph evaluation is asynchronous. Terrain Output uses this state
+	 * to distinguish a genuinely missing result from a result that is still being
+	 * calculated, and to prevent Generate Terrain from consuming an older snapshot.
+	 */
+	void BeginAnalysis()
+	{
+		bAnalysisPending = true;
+		AnalysisError.Reset();
+	}
+
+	void CompleteAnalysis(uint64 InPublishedRevision)
+	{
+		bAnalysisPending = false;
+		bAnalysisAvailable = InPublishedRevision != 0;
+		PublishedAnalysisRevision = InPublishedRevision;
+		AnalysisError.Reset();
+	}
+
+	void FailAnalysis(const FString& InError)
+	{
+		bAnalysisPending = false;
+		bAnalysisAvailable = false;
+		PublishedAnalysisRevision = 0;
+		AnalysisError = InError;
+	}
+
+	void InvalidateAnalysis()
+	{
+		bAnalysisPending = false;
+		bAnalysisAvailable = false;
+		PublishedAnalysisRevision = 0;
+		AnalysisError.Reset();
+	}
+
+	bool IsAnalysisPending() const { return bAnalysisPending; }
+	bool IsAnalysisAvailable() const { return bAnalysisAvailable; }
+	uint64 GetPublishedAnalysisRevision() const { return PublishedAnalysisRevision; }
+	const FString& GetAnalysisError() const { return AnalysisError; }
+
 private:
 	FGaeaTerrainOutputEditorState()
 	{
@@ -74,4 +114,8 @@ private:
 
 	FGaeaTerrainGraphOutputSettings Settings;
 	uint64 Revision = 1;
+	uint64 PublishedAnalysisRevision = 0;
+	bool bAnalysisPending = false;
+	bool bAnalysisAvailable = false;
+	FString AnalysisError;
 };
