@@ -9,9 +9,31 @@
 void SGaeaTerrainGraphPanel::RequestAutoPreviewEvaluation()
 {
 	++AutoPreviewRequestSerial;
+	bFinalAutoPreviewPending = true;
 	bAutoPreviewRestartPending = true;
 	if (!bAutoPreviewEvaluating)
 	{
+		StartAutoPreviewEvaluation();
+	}
+}
+
+void SGaeaTerrainGraphPanel::RequestSelectedNodePreview(const FGuid& NodeId)
+{
+	if (!NodeId.IsValid()) return;
+
+	PendingSelectedPreviewNodeId = NodeId;
+	bAutoPreviewRestartPending = true;
+
+	// Do not invalidate a valid final-terrain solve just because the user clicked a
+	// different node. If a selected-node preview is already running, however, discard
+	// that stale inspection and keep only the newest selected node.
+	if (bAutoPreviewEvaluating && ActiveAutoPreviewNodeId.IsValid())
+	{
+		++AutoPreviewRequestSerial;
+	}
+	else if (!bAutoPreviewEvaluating)
+	{
+		++AutoPreviewRequestSerial;
 		StartAutoPreviewEvaluation();
 	}
 }
@@ -23,13 +45,40 @@ void SGaeaTerrainGraphPanel::StartAutoPreviewEvaluation()
 		return;
 	}
 
+	const bool bEvaluateFinal = bFinalAutoPreviewPending;
+	FGuid PreviewNodeId;
+	if (!bEvaluateFinal)
+	{
+		PreviewNodeId = PendingSelectedPreviewNodeId;
+		if (!PreviewNodeId.IsValid())
+		{
+			bAutoPreviewRestartPending = false;
+			return;
+		}
+	}
+
 	FGaeaTerrainRecipe Recipe;
 	FString RecipeError;
 	if (!BuildRecipeFromEditorGraph(Recipe, RecipeError))
 	{
+		bFinalAutoPreviewPending = false;
+		PendingSelectedPreviewNodeId.Invalidate();
 		bAutoPreviewRestartPending = false;
 		StatusText = FText::FromString(FString::Printf(TEXT("Graph is invalid: %s"), *RecipeError));
 		return;
+	}
+
+	if (!bEvaluateFinal)
+	{
+		Recipe.OutputNode = PreviewNodeId;
+		if (!Recipe.Validate(&RecipeError))
+		{
+			PendingSelectedPreviewNodeId.Invalidate();
+			bAutoPreviewRestartPending = bFinalAutoPreviewPending;
+			StatusText = FText::FromString(FString::Printf(TEXT("Selected-node preview is invalid: %s"), *RecipeError));
+			if (bAutoPreviewRestartPending) StartAutoPreviewEvaluation();
+			return;
+		}
 	}
 
 	FGaeaTerrainEvaluationContext Context;
@@ -44,7 +93,9 @@ void SGaeaTerrainGraphPanel::StartAutoPreviewEvaluation()
 		FGaeaTerrainDatasetSnapshot SourceSnapshot;
 		if (!FGaeaTerrainDatasetRegistry::Get(TEXT("LegacyTerrainGenerator"), SourceSnapshot) || !SourceSnapshot.IsValid())
 		{
-			bAutoPreviewRestartPending = false;
+			if (bEvaluateFinal) bFinalAutoPreviewPending = false;
+			else PendingSelectedPreviewNodeId.Invalidate();
+			bAutoPreviewRestartPending = bFinalAutoPreviewPending || PendingSelectedPreviewNodeId.IsValid();
 			StatusText = FText::FromString(TEXT("This graph uses Source Dataset, but no LegacyTerrainGenerator dataset is available."));
 			return;
 		}
@@ -53,12 +104,23 @@ void SGaeaTerrainGraphPanel::StartAutoPreviewEvaluation()
 	}
 
 	const uint64 RequestSerial = AutoPreviewRequestSerial;
-	bAutoPreviewRestartPending = false;
+	if (bEvaluateFinal)
+	{
+		bFinalAutoPreviewPending = false;
+		ActiveAutoPreviewNodeId.Invalidate();
+		StatusText = FText::FromString(TEXT("Updating terrain preview in background..."));
+	}
+	else
+	{
+		PendingSelectedPreviewNodeId.Invalidate();
+		ActiveAutoPreviewNodeId = PreviewNodeId;
+		StatusText = FText::FromString(TEXT("Updating selected-node inspection in background..."));
+	}
+	bAutoPreviewRestartPending = bFinalAutoPreviewPending || PendingSelectedPreviewNodeId.IsValid();
 	bAutoPreviewEvaluating = true;
-	StatusText = FText::FromString(TEXT("Updating terrain preview in background..."));
 
 	TWeakPtr<SGaeaTerrainGraphPanel> WeakPanel = SharedThis(this);
-	Async(EAsyncExecution::ThreadPool, [WeakPanel, Recipe = MoveTemp(Recipe), Context = MoveTemp(Context), RequestSerial]() mutable
+	Async(EAsyncExecution::ThreadPool, [WeakPanel, Recipe = MoveTemp(Recipe), Context = MoveTemp(Context), RequestSerial, PreviewNodeId, bEvaluateFinal]() mutable
 	{
 		FGaeaTerrainEvaluationResult Result = FGaeaTerrainEvaluator::Evaluate(Recipe, Context);
 		FString EvaluationError;
@@ -79,32 +141,28 @@ void SGaeaTerrainGraphPanel::StartAutoPreviewEvaluation()
 			}
 		}
 
-		AsyncTask(ENamedThreads::GameThread, [WeakPanel, RequestSerial, Result = MoveTemp(Result), EvaluationError = MoveTemp(EvaluationError)]() mutable
+		AsyncTask(ENamedThreads::GameThread, [WeakPanel, RequestSerial, PreviewNodeId, bEvaluateFinal, Result = MoveTemp(Result), EvaluationError = MoveTemp(EvaluationError)]() mutable
 		{
 			const TSharedPtr<SGaeaTerrainGraphPanel> Panel = WeakPanel.Pin();
-			if (!Panel.IsValid())
-			{
-				return;
-			}
+			if (!Panel.IsValid()) return;
 
 			Panel->bAutoPreviewEvaluating = false;
+			Panel->ActiveAutoPreviewNodeId.Invalidate();
 
-			// Never publish stale terrain. A semantic edit sets RestartPending and will
-			// launch the newest recipe; an asset switch invalidates the serial but clears
-			// RestartPending, so navigation cannot accidentally start a new simulation.
+			// A newer semantic edit or selected-node request superseded this job. Keep
+			// pending work intact and immediately continue with the newest state.
 			if (RequestSerial != Panel->AutoPreviewRequestSerial)
 			{
-				if (Panel->bAutoPreviewRestartPending)
-				{
-					Panel->StartAutoPreviewEvaluation();
-				}
+				Panel->bAutoPreviewRestartPending = Panel->bFinalAutoPreviewPending || Panel->PendingSelectedPreviewNodeId.IsValid();
+				if (Panel->bAutoPreviewRestartPending) Panel->StartAutoPreviewEvaluation();
 				return;
 			}
 
 			if (!EvaluationError.IsEmpty() || !Result.bSuccess)
 			{
 				Panel->StatusText = FText::FromString(FString::Printf(
-					TEXT("Terrain preview failed: %s"),
+					TEXT("%s failed: %s"),
+					bEvaluateFinal ? TEXT("Terrain preview") : TEXT("Selected-node inspection"),
 					EvaluationError.IsEmpty() ? *Result.Error : *EvaluationError));
 			}
 			else
@@ -114,27 +172,67 @@ void SGaeaTerrainGraphPanel::StartAutoPreviewEvaluation()
 				FGaeaTerrainDatasetMetadata Metadata;
 				Metadata.HeightScale = Result.HeightScale;
 
-				const uint64 Revision = FGaeaTerrainDatasetRegistry::Publish(
-					TEXT("CodenameGaeaGraph"),
-					MoveTemp(Result.Dataset),
-					Metadata);
-
-				if (Revision == 0)
+				if (bEvaluateFinal)
 				{
-					Panel->StatusText = FText::FromString(TEXT("Terrain preview evaluated, but publishing the result failed."));
+					const uint64 Revision = FGaeaTerrainDatasetRegistry::Publish(
+						TEXT("CodenameGaeaGraph"),
+						MoveTemp(Result.Dataset),
+						Metadata);
+
+					if (Revision == 0)
+					{
+						Panel->StatusText = FText::FromString(TEXT("Terrain preview evaluated, but publishing the result failed."));
+					}
+					else
+					{
+						Panel->StatusText = FText::FromString(FString::Printf(
+							TEXT("Preview %08X -> revision %llu (%d fields, height scale %.1f)."),
+							RecipeHash,
+							static_cast<unsigned long long>(Revision),
+							FieldCount,
+							Metadata.HeightScale));
+						Panel->OnEvaluated.ExecuteIfBound();
+					}
 				}
 				else
 				{
-					Panel->StatusText = FText::FromString(FString::Printf(
-						TEXT("Preview %08X -> revision %llu (%d fields, height scale %.1f)."),
-						RecipeHash,
-						static_cast<unsigned long long>(Revision),
-						FieldCount,
-						Metadata.HeightScale));
-					Panel->OnEvaluated.ExecuteIfBound();
+					FGaeaTerrainDatasetSnapshot FinalSnapshot;
+					const bool bHadFinalSnapshot = FGaeaTerrainDatasetRegistry::Get(TEXT("CodenameGaeaGraph"), FinalSnapshot)
+						&& FinalSnapshot.IsValid();
+
+					const uint64 PreviewRevision = FGaeaTerrainDatasetRegistry::Publish(
+						TEXT("CodenameGaeaGraph"),
+						MoveTemp(Result.Dataset),
+						Metadata);
+
+					if (PreviewRevision != 0)
+					{
+						Panel->StatusText = FText::FromString(FString::Printf(
+							TEXT("Inspected node %s (%d fields, height scale %.1f)."),
+							*PreviewNodeId.ToString(EGuidFormats::Short),
+							FieldCount,
+							Metadata.HeightScale));
+
+						// Inspector refresh is synchronous and copies the selected-node snapshot into
+						// its own UI state. Restore the authoritative final terrain immediately after.
+						Panel->OnEvaluated.ExecuteIfBound();
+					}
+
+					if (bHadFinalSnapshot)
+					{
+						FGaeaTerrainDatasetRegistry::Publish(
+							TEXT("CodenameGaeaGraph"),
+							FinalSnapshot.Dataset,
+							FinalSnapshot.Metadata);
+					}
+					else
+					{
+						FGaeaTerrainDatasetRegistry::Remove(TEXT("CodenameGaeaGraph"));
+					}
 				}
 			}
 
+			Panel->bAutoPreviewRestartPending = Panel->bFinalAutoPreviewPending || Panel->PendingSelectedPreviewNodeId.IsValid();
 			if (Panel->bAutoPreviewRestartPending)
 			{
 				Panel->StartAutoPreviewEvaluation();
