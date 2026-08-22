@@ -223,15 +223,12 @@ void SGaeaTerrainGraphPanel::Tick(
 
 	if (!bAutoPreviewInitialized)
 	{
+		// Loading/opening a graph establishes the semantic baseline only. Never run
+		// the terrain simulation simply because an asset became visible in the editor.
+		// Expensive evaluation is reserved for a real semantic edit after this point.
 		LastAutoPreviewHash = CurrentHash;
 		LastPreviewNodeId = CurrentPreviewNodeId;
 		bAutoPreviewInitialized = true;
-		if (EditorGraph.IsValid() && EditorGraph->Nodes.Num() > 1)
-		{
-			bAutoPreviewEvaluating = true;
-			EvaluateGraph();
-			bAutoPreviewEvaluating = false;
-		}
 		return;
 	}
 
