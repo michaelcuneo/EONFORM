@@ -36,6 +36,34 @@ namespace
 		return A.FromPin.LexicalLess(B.FromPin);
 	}
 
+	bool NodeFeedsTerrainOutput(const UGaeaEditorGraphNode* StartNode)
+	{
+		if (!StartNode) return false;
+
+		TSet<const UEdGraphNode*> Visited;
+		TArray<const UGaeaEditorGraphNode*> Pending;
+		Pending.Add(StartNode);
+		while (!Pending.IsEmpty())
+		{
+			const UGaeaEditorGraphNode* Node = Pending.Pop(EAllowShrinking::No);
+			if (!Node || Visited.Contains(Node)) continue;
+			Visited.Add(Node);
+
+			for (const UEdGraphPin* Pin : Node->Pins)
+			{
+				if (!Pin || Pin->Direction != EGPD_Output) continue;
+				for (const UEdGraphPin* LinkedPin : Pin->LinkedTo)
+				{
+					const UGaeaEditorGraphNode* Downstream = LinkedPin ? Cast<UGaeaEditorGraphNode>(LinkedPin->GetOwningNode()) : nullptr;
+					if (!Downstream) continue;
+					if (Downstream->RecipeNodeType == GaeaEditorNodeTypes::TerrainOutput) return true;
+					Pending.Add(Downstream);
+				}
+			}
+		}
+		return false;
+	}
+
 	bool WidgetTreeContainsText(const TSharedRef<SWidget>& Widget, const FString& Text)
 	{
 		if (Widget->GetTypeAsString() == TEXT("STextBlock"))
@@ -123,7 +151,7 @@ uint32 SGaeaTerrainGraphPanel::ComputeAutoPreviewHash() const
 		return A.RecipeNodeId < B.RecipeNodeId;
 	});
 
-	uint32 Hash = 0x6f6e666du; // "onfm" marker for the semantic preview hash.
+	uint32 Hash = 0x6f6e666du;
 	for (const UGaeaEditorGraphNode* Node : RelevantNodes)
 	{
 		Hash = HashCombineFast(Hash, GetTypeHash(Node->RecipeNodeId));
@@ -164,7 +192,6 @@ uint32 SGaeaTerrainGraphPanel::ComputeAutoPreviewHash() const
 		Hash = HashCombineFast(Hash, GetTypeHash(Link.ToPin));
 	}
 
-	// Physical dimensions are part of terrain evaluation now, not merely final mesh scale.
 	const FGaeaTerrainPhysicalMetrics Physical = FGaeaTerrainPhysicalContext::GetActive();
 	Hash = HashCombineFast(Hash, GetTypeHash(Physical.WorldWidthMeters));
 	Hash = HashCombineFast(Hash, GetTypeHash(Physical.WorldDepthMeters));
@@ -179,9 +206,6 @@ void SGaeaTerrainGraphPanel::Tick(
 	const float InDeltaTime)
 {
 	SCompoundWidget::Tick(AllottedGeometry, InCurrentTime, InDeltaTime);
-
-	// Keep the active graph asset and the Terrain Output pane synchronized. Output
-	// changes mark the graph dirty and opening another graph restores its saved settings.
 	SyncOutputSettingsState();
 
 	if (!bLegacyEvaluateButtonHidden)
@@ -189,9 +213,6 @@ void SGaeaTerrainGraphPanel::Tick(
 		bLegacyEvaluateButtonHidden = HideButtonWithText(SharedThis(this), TEXT("Evaluate Graph"));
 	}
 
-	// Auto-preview is intentionally a coarse semantic poll, not a canvas-frame poll.
-	// Node positions and disconnected scratch nodes are excluded from the hash, so graph
-	// layout work must never launch terrain simulation.
 	AutoPreviewPollAccumulator += InDeltaTime;
 	if (AutoPreviewPollAccumulator < 0.75f || bAutoPreviewEvaluating) return;
 	AutoPreviewPollAccumulator = 0.0f;
@@ -220,20 +241,19 @@ void SGaeaTerrainGraphPanel::Tick(
 		bAutoPreviewEvaluating = true;
 		EvaluateGraph();
 		bAutoPreviewEvaluating = false;
-
-		// A semantic graph edit already refreshed the authoritative Terrain Output.
-		// Do not immediately evaluate the selected node a second time. The next explicit
-		// selection change can request an intermediate preview if the user wants one.
 		if (CurrentPreviewNodeId.IsValid()) LastPreviewNodeId = CurrentPreviewNodeId;
 		return;
 	}
 
-	// GraphEditor can transiently clear selection while a node is being dragged. Treat
-	// that as canvas interaction, not a preview request. Keeping LastPreviewNodeId intact
-	// prevents the same node from being reevaluated when the drag finishes.
 	if (CurrentPreviewNodeId.IsValid() && CurrentPreviewNodeId != LastPreviewNodeId)
 	{
 		LastPreviewNodeId = CurrentPreviewNodeId;
+
+		// Newly placed/disconnected scratch nodes are editing state, not terrain state.
+		// Do not run an expensive intermediate evaluation until the node actually feeds
+		// Terrain Output. This also prevents placement from blocking the Slate thread.
+		if (!NodeFeedsTerrainOutput(CurrentPreviewNode)) return;
+
 		bAutoPreviewEvaluating = true;
 		EvaluateSelectedNodePreview();
 		bAutoPreviewEvaluating = false;
