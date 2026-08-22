@@ -35,6 +35,7 @@
 #include "GaeaRecurveNode.h"
 #include "GaeaShaperNode.h"
 #include "GaeaSharpenNode.h"
+#include "GaeaSimulateEvolutionNodes.h"
 #include "GaeaSimulateFoundationNodes.h"
 #include "GaeaSineNode.h"
 #include "GaeaSlopeNode.h"
@@ -95,6 +96,7 @@ public:
 		RegisterGaeaErosionNode();
 		RegisterGaeaThermalErosionNode();
 		RegisterGaeaSimulateFoundationNodes();
+		RegisterGaeaSimulateEvolutionNodes();
 		RegisterGaeaCurvatureNode();
 		RegisterGaeaHeightNode();
 		RegisterGaeaAngleNode();
