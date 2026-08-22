@@ -507,18 +507,33 @@ void SGaeaTerrainInspector::RebuildPreview()
 	const FGaeaScalarField* Field = GetSelectedField();
 	if (!Field || !Field->IsValid()) return;
 
+	const FIntPoint Dimensions = Field->Domain.Dimensions;
+	const FTerrainInspectorVisualisation Visualisation = TerrainInspectorGetVisualisation(SelectedFieldName);
+	const bool bUseNearest = Visualisation.bCategorical || Field->Descriptor.Interpolation == EGaeaInterpolation::Nearest;
+
 	PreviewMinValue = TNumericLimits<float>::Max();
 	PreviewMaxValue = TNumericLimits<float>::Lowest();
 	double Sum = 0.0;
 	double SumSquares = 0.0;
 	PreviewSampleCount = 0;
 
-	const FIntPoint Dimensions = Field->Domain.Dimensions;
-	for (int32 Y = 0; Y < Dimensions.Y; ++Y)
+	// Statistics and pixels share one bounded sampling pass. A 4K/8K source therefore
+	// costs the Inspector the same ~65K samples as a small terrain instead of millions.
+	TArray<float> SampledValues;
+	SampledValues.SetNumUninitialized(TerrainInspectorPreviewResolution * TerrainInspectorPreviewResolution);
+	for (int32 PreviewY = 0; PreviewY < TerrainInspectorPreviewResolution; ++PreviewY)
 	{
-		for (int32 X = 0; X < Dimensions.X; ++X)
+		const double SourceY = static_cast<double>(PreviewY) / static_cast<double>(TerrainInspectorPreviewResolution - 1)
+			* static_cast<double>(Dimensions.Y - 1);
+		for (int32 PreviewX = 0; PreviewX < TerrainInspectorPreviewResolution; ++PreviewX)
 		{
-			const float Value = Field->AtInterior(X, Y);
+			const double SourceX = static_cast<double>(PreviewX) / static_cast<double>(TerrainInspectorPreviewResolution - 1)
+				* static_cast<double>(Dimensions.X - 1);
+			const float Value = bUseNearest
+				? TerrainInspectorSampleNearest(*Field, SourceX, SourceY)
+				: TerrainInspectorSampleBilinear(*Field, SourceX, SourceY);
+			SampledValues[PreviewY * TerrainInspectorPreviewResolution + PreviewX] = Value;
+
 			if (!FMath::IsFinite(Value))
 			{
 				++PreviewNonFiniteCount;
@@ -534,26 +549,21 @@ void SGaeaTerrainInspector::RebuildPreview()
 
 	if (PreviewSampleCount <= 0) { ClearPreview(); return; }
 	PreviewMeanValue = static_cast<float>(Sum / static_cast<double>(PreviewSampleCount));
-	const double Variance = FMath::Max(0.0, SumSquares / static_cast<double>(PreviewSampleCount) - static_cast<double>(PreviewMeanValue) * static_cast<double>(PreviewMeanValue));
+	const double Variance = FMath::Max(
+		0.0,
+		SumSquares / static_cast<double>(PreviewSampleCount)
+			- static_cast<double>(PreviewMeanValue) * static_cast<double>(PreviewMeanValue));
 	PreviewStdDev = static_cast<float>(FMath::Sqrt(Variance));
 
-	const FTerrainInspectorVisualisation Visualisation = TerrainInspectorGetVisualisation(SelectedFieldName);
-	const bool bUseNearest = Visualisation.bCategorical || Field->Descriptor.Interpolation == EGaeaInterpolation::Nearest;
 	TArray<FColor> Pixels;
 	Pixels.SetNumUninitialized(TerrainInspectorPreviewResolution * TerrainInspectorPreviewResolution);
-
-	for (int32 PreviewY = 0; PreviewY < TerrainInspectorPreviewResolution; ++PreviewY)
+	for (int32 Index = 0; Index < SampledValues.Num(); ++Index)
 	{
-		const double SourceY = static_cast<double>(PreviewY) / static_cast<double>(TerrainInspectorPreviewResolution - 1) * static_cast<double>(Dimensions.Y - 1);
-		for (int32 PreviewX = 0; PreviewX < TerrainInspectorPreviewResolution; ++PreviewX)
-		{
-			const double SourceX = static_cast<double>(PreviewX) / static_cast<double>(TerrainInspectorPreviewResolution - 1) * static_cast<double>(Dimensions.X - 1);
-			const float Value = bUseNearest
-				? TerrainInspectorSampleNearest(*Field, SourceX, SourceY)
-				: TerrainInspectorSampleBilinear(*Field, SourceX, SourceY);
-			const FLinearColor Color = TerrainInspectorColorForValue(Visualisation, Value, PreviewMinValue, PreviewMaxValue);
-			Pixels[PreviewY * TerrainInspectorPreviewResolution + PreviewX] = Color.ToFColor(true);
-		}
+		Pixels[Index] = TerrainInspectorColorForValue(
+			Visualisation,
+			SampledValues[Index],
+			PreviewMinValue,
+			PreviewMaxValue).ToFColor(true);
 	}
 
 	UTexture2D* Texture = UTexture2D::CreateTransient(TerrainInspectorPreviewResolution, TerrainInspectorPreviewResolution, PF_B8G8R8A8);
@@ -641,7 +651,7 @@ FText SGaeaTerrainInspector::GetPreviewStatsText() const
 {
 	if (PreviewSampleCount <= 0) return FText::GetEmpty();
 	return FText::FromString(FString::Printf(
-		TEXT("Min %.6g   Max %.6g   Mean %.6g   StdDev %.6g   Finite %lld   NonFinite %lld"),
+		TEXT("Preview-sampled: Min %.6g   Max %.6g   Mean %.6g   StdDev %.6g   Finite %lld   NonFinite %lld"),
 		PreviewMinValue,
 		PreviewMaxValue,
 		PreviewMeanValue,
