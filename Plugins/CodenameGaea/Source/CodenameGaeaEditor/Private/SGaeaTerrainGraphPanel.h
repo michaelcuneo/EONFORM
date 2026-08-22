@@ -65,10 +65,13 @@ private:
 	uint32 LastAutoPreviewHash = 0;
 	float AutoPreviewPollAccumulator = 0.0f;
 	FGuid LastPreviewNodeId;
+	FGuid PendingSelectedPreviewNodeId;
+	FGuid ActiveAutoPreviewNodeId;
 	uint64 LastOutputSettingsRevision = 0;
 	uint64 AutoPreviewRequestSerial = 0;
 	bool bAutoPreviewInitialized = false;
 	bool bAutoPreviewEvaluating = false;
 	bool bAutoPreviewRestartPending = false;
+	bool bFinalAutoPreviewPending = false;
 	bool bLegacyEvaluateButtonHidden = false;
 };
