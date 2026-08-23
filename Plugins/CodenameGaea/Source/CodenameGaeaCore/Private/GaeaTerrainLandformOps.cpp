@@ -7,18 +7,27 @@
 
 namespace
 {
+	struct FMountainPeak
+	{
+		FVector2D Position = FVector2D::ZeroVector;
+		float Radius = 0.1f;
+		float Strength = 1.0f;
+	};
+
+	struct FMountainBranch
+	{
+		FVector2D Start = FVector2D::ZeroVector;
+		FVector2D Mid = FVector2D::ZeroVector;
+		FVector2D End = FVector2D::ZeroVector;
+		float WidthStart = 0.05f;
+		float WidthEnd = 0.02f;
+		float Strength = 1.0f;
+	};
+
 	struct FMountainSite
 	{
 		FVector2D Position = FVector2D::ZeroVector;
 		float Weight = 1.0f;
-	};
-
-	struct FMountainSpur
-	{
-		float Angle = 0.0f;
-		float Length = 0.5f;
-		float Width = 0.05f;
-		float Strength = 1.0f;
 	};
 
 	FGaeaScalarField MakeField(const FGaeaGridDomain& Domain, FName Name)
@@ -52,18 +61,61 @@ namespace
 		return FVector2D::Distance(Point, Start + Segment * OutT);
 	}
 
-	float BulkBase(FName Bulk)
+	float SampleBranch(const FVector2D& Point, const FMountainBranch& Branch, float CrossSectionPower)
 	{
-		if (Bulk == TEXT("Low")) return 0.12f;
-		if (Bulk == TEXT("High")) return 0.34f;
-		return 0.23f;
+		float T0 = 0.0f;
+		const float D0 = DistanceToSegment(Point, Branch.Start, Branch.Mid, T0);
+		const float W0 = FMath::Lerp(Branch.WidthStart, FMath::Lerp(Branch.WidthStart, Branch.WidthEnd, 0.48f), T0);
+		const float S0 = FMath::Exp(-FMath::Pow(D0 / FMath::Max(W0, 0.001f), CrossSectionPower));
+
+		float T1 = 0.0f;
+		const float D1 = DistanceToSegment(Point, Branch.Mid, Branch.End, T1);
+		const float W1 = FMath::Lerp(FMath::Lerp(Branch.WidthStart, Branch.WidthEnd, 0.48f), Branch.WidthEnd, T1);
+		const float S1 = FMath::Exp(-FMath::Pow(D1 / FMath::Max(W1, 0.001f), CrossSectionPower));
+		const float Along = D0 <= D1 ? T0 * 0.5f : 0.5f + T1 * 0.5f;
+		const float Taper = FMath::Pow(FMath::Max(1.0f - Along, 0.0f), 0.34f);
+		return FMath::Max(S0, S1) * Taper * Branch.Strength;
+	}
+
+	float SamplePeak(const FVector2D& Point, const FMountainPeak& Peak, float Power)
+	{
+		const float D = FVector2D::Distance(Point, Peak.Position) / FMath::Max(Peak.Radius, 0.001f);
+		return FMath::Exp(-FMath::Pow(D, Power)) * Peak.Strength;
+	}
+
+	float RidgedFbm(const FVector2D& Point, float SeedOffset, int32 Octaves)
+	{
+		float Frequency = 1.0f;
+		float Amplitude = 0.58f;
+		float Sum = 0.0f;
+		float WeightSum = 0.0f;
+		for (int32 Octave = 0; Octave < Octaves; ++Octave)
+		{
+			const FVector2D P(
+				Point.X * Frequency + SeedOffset * (0.73f + Octave * 0.17f),
+				Point.Y * Frequency - SeedOffset * (0.41f + Octave * 0.13f));
+			const float N = FMath::PerlinNoise2D(P);
+			const float Ridge = 1.0f - FMath::Abs(N);
+			Sum += Ridge * Amplitude;
+			WeightSum += Amplitude;
+			Frequency *= 2.07f;
+			Amplitude *= 0.49f;
+		}
+		return WeightSum > UE_SMALL_NUMBER ? Sum / WeightSum : 0.0f;
 	}
 
 	float BulkRadiusMultiplier(FName Bulk)
 	{
-		if (Bulk == TEXT("Low")) return 0.84f;
-		if (Bulk == TEXT("High")) return 1.12f;
+		if (Bulk == TEXT("Low")) return 0.86f;
+		if (Bulk == TEXT("High")) return 1.14f;
 		return 1.0f;
+	}
+
+	float BulkMassWeight(FName Bulk)
+	{
+		if (Bulk == TEXT("Low")) return 0.31f;
+		if (Bulk == TEXT("High")) return 0.48f;
+		return 0.39f;
 	}
 }
 
@@ -118,50 +170,130 @@ bool FGaeaTerrainLandformOps::BuildMountain(
 	FGaeaScalarField Rock = MakeField(Domain, GaeaTerrainFieldNames::RockExposure);
 	FGaeaScalarField Cryosphere = MakeField(Domain, GaeaTerrainFieldNames::CryosphereEligibility);
 
-	FRandomStream Random(Settings.Seed);
-	const FVector2D Center(Settings.OffsetX, Settings.OffsetY);
-	const float Radius = FMath::Clamp((0.31f + Settings.Scale * 0.43f) * BulkRadiusMultiplier(Settings.Bulk), 0.18f, 1.18f);
-	const int32 SiteCount = Settings.bReduceDetails ? 14 : 26;
-	const int32 SummitSiteCount = Settings.bReduceDetails ? 3 : 6;
-
-	TArray<FMountainSite> Sites;
-	Sites.Reserve(SiteCount);
-	for (int32 Index = 0; Index < SiteCount; ++Index)
-	{
-		const bool bSummitSite = Index < SummitSiteCount;
-		const float SiteRadius = bSummitSite
-			? Random.FRandRange(0.015f, 0.16f) * Radius
-			: Random.FRandRange(0.16f, 0.92f) * Radius;
-		const float Angle = Random.FRandRange(-PI, PI);
-		FMountainSite Site;
-		Site.Position = Center + FVector2D(FMath::Cos(Angle), FMath::Sin(Angle)) * SiteRadius;
-		Site.Weight = Random.FRandRange(bSummitSite ? 0.78f : 0.48f, 1.0f);
-		Sites.Add(Site);
-	}
-
-	const int32 SpurCount = Settings.bReduceDetails ? 6 : 11;
-	TArray<FMountainSpur> Spurs;
-	Spurs.Reserve(SpurCount);
-	for (int32 Index = 0; Index < SpurCount; ++Index)
-	{
-		FMountainSpur Spur;
-		Spur.Angle = Random.FRandRange(-PI, PI);
-		Spur.Length = Random.FRandRange(0.40f, 0.94f) * Radius;
-		Spur.Width = Random.FRandRange(0.026f, 0.060f) * FMath::Lerp(0.85f, 1.25f, Settings.Scale * 0.5f);
-		Spur.Strength = Random.FRandRange(0.55f, 1.0f);
-		Spurs.Add(Spur);
-	}
-
-	const float SeedOffset = static_cast<float>(Settings.Seed) * 0.01317f;
 	const bool bAlpine = Settings.Style == TEXT("Alpine");
 	const bool bEroded = Settings.Style == TEXT("Eroded");
 	const bool bOld = Settings.Style == TEXT("Old");
 	const bool bStrata = Settings.Style == TEXT("Strata");
-	const float VoronoiRidgeWeight = bOld ? 0.25f : (bAlpine ? 0.72f : 0.52f);
-	const float SummitWeight = bOld ? 0.47f : (bAlpine ? 0.90f : 0.70f);
-	const float SpurWeight = bOld ? 0.20f : (bAlpine ? 0.62f : 0.43f);
-	const float WarpStrength = bOld ? 0.055f : (bAlpine ? 0.105f : 0.085f);
-	const float FineDetailStrength = Settings.bReduceDetails ? 0.0f : (bOld ? 0.012f : 0.035f);
+
+	FRandomStream Random(Settings.Seed);
+	const float SeedOffset = static_cast<float>(Settings.Seed) * 0.01317f;
+	const float ReferenceMeters = static_cast<float>(FMath::Max(FMath::Min(WorldWidthMeters, WorldDepthMeters), 1.0));
+	const float AspectX = static_cast<float>(WorldWidthMeters / ReferenceMeters);
+	const float AspectY = static_cast<float>(WorldDepthMeters / ReferenceMeters);
+	const FVector2D Center(Settings.OffsetX * AspectX, Settings.OffsetY * AspectY);
+	const float Radius = FMath::Clamp((0.34f + Settings.Scale * 0.40f) * BulkRadiusMultiplier(Settings.Bulk), 0.20f, 1.20f);
+
+	// The mountain starts with a real dominant summit. Secondary peaks then sit on
+	// a branching ridge tree. Voronoi only modulates those structures; its cell
+	// boundaries are never added directly as elevation, which avoids crown/ring terrain.
+	const FVector2D SummitOffset(
+		Random.FRandRange(-0.055f, 0.055f) * Radius,
+		Random.FRandRange(-0.055f, 0.055f) * Radius);
+	const FVector2D SummitCenter = Center + SummitOffset;
+
+	TArray<FMountainPeak> Peaks;
+	Peaks.Reserve(Settings.bReduceDetails ? 4 : 8);
+	FMountainPeak DominantPeak;
+	DominantPeak.Position = SummitCenter;
+	DominantPeak.Radius = Radius * (bAlpine ? 0.185f : (bOld ? 0.27f : 0.225f));
+	DominantPeak.Strength = 1.0f;
+	Peaks.Add(DominantPeak);
+
+	const int32 PrimaryCount = Settings.bReduceDetails
+		? (bOld ? 4 : 5)
+		: (bAlpine ? 8 : (bOld ? 5 : 7));
+	const float BaseAngle = Random.FRandRange(-PI, PI);
+	TArray<float> PrimaryAngles;
+	PrimaryAngles.Reserve(PrimaryCount);
+	TArray<FMountainBranch> PrimaryRidges;
+	PrimaryRidges.Reserve(PrimaryCount);
+	TArray<FMountainBranch> SecondaryRidges;
+	SecondaryRidges.Reserve(Settings.bReduceDetails ? PrimaryCount / 2 : PrimaryCount + 2);
+	TArray<FMountainBranch> Valleys;
+	Valleys.Reserve(PrimaryCount);
+
+	for (int32 Index = 0; Index < PrimaryCount; ++Index)
+	{
+		const float EvenAngle = BaseAngle + (2.0f * PI * static_cast<float>(Index) / static_cast<float>(PrimaryCount));
+		const float Angle = EvenAngle + Random.FRandRange(-0.22f, 0.22f);
+		PrimaryAngles.Add(Angle);
+
+		const float MidRadius = Random.FRandRange(0.34f, 0.52f) * Radius;
+		const float EndRadius = Random.FRandRange(0.76f, 0.98f) * Radius;
+		const float MidAngle = Angle + Random.FRandRange(-0.18f, 0.18f);
+		const float EndAngle = Angle + Random.FRandRange(-0.31f, 0.31f);
+
+		FMountainBranch Ridge;
+		Ridge.Start = SummitCenter;
+		Ridge.Mid = Center + FVector2D(FMath::Cos(MidAngle), FMath::Sin(MidAngle)) * MidRadius;
+		Ridge.End = Center + FVector2D(FMath::Cos(EndAngle), FMath::Sin(EndAngle)) * EndRadius;
+		Ridge.WidthStart = Radius * (bAlpine ? 0.058f : 0.071f);
+		Ridge.WidthEnd = Radius * (bAlpine ? 0.021f : 0.030f);
+		Ridge.Strength = Random.FRandRange(0.70f, 1.0f);
+		PrimaryRidges.Add(Ridge);
+
+		if (!Settings.bReduceDetails || (Index % 2) == 0)
+		{
+			FMountainPeak SecondaryPeak;
+			SecondaryPeak.Position = FMath::Lerp(SummitCenter, Ridge.Mid, Random.FRandRange(0.58f, 0.92f));
+			SecondaryPeak.Radius = Radius * Random.FRandRange(bAlpine ? 0.085f : 0.105f, bAlpine ? 0.135f : 0.165f);
+			SecondaryPeak.Strength = Random.FRandRange(0.42f, bAlpine ? 0.72f : 0.62f);
+			Peaks.Add(SecondaryPeak);
+		}
+
+		if (!Settings.bReduceDetails && (Index % 2) == 0)
+		{
+			const float BranchSign = Random.FRand() > 0.5f ? 1.0f : -1.0f;
+			const float BranchAngle = EndAngle + BranchSign * Random.FRandRange(0.34f, 0.66f);
+			FMountainBranch Branch;
+			Branch.Start = Ridge.Mid;
+			Branch.Mid = FMath::Lerp(Ridge.Mid, Ridge.End, 0.22f)
+				+ FVector2D(FMath::Cos(BranchAngle), FMath::Sin(BranchAngle)) * Radius * 0.12f;
+			Branch.End = Center + FVector2D(FMath::Cos(BranchAngle), FMath::Sin(BranchAngle)) * Random.FRandRange(0.68f, 0.92f) * Radius;
+			Branch.WidthStart = Radius * 0.034f;
+			Branch.WidthEnd = Radius * 0.014f;
+			Branch.Strength = Random.FRandRange(0.42f, 0.67f);
+			SecondaryRidges.Add(Branch);
+		}
+	}
+
+	for (int32 Index = 0; Index < PrimaryCount; ++Index)
+	{
+		const float A0 = PrimaryAngles[Index];
+		float A1 = PrimaryAngles[(Index + 1) % PrimaryCount];
+		while (A1 < A0) A1 += 2.0f * PI;
+		const float ValleyAngle = 0.5f * (A0 + A1) + Random.FRandRange(-0.09f, 0.09f);
+		const float MidAngle = ValleyAngle + Random.FRandRange(-0.13f, 0.13f);
+		const float EndAngle = ValleyAngle + Random.FRandRange(-0.22f, 0.22f);
+		FMountainBranch Valley;
+		Valley.Start = SummitCenter + FVector2D(FMath::Cos(ValleyAngle), FMath::Sin(ValleyAngle)) * Radius * Random.FRandRange(0.17f, 0.25f);
+		Valley.Mid = Center + FVector2D(FMath::Cos(MidAngle), FMath::Sin(MidAngle)) * Radius * Random.FRandRange(0.48f, 0.62f);
+		Valley.End = Center + FVector2D(FMath::Cos(EndAngle), FMath::Sin(EndAngle)) * Radius * Random.FRandRange(0.88f, 1.03f);
+		Valley.WidthStart = Radius * (bAlpine ? 0.028f : 0.036f);
+		Valley.WidthEnd = Radius * (bAlpine ? 0.064f : 0.078f);
+		Valley.Strength = Random.FRandRange(0.65f, 1.0f);
+		Valleys.Add(Valley);
+	}
+
+	const int32 SiteCount = Settings.bReduceDetails ? 12 : 22;
+	TArray<FMountainSite> Sites;
+	Sites.Reserve(SiteCount);
+	for (int32 Index = 0; Index < SiteCount; ++Index)
+	{
+		const float Angle = Random.FRandRange(-PI, PI);
+		const float SiteRadius = Random.FRandRange(0.08f, 0.98f) * Radius;
+		FMountainSite Site;
+		Site.Position = Center + FVector2D(FMath::Cos(Angle), FMath::Sin(Angle)) * SiteRadius;
+		Site.Weight = Random.FRandRange(0.45f, 1.0f);
+		Sites.Add(Site);
+	}
+
+	const float MassWeight = BulkMassWeight(Settings.Bulk);
+	const float RidgeWeight = bAlpine ? 0.31f : (bOld ? 0.15f : 0.23f);
+	const float ValleyWeight = bEroded ? 0.24f : (bAlpine ? 0.20f : (bOld ? 0.10f : 0.14f));
+	const float DetailWeight = Settings.bReduceDetails ? 0.0f : (bOld ? 0.018f : (bAlpine ? 0.050f : 0.034f));
+	const float WarpStrength = bOld ? 0.030f : (bAlpine ? 0.060f : 0.048f);
+	const int32 DetailOctaves = Settings.bReduceDetails ? 2 : 5;
 	float MaxStructural = UE_SMALL_NUMBER;
 
 	for (int32 Y = 0; Y < Settings.Resolution; ++Y)
@@ -170,121 +302,131 @@ bool FGaeaTerrainLandformOps::BuildMountain(
 		for (int32 X = 0; X < Settings.Resolution; ++X)
 		{
 			const float NX = 2.0f * static_cast<float>(X) / static_cast<float>(Settings.Resolution - 1) - 1.0f;
-			const FVector2D P(NX, NY);
+			FVector2D P(NX * AspectX, NY * AspectY);
 
-			const float WarpX = FMath::PerlinNoise2D(FVector2D(NX * 2.15f + SeedOffset, NY * 2.15f - SeedOffset * 0.37f));
-			const float WarpY = FMath::PerlinNoise2D(FVector2D(NX * 2.15f - SeedOffset * 0.73f, NY * 2.15f + SeedOffset * 0.51f));
-			const FVector2D WarpedP = P + FVector2D(WarpX, WarpY) * WarpStrength;
-			const FVector2D Local = WarpedP - Center;
+			const float WarpX = FMath::PerlinNoise2D(FVector2D(P.X * 1.75f + SeedOffset, P.Y * 1.75f - SeedOffset * 0.37f));
+			const float WarpY = FMath::PerlinNoise2D(FVector2D(P.X * 1.75f - SeedOffset * 0.73f, P.Y * 1.75f + SeedOffset * 0.51f));
+			P += FVector2D(WarpX, WarpY) * WarpStrength * Radius;
+
+			const FVector2D Local = P - Center;
 			const float Radial = Local.Size();
 			const float Theta = FMath::Atan2(Local.Y, Local.X);
 			const float BoundaryDistortion = 1.0f
-				+ 0.11f * FMath::Sin(Theta * 3.0f + SeedOffset * 0.19f)
-				+ 0.065f * FMath::Sin(Theta * 7.0f - SeedOffset * 0.11f)
-				+ 0.045f * FMath::PerlinNoise2D(FVector2D(FMath::Cos(Theta) * 2.0f + SeedOffset, FMath::Sin(Theta) * 2.0f));
+				+ 0.075f * FMath::Sin(Theta * 3.0f + SeedOffset * 0.19f)
+				+ 0.038f * FMath::Sin(Theta * 7.0f - SeedOffset * 0.11f)
+				+ 0.035f * FMath::PerlinNoise2D(FVector2D(FMath::Cos(Theta) * 2.0f + SeedOffset, FMath::Sin(Theta) * 2.0f));
 			const float NormalizedRadius = Radial / FMath::Max(Radius * BoundaryDistortion, 0.05f);
 			const float Envelope = Smooth01(1.0f - NormalizedRadius);
+
+			if (Envelope <= 0.0f)
+			{
+				Height.AtInterior(X, Y) = 0.0f;
+				Mass.AtInterior(X, Y) = 0.0f;
+				Uplift.AtInterior(X, Y) = 0.0f;
+				Ridges.AtInterior(X, Y) = 0.0f;
+				Drainage.AtInterior(X, Y) = 0.0f;
+				Erosion.AtInterior(X, Y) = 0.0f;
+				Rock.AtInterior(X, Y) = 0.0f;
+				Cryosphere.AtInterior(X, Y) = 0.0f;
+				continue;
+			}
+
+			float PeakField = 0.0f;
+			for (int32 PeakIndex = 0; PeakIndex < Peaks.Num(); ++PeakIndex)
+			{
+				const float PeakPower = PeakIndex == 0
+					? (bAlpine ? 1.35f : (bOld ? 1.85f : 1.58f))
+					: (bAlpine ? 1.55f : 1.85f);
+				PeakField = FMath::Max(PeakField, SamplePeak(P, Peaks[PeakIndex], PeakPower));
+			}
+
+			float PrimaryRidge = 0.0f;
+			for (const FMountainBranch& Ridge : PrimaryRidges)
+			{
+				PrimaryRidge = FMath::Max(PrimaryRidge, SampleBranch(P, Ridge, bAlpine ? 1.38f : 1.62f));
+			}
+			float SecondaryRidge = 0.0f;
+			for (const FMountainBranch& Ridge : SecondaryRidges)
+			{
+				SecondaryRidge = FMath::Max(SecondaryRidge, SampleBranch(P, Ridge, 1.52f));
+			}
+			const float RidgeField = FMath::Clamp(PrimaryRidge + SecondaryRidge * 0.62f, 0.0f, 1.0f);
+
+			float ValleyField = 0.0f;
+			for (const FMountainBranch& Valley : Valleys)
+			{
+				ValleyField = FMath::Max(ValleyField, SampleBranch(P, Valley, 1.48f));
+			}
 
 			float Nearest = TNumericLimits<float>::Max();
 			float SecondNearest = TNumericLimits<float>::Max();
 			float NearestWeight = 1.0f;
 			for (const FMountainSite& Site : Sites)
 			{
-				const float Distance = FVector2D::Distance(WarpedP, Site.Position) / FMath::Max(Radius, 0.05f);
-				if (Distance < Nearest)
+				const float D = FVector2D::Distance(P, Site.Position) / FMath::Max(Radius, 0.05f);
+				if (D < Nearest)
 				{
 					SecondNearest = Nearest;
-					Nearest = Distance;
+					Nearest = D;
 					NearestWeight = Site.Weight;
 				}
-				else if (Distance < SecondNearest)
+				else if (D < SecondNearest)
 				{
-					SecondNearest = Distance;
+					SecondNearest = D;
 				}
 			}
-
-			// F2-F1 approaches zero on Voronoi boundaries. Invert it to create the
-			// branching ridge skeleton described by Gaea's Mountain reference.
 			const float BoundaryDistance = FMath::Max(SecondNearest - Nearest, 0.0f);
-			const float VoronoiRidge = Smooth01(1.0f - BoundaryDistance / (bAlpine ? 0.20f : 0.16f));
-			const float CellCore = FMath::Exp(-FMath::Pow(Nearest / 0.30f, 1.55f)) * NearestWeight;
+			const float VoronoiEdge = FMath::Exp(-FMath::Pow(BoundaryDistance / 0.095f, 2.0f));
+			const float VoronoiCore = FMath::Exp(-FMath::Pow(Nearest / 0.34f, 1.65f)) * NearestWeight;
+			const float VoronoiModulation = FMath::Clamp((VoronoiCore - 0.40f) * 0.045f - VoronoiEdge * 0.026f, -0.035f, 0.035f);
 
-			float SummitCluster = 0.0f;
-			for (int32 SiteIndex = 0; SiteIndex < SummitSiteCount; ++SiteIndex)
+			const float BasePower = bOld ? 0.78f : (bAlpine ? 1.18f : 0.98f);
+			const float BaseMass = FMath::Pow(Envelope, BasePower) * MassWeight;
+			float Structural = BaseMass
+				+ Envelope * PeakField * (bAlpine ? 0.61f : (bOld ? 0.46f : 0.54f))
+				+ Envelope * RidgeField * RidgeWeight
+				- Envelope * ValleyField * ValleyWeight;
+
+			Structural *= 1.0f + VoronoiModulation;
+
+			if (DetailWeight > 0.0f)
 			{
-				const FMountainSite& Site = Sites[SiteIndex];
-				const float D = FVector2D::Distance(WarpedP, Site.Position) / FMath::Max(Radius, 0.05f);
-				SummitCluster = FMath::Max(SummitCluster, FMath::Exp(-FMath::Pow(D / (bAlpine ? 0.19f : 0.24f), 1.45f)) * Site.Weight);
-			}
-
-			float SpurRidges = 0.0f;
-			for (const FMountainSpur& Spur : Spurs)
-			{
-				const FVector2D End = Center + FVector2D(FMath::Cos(Spur.Angle), FMath::Sin(Spur.Angle)) * Spur.Length;
-				float Along = 0.0f;
-				const float Distance = DistanceToSegment(WarpedP, Center, End, Along);
-				const float RidgeCrossSection = FMath::Exp(-FMath::Pow(Distance / FMath::Max(Spur.Width, 0.005f), bAlpine ? 1.25f : 1.55f));
-				const float Taper = FMath::Pow(FMath::Max(1.0f - Along, 0.0f), 0.30f);
-				SpurRidges = FMath::Max(SpurRidges, RidgeCrossSection * Taper * Spur.Strength);
-			}
-
-			const float Bulk = BulkBase(Settings.Bulk) * FMath::Pow(Envelope, bOld ? 0.72f : 0.92f);
-			float Structural = Bulk
-				+ Envelope * (VoronoiRidge * VoronoiRidgeWeight
-					+ SpurRidges * SpurWeight
-					+ SummitCluster * SummitWeight
-					+ CellCore * 0.16f);
-
-			if (bEroded || bAlpine)
-			{
-				const float ValleyPattern = 0.5f + 0.5f * FMath::Sin(Theta * (bAlpine ? 12.0f : 9.0f) + WarpX * 3.0f);
-				const float InterRidge = (1.0f - VoronoiRidge) * (1.0f - SpurRidges);
-				const float ValleyCut = Envelope * InterRidge * Smooth01(NormalizedRadius) * ValleyPattern;
-				Structural -= ValleyCut * (bAlpine ? 0.095f : 0.14f);
-			}
-
-			if (FineDetailStrength > 0.0f)
-			{
-				const float DetailA = FMath::PerlinNoise2D(FVector2D(NX * 18.0f + SeedOffset * 1.3f, NY * 18.0f - SeedOffset * 0.9f));
-				const float DetailB = FMath::PerlinNoise2D(FVector2D(NX * 43.0f - SeedOffset * 0.4f, NY * 43.0f + SeedOffset * 0.7f));
-				Structural += Envelope * (DetailA * 0.65f + DetailB * 0.35f) * FineDetailStrength;
+				const float Detail = RidgedFbm(P * 4.2f, SeedOffset, DetailOctaves);
+				const float DetailCentered = Detail - 0.62f;
+				const float DetailMask = Envelope * FMath::Clamp(0.22f + PeakField * 0.50f + RidgeField * 0.48f, 0.0f, 1.0f);
+				Structural += DetailCentered * DetailWeight * DetailMask;
 			}
 
 			Structural = FMath::Max(Structural, 0.0f);
 			if (bOld)
 			{
-				Structural = FMath::Pow(Structural, 0.80f);
+				Structural = FMath::Pow(Structural, 0.88f);
 			}
 			else if (bAlpine)
 			{
-				Structural = FMath::Pow(Structural, 1.18f);
+				Structural = FMath::Pow(Structural, 1.06f);
 			}
 			else if (bStrata)
 			{
-				const float Quantized = FMath::FloorToFloat(Structural * 18.0f) / 18.0f;
-				Structural = FMath::Lerp(Structural, Quantized, 0.28f);
+				const float LayerWave = FMath::Sin(Structural * 2.0f * PI * 15.0f + SeedOffset * 0.03f);
+				Structural += LayerWave * 0.010f * Envelope;
+				Structural = FMath::Max(Structural, 0.0f);
 			}
 
 			MaxStructural = FMath::Max(MaxStructural, Structural);
-			const float RidgeSemantic = FMath::Clamp(Envelope * (VoronoiRidge * 0.62f + SpurRidges * 0.38f), 0.0f, 1.0f);
-			const float MidSlope = Smooth01(Envelope * 1.65f) * (1.0f - Smooth01((Envelope - 0.70f) * 3.0f));
-
-			// Keep the unrestricted structural value until the whole massif has been
-			// evaluated. Per-sample saturation here creates flat mesa-like summits.
 			Height.AtInterior(X, Y) = Structural;
 			Mass.AtInterior(X, Y) = Envelope;
 			Uplift.AtInterior(X, Y) = Structural;
-			Ridges.AtInterior(X, Y) = RidgeSemantic;
-			Drainage.AtInterior(X, Y) = FMath::Clamp(MidSlope * 0.55f + RidgeSemantic * 0.45f, 0.0f, 1.0f);
-			Erosion.AtInterior(X, Y) = FMath::Clamp(MidSlope * 0.58f + RidgeSemantic * 0.42f, 0.0f, 1.0f);
-			Rock.AtInterior(X, Y) = RidgeSemantic;
+			Ridges.AtInterior(X, Y) = RidgeField;
+			Drainage.AtInterior(X, Y) = FMath::Clamp(ValleyField * 0.58f + (1.0f - Envelope) * Envelope * 1.35f + RidgeField * 0.18f, 0.0f, 1.0f);
+			Erosion.AtInterior(X, Y) = FMath::Clamp(ValleyField * 0.48f + RidgeField * 0.32f + Envelope * 0.20f, 0.0f, 1.0f);
+			Rock.AtInterior(X, Y) = FMath::Clamp(RidgeField * 0.72f + PeakField * 0.28f, 0.0f, 1.0f);
 			Cryosphere.AtInterior(X, Y) = 0.0f;
 		}
 	}
 
-	// Height is a target peak, not a multiplier on an arbitrary random maximum.
-	// Normalize the complete structural field so at least one summit reaches the
-	// requested Height without flattening an entire saturated cap.
+	// The dominant summit is broad enough to span multiple samples, so normalizing
+	// the complete field to the requested Height cannot manufacture a one-pixel pin.
 	const float PeakScale = MaxStructural > UE_SMALL_NUMBER ? Settings.Height / MaxStructural : 0.0f;
 	for (int32 Y = 0; Y < Settings.Resolution; ++Y)
 	{
@@ -295,8 +437,8 @@ bool FGaeaTerrainLandformOps::BuildMountain(
 			Height.AtInterior(X, Y) = MountainHeight;
 			Uplift.AtInterior(X, Y) = RelativeHeight;
 			const float RidgeSemantic = Ridges.AtInterior(X, Y);
-			Rock.AtInterior(X, Y) = FMath::Clamp(RelativeHeight * 0.42f + RidgeSemantic * 0.58f, 0.0f, 1.0f);
-			Cryosphere.AtInterior(X, Y) = Smooth01((RelativeHeight - 0.52f) / 0.38f) * FMath::Lerp(0.72f, 1.0f, RidgeSemantic);
+			Rock.AtInterior(X, Y) = FMath::Clamp(Rock.AtInterior(X, Y) * 0.64f + RelativeHeight * 0.36f, 0.0f, 1.0f);
+			Cryosphere.AtInterior(X, Y) = Smooth01((RelativeHeight - 0.55f) / 0.34f) * FMath::Lerp(0.72f, 1.0f, RidgeSemantic);
 		}
 	}
 
