@@ -21,7 +21,7 @@ namespace GaeaTypedPortTests
 		Recipe.Connections.Add(Connection);
 	}
 
-	FGaeaTerrainRecipe MakeDoubleErosionRecipe(bool bRouteFlowToMask)
+	FGaeaTerrainRecipe MakeDoubleErosionRecipe(bool bRouteFlowToArea)
 	{
 		FGaeaTerrainRecipe Recipe;
 
@@ -37,30 +37,30 @@ namespace GaeaTypedPortTests
 		FGaeaTerrainNode FirstErosion;
 		FirstErosion.Id = FGuid(202, 2, 2, 2);
 		FirstErosion.Type = GaeaTerrainNodeTypes::HydraulicErosion;
-		FirstErosion.IntegerParameters.Add(TEXT("Iterations"), 3);
-		FirstErosion.NumericParameters.Add(TEXT("Rainfall"), 0.025);
-		FirstErosion.NumericParameters.Add(TEXT("Strength"), 1.5);
+		FirstErosion.IntegerParameters.Add(TEXT("Duration"), 12);
+		FirstErosion.NumericParameters.Add(TEXT("Strength"), 2.0);
+		FirstErosion.NumericParameters.Add(TEXT("Volume"), 2.0);
+		FirstErosion.NumericParameters.Add(TEXT("Downcutting"), 1.0);
 
 		FGaeaTerrainNode SecondErosion;
 		SecondErosion.Id = FGuid(203, 3, 3, 3);
 		SecondErosion.Type = GaeaTerrainNodeTypes::HydraulicErosion;
-		SecondErosion.IntegerParameters.Add(TEXT("Iterations"), 3);
-		SecondErosion.NumericParameters.Add(TEXT("Rainfall"), 0.025);
-		SecondErosion.NumericParameters.Add(TEXT("Strength"), 1.5);
-		if (bRouteFlowToMask)
+		SecondErosion.IntegerParameters.Add(TEXT("Duration"), 12);
+		SecondErosion.NumericParameters.Add(TEXT("Strength"), 2.0);
+		SecondErosion.NumericParameters.Add(TEXT("Volume"), 2.0);
+		SecondErosion.NumericParameters.Add(TEXT("Downcutting"), 1.0);
+		if (bRouteFlowToArea)
 		{
-			// In Gaea, the Area input is a Selective Processing bias, not a generic
-			// post-process mask. With Area Effect/Selective Processing set to None,
-			// a connected Area map is intentionally ignored.
-			SecondErosion.NameParameters.Add(TEXT("SelectiveProcessing"), TEXT("ErosionStrength"));
+			SecondErosion.NameParameters.Add(TEXT("AreaEffect"), TEXT("Erosion Strength"));
+			SecondErosion.NumericParameters.Add(TEXT("Bias"), 0.0);
 		}
 
 		Recipe.Nodes = { Source, FirstErosion, SecondErosion };
 		Connect(Recipe, Source.Id, TEXT("Terrain"), FirstErosion.Id, TEXT("Terrain"));
-		Connect(Recipe, FirstErosion.Id, TEXT("Terrain"), SecondErosion.Id, TEXT("Terrain"));
-		if (bRouteFlowToMask)
+		Connect(Recipe, FirstErosion.Id, TEXT("Out"), SecondErosion.Id, TEXT("Terrain"));
+		if (bRouteFlowToArea)
 		{
-			Connect(Recipe, FirstErosion.Id, TEXT("Flow"), SecondErosion.Id, TEXT("Mask"));
+			Connect(Recipe, FirstErosion.Id, TEXT("Flow"), SecondErosion.Id, TEXT("Area"));
 		}
 		Recipe.OutputNode = SecondErosion.Id;
 		return Recipe;
@@ -113,7 +113,7 @@ bool FGaeaTerrainTypedHydraulicRoutingTest::RunTest(const FString& Parameters)
 			break;
 		}
 	}
-	TestTrue(TEXT("Flow-driven Erosion Strength changes downstream erosion"), bAnyHeightDifference);
+	TestTrue(TEXT("Flow-driven Area Effect changes downstream erosion"), bAnyHeightDifference);
 	return true;
 }
 
