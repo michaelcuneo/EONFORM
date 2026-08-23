@@ -192,6 +192,16 @@ USTRUCT(BlueprintType)
 struct CODENAMEGAEACORE_API FGaeaTerrainRecipe
 {
 	GENERATED_BODY()
+
+	FGaeaTerrainRecipe()
+	{
+		// Small composite recipes are common in EONFORM. Reserving a modest block
+		// keeps references to newly-added nodes stable while a composite is being
+		// assembled, without changing the serialized graph representation.
+		Nodes.Reserve(16);
+		Connections.Reserve(16);
+	}
+
 	UPROPERTY(EditAnywhere, Category="Terrain Recipe") int32 Version = 1;
 	UPROPERTY(EditAnywhere, Category="Terrain Recipe") FGuid OutputNode;
 	UPROPERTY(EditAnywhere, Category="Terrain Recipe") TArray<FGaeaTerrainNode> Nodes;
