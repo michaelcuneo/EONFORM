@@ -24,6 +24,7 @@
 #include "GaeaHemisphereNode.h"
 #include "GaeaInvertNode.h"
 #include "GaeaLakeNode.h"
+#include "GaeaSeaNode.h"
 #include "GaeaLinearGradientNode.h"
 #include "GaeaModifyFoundationNodes.h"
 #include "GaeaModifyProfileNodes.h"
@@ -99,6 +100,7 @@ public:
 		RegisterGaeaSimulateFoundationNodes();
 		RegisterGaeaSimulateEvolutionNodes();
 		RegisterGaeaLakeNode();
+		RegisterGaeaSeaNode();
 		RegisterGaeaCurvatureNode();
 		RegisterGaeaHeightNode();
 		RegisterGaeaAngleNode();
@@ -182,6 +184,7 @@ public:
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::HydraulicErosion, TEXT("Erosion"), TEXT("Simulate"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::ThermalErosion, TEXT("Thermal"), TEXT("Simulate"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Lake, TEXT("Lake"), TEXT("Simulate"));
+		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Sea, TEXT("Sea"), TEXT("Simulate"));
 
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Adjust, TEXT("Adjust"), TEXT("Modify"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Aperture, TEXT("Aperture"), TEXT("Modify"));
