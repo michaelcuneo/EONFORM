@@ -7,7 +7,6 @@
 #include "FileHelpers.h"
 #include "Framework/MultiBox/MultiBoxBuilder.h"
 #include "GaeaTerrainDatasetRegistry.h"
-#include "GaeaTerrainDerivedData.h"
 #include "GaeaTerrainEvaluator.h"
 #include "GaeaTerrainGraphAsset.h"
 #include "GaeaTerrainGraphAssetFactory.h"
@@ -925,13 +924,6 @@ FReply SGaeaTerrainGraphPanel::EvaluateGraph()
 		return FReply::Handled();
 	}
 
-	FString HydrologyError;
-	if (!FGaeaTerrainDerivedData::EnsureHydrology(Result.Dataset, Result.HeightScale, &HydrologyError))
-	{
-		StatusText = FText::FromString(FString::Printf(TEXT("Terrain evaluated, but EONFORM hydrology analysis failed: %s"), *HydrologyError));
-		return FReply::Handled();
-	}
-
 	const int32 FieldCount = Result.Dataset.NumScalarFields();
 	const uint32 RecipeHash = Result.RecipeHash;
 	FGaeaTerrainDatasetMetadata Metadata;
@@ -949,7 +941,7 @@ FReply SGaeaTerrainGraphPanel::EvaluateGraph()
 	}
 
 	StatusText = FText::FromString(FString::Printf(
-		TEXT("Evaluated authored recipe %08X -> revision %llu (%d fields, height scale %.1f, hydrology ready)."),
+		TEXT("Evaluated authored recipe %08X -> revision %llu (%d fields, height scale %.1f). Derived analysis is demand-driven."),
 		RecipeHash,
 		static_cast<unsigned long long>(Revision),
 		FieldCount,
