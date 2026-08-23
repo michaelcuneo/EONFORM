@@ -1,5 +1,7 @@
 #include "GaeaMeshTerrainOutput.h"
 
+#include "Components/ActorComponent.h"
+#include "Components/PrimitiveComponent.h"
 #include "Components/SceneComponent.h"
 #include "DynamicMesh/DynamicMesh3.h"
 #include "Engine/Engine.h"
@@ -11,7 +13,6 @@
 #include "Materials/MaterialInterface.h"
 #include "MeshPartition.h"
 #include "MeshPartitionDefinition.h"
-#include "MeshPartitionEditorComponent.h"
 #include "Modifiers/MeshPartitionMeshProvider.h"
 #include "UObject/UnrealType.h"
 
@@ -44,26 +45,43 @@ namespace
 	void ApplySatMapEditorMaterialOverride(AMeshPartition* Partition, UMaterialInterface* Material)
 	{
 		if (!Partition) return;
-		UMeshPartitionEditorComponent* EditorComponent = Partition->FindComponentByClass<UMeshPartitionEditorComponent>();
-		if (!EditorComponent)
+
+		UActorComponent* EditorComponent = nullptr;
+		FObjectPropertyBase* OverrideProperty = nullptr;
+		TInlineComponentArray<UActorComponent*> Components;
+		Partition->GetComponents(Components);
+		for (UActorComponent* Component : Components)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("EONFORM: Mesh Partition has no UMeshPartitionEditorComponent; SatMap editor material override was not applied."));
-			return;
+			if (!Component) continue;
+			FObjectPropertyBase* CandidateProperty = FindFProperty<FObjectPropertyBase>(
+				Component->GetClass(),
+				FName(TEXT("EditorMaterialOverride")));
+			if (!CandidateProperty) continue;
+			EditorComponent = Component;
+			OverrideProperty = CandidateProperty;
+			break;
 		}
 
-		FObjectPropertyBase* OverrideProperty = FindFProperty<FObjectPropertyBase>(
-			UMeshPartitionEditorComponent::StaticClass(),
-			FName(TEXT("EditorMaterialOverride")));
-		if (!OverrideProperty)
+		if (!EditorComponent || !OverrideProperty)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("EONFORM: UE 5.8 Mesh Partition editor material override property was not found."));
+			UE_LOG(LogTemp, Warning, TEXT("EONFORM: Mesh Partition editor material override component/property was not found."));
 			return;
 		}
 
 		EditorComponent->Modify();
 		OverrideProperty->SetObjectPropertyValue_InContainer(EditorComponent, Material);
-		EditorComponent->UpdateMaterial();
-		EditorComponent->MarkRenderStateDirty();
+
+		// Avoid a hard compile-time dependency on the experimental Mesh Partition
+		// editor component. If UpdateMaterial is reflected by this UE build, invoke it;
+		// otherwise marking the primitive render state dirty is sufficient to refresh.
+		if (UFunction* UpdateMaterialFunction = EditorComponent->FindFunction(FName(TEXT("UpdateMaterial"))))
+		{
+			EditorComponent->ProcessEvent(UpdateMaterialFunction, nullptr);
+		}
+		if (UPrimitiveComponent* PrimitiveComponent = Cast<UPrimitiveComponent>(EditorComponent))
+		{
+			PrimitiveComponent->MarkRenderStateDirty();
+		}
 	}
 
 	void ClearProviderMesh(UMeshProviderModifier* Provider)
