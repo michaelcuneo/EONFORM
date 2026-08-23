@@ -122,6 +122,8 @@ namespace GaeaTerrainNodeTypes
 	const FName Angle(TEXT("Angle"));
 	const FName Curvature(TEXT("Curvature"));
 	const FName Height(TEXT("Height"));
+	const FName FlowMap(TEXT("FlowMap"));
+	const FName FlowMapClassic(TEXT("FlowMapClassic"));
 }
 
 namespace
