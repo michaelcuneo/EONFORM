@@ -52,6 +52,7 @@
 #include "GaeaThermalErosionNode.h"
 #include "GaeaThresholdNode.h"
 #include "GaeaTransformNode.h"
+#include "GaeaWizardNodes.h"
 #include "GaeaZeroBordersNode.h"
 
 namespace
@@ -109,6 +110,7 @@ public:
 		RegisterGaeaGlacierNode();
 		RegisterGaeaNetworkProcessNodes();
 		RegisterGaeaEcologyNodes();
+		RegisterGaeaWizardNodes();
 		RegisterGaeaCurvatureNode();
 		RegisterGaeaHeightNode();
 		RegisterGaeaAngleNode();
@@ -200,6 +202,8 @@ public:
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Lichtenberg, TEXT("Lichtenberg"), TEXT("Simulate"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Trees, TEXT("Trees"), TEXT("Simulate"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Shrubs, TEXT("Shrubs"), TEXT("Simulate"));
+		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Wizard, TEXT("Wizard"), TEXT("Simulate"));
+		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Wizard2, TEXT("Wizard2"), TEXT("Simulate"));
 
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Adjust, TEXT("Adjust"), TEXT("Modify"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Aperture, TEXT("Aperture"), TEXT("Modify"));
