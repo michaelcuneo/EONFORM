@@ -110,6 +110,7 @@ void UGaeaEditorGraphNode::InitializeParameterDefaults()
 	IntegerParameters.Reset();
 	BoolParameters.Reset();
 	NameParameters.Reset();
+	ColorParameters.Reset();
 	if (RecipeNodeType == GaeaEditorNodeTypes::TerrainOutput) return;
 
 	FGaeaTerrainNodeDescriptor Descriptor;
@@ -122,6 +123,7 @@ void UGaeaEditorGraphNode::InitializeParameterDefaults()
 		case EGaeaTerrainParameterType::Integer: IntegerParameters.Add(Parameter.Name, Parameter.DefaultInteger); break;
 		case EGaeaTerrainParameterType::Boolean: BoolParameters.Add(Parameter.Name, Parameter.DefaultBoolean); break;
 		case EGaeaTerrainParameterType::Name: NameParameters.Add(Parameter.Name, Parameter.DefaultName); break;
+		case EGaeaTerrainParameterType::Color: ColorParameters.Add(Parameter.Name, Parameter.DefaultColor); break;
 		case EGaeaTerrainParameterType::Range:
 			NumericParameters.Add(FName(*(Parameter.Name.ToString() + TEXT("Min"))), Parameter.DefaultRangeMin);
 			NumericParameters.Add(FName(*(Parameter.Name.ToString() + TEXT("Max"))), Parameter.DefaultRangeMax);
