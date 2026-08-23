@@ -1,121 +1,11 @@
 #include "GaeaTerrainFractalWarp.h"
 
+#include "GaeaFastNoiseSIMDCompat.h"
+
 namespace GaeaTerrainProceduralOps
 {
 	namespace
 	{
-		uint32 WarpHash(uint32 X)
-		{
-			X ^= X >> 16;
-			X *= 0x7feb352dU;
-			X ^= X >> 15;
-			X *= 0x846ca68bU;
-			X ^= X >> 16;
-			return X;
-		}
-
-		float WarpHash01(int32 X, int32 Y, int32 Seed, uint32 Salt)
-		{
-			uint32 H = static_cast<uint32>(X) * 0x9e3779b9U;
-			H ^= static_cast<uint32>(Y) * 0x85ebca6bU;
-			H ^= static_cast<uint32>(Seed) * 0xc2b2ae35U;
-			H ^= Salt;
-			return static_cast<float>(WarpHash(H) & 0x00ffffffU) / 16777215.0f;
-		}
-
-		float Fade(float T)
-		{
-			return T * T * T * (T * (T * 6.0f - 15.0f) + 10.0f);
-		}
-
-		float Perlin(float X, float Y, int32 Seed, uint32 Salt)
-		{
-			const int32 X0 = FMath::FloorToInt(X);
-			const int32 Y0 = FMath::FloorToInt(Y);
-			const float TX = X - static_cast<float>(X0);
-			const float TY = Y - static_cast<float>(Y0);
-			const float SX = Fade(TX);
-			const float SY = Fade(TY);
-
-			auto Dot = [&](int32 GX, int32 GY, float DX, float DY)
-			{
-				const float A = WarpHash01(GX, GY, Seed, Salt) * 2.0f * PI;
-				return FMath::Cos(A) * DX + FMath::Sin(A) * DY;
-			};
-
-			const float A = FMath::Lerp(
-				Dot(X0, Y0, TX, TY),
-				Dot(X0 + 1, Y0, TX - 1.0f, TY),
-				SX);
-			const float B = FMath::Lerp(
-				Dot(X0, Y0 + 1, TX, TY - 1.0f),
-				Dot(X0 + 1, Y0 + 1, TX - 1.0f, TY - 1.0f),
-				SX);
-			return FMath::Clamp(FMath::Lerp(A, B, SY) * 1.41421356f, -1.0f, 1.0f);
-		}
-
-		float Fbm(float X, float Y, int32 Octaves, float Gain, int32 Seed, uint32 Salt)
-		{
-			float Result = 0.0f;
-			float Amplitude = 1.0f;
-			float Weight = 0.0f;
-			float Frequency = 1.0f;
-			for (int32 I = 0; I < FMath::Max(Octaves, 1); ++I)
-			{
-				Result += Perlin(X * Frequency, Y * Frequency, Seed + I, Salt) * Amplitude;
-				Weight += Amplitude;
-				Frequency *= 2.0f;
-				Amplitude *= Gain;
-			}
-			return Weight > UE_SMALL_NUMBER ? Result / Weight : 0.0f;
-		}
-
-		struct FCellularPair
-		{
-			float F1 = TNumericLimits<float>::Max();
-			float F2 = TNumericLimits<float>::Max();
-		};
-
-		FCellularPair CellularPair(float X, float Y, float Jitter, int32 Seed)
-		{
-			const int32 BX = FMath::FloorToInt(X);
-			const int32 BY = FMath::FloorToInt(Y);
-			FCellularPair Pair;
-			for (int32 CY = BY - 2; CY <= BY + 2; ++CY)
-			{
-				for (int32 CX = BX - 2; CX <= BX + 2; ++CX)
-				{
-					const float Angle = WarpHash01(CX, CY, Seed, 0x39u) * 2.0f * PI;
-					const float Radius = Jitter * (0.72f + WarpHash01(CY, CX, Seed, 0x93u) * 0.28f);
-					const float DX = X - (static_cast<float>(CX) + FMath::Cos(Angle) * Radius);
-					const float DY = Y - (static_cast<float>(CY) + FMath::Sin(Angle) * Radius);
-					const float D = DX * DX + DY * DY;
-					if (D < Pair.F1)
-					{
-						Pair.F2 = Pair.F1;
-						Pair.F1 = D;
-					}
-					else if (D < Pair.F2)
-					{
-						Pair.F2 = D;
-					}
-				}
-			}
-			return Pair;
-		}
-
-		float VoronoiWarpNoise(float X, float Y, FName NoiseType, float Jitter, int32 Seed)
-		{
-			const FCellularPair Pair = CellularPair(X, Y, Jitter, Seed);
-			if (NoiseType == TEXT("Voronoi R")) return Pair.F1;
-			if (NoiseType == TEXT("Voronoi A")) return Pair.F2;
-			if (NoiseType == TEXT("Voronoi P")) return Pair.F1 + Pair.F2;
-			if (NoiseType == TEXT("Voronoi S")) return Pair.F1 * Pair.F2;
-			if (NoiseType == TEXT("Voronoi M")) return Pair.F1 / FMath::Max(Pair.F2, UE_SMALL_NUMBER);
-			if (NoiseType == TEXT("Voronoi D")) return Perlin(X, Y, Seed, 0x4d31u);
-			return Pair.F1;
-		}
-
 		float MirrorCoord(float V, int32 MaxIndex)
 		{
 			if (MaxIndex <= 0) return 0.0f;
@@ -144,36 +34,149 @@ namespace GaeaTerrainProceduralOps
 			const int32 Y0 = FMath::FloorToInt(Y);
 			const int32 X1 = FMath::Min(X0 + 1, W - 1);
 			const int32 Y1 = FMath::Min(Y0 + 1, H - 1);
-			const float TX = X - X0;
-			const float TY = Y - Y0;
+			const float TX = X - static_cast<float>(X0);
+			const float TY = Y - static_cast<float>(Y0);
 			return FMath::Lerp(
 				FMath::Lerp(Field.AtInterior(X0, Y0), Field.AtInterior(X1, Y0), TX),
 				FMath::Lerp(Field.AtInterior(X0, Y1), Field.AtInterior(X1, Y1), TX),
 				TY);
 		}
 
-		void SampleWarpVector(
-			float X,
-			float Y,
-			float Frequency,
-			const FFractalWarpSettings& Settings,
-			int32 Seed,
-			float& OutX,
-			float& OutY)
+		FVector2D SampleVectorField(const TArray<FVector2D>& Field, int32 W, int32 H, float X, float Y, EEdgeBehaviour Edge)
 		{
-			if (Settings.NoiseType == TEXT("Perlin FBM") || Settings.NoiseType == TEXT("PerlinFBM"))
+			if (Edge == EEdgeBehaviour::Mirror)
 			{
-				OutX = Fbm(X * Frequency, Y * Frequency, Settings.Octaves, Settings.Roughness, Seed, 0x211u);
-				OutY = Fbm(X * Frequency, Y * Frequency, Settings.Octaves, Settings.Roughness, Seed + 1, 0x917u);
+				X = MirrorCoord(X, W - 1);
+				Y = MirrorCoord(Y, H - 1);
 			}
 			else
 			{
-				OutX = VoronoiWarpNoise(X * Frequency, Y * Frequency, Settings.NoiseType, Settings.Jitter, Seed);
-				OutY = VoronoiWarpNoise(X * Frequency, Y * Frequency, Settings.NoiseType, Settings.Jitter, Seed + 1);
+				X = FMath::Clamp(X, 0.0f, static_cast<float>(W - 1));
+				Y = FMath::Clamp(Y, 0.0f, static_cast<float>(H - 1));
 			}
+
+			const int32 X0 = FMath::FloorToInt(X);
+			const int32 Y0 = FMath::FloorToInt(Y);
+			const int32 X1 = FMath::Min(X0 + 1, W - 1);
+			const int32 Y1 = FMath::Min(Y0 + 1, H - 1);
+			const float TX = X - static_cast<float>(X0);
+			const float TY = Y - static_cast<float>(Y0);
+			return FMath::Lerp(
+				FMath::Lerp(Field[Y0 * W + X0], Field[Y0 * W + X1], TX),
+				FMath::Lerp(Field[Y1 * W + X0], Field[Y1 * W + X1], TX),
+				TY);
+		}
+
+		FName CanonicalWarpNoiseType(FName Type)
+		{
+			if (Type == TEXT("PerlinFBM")) return TEXT("Perlin FBM");
+			if (Type == TEXT("VoronoiR")) return TEXT("Voronoi R");
+			if (Type == TEXT("VoronoiA")) return TEXT("Voronoi A");
+			if (Type == TEXT("VoronoiP")) return TEXT("Voronoi P");
+			if (Type == TEXT("VoronoiS")) return TEXT("Voronoi S");
+			if (Type == TEXT("VoronoiM")) return TEXT("Voronoi M");
+			if (Type == TEXT("VoronoiD")) return TEXT("Voronoi D");
+			return Type;
+		}
+
+		float SampleFastNoiseWarp(
+			float X,
+			float Y,
+			float Z,
+			float Frequency,
+			FName NoiseType,
+			int32 Octaves,
+			float Roughness,
+			float Jitter,
+			int32 Seed)
+		{
+			NoiseType = CanonicalWarpNoiseType(NoiseType);
+			const float NX = X * Frequency;
+			const float NY = Y * Frequency;
+			const float NZ = Z * Frequency;
+
+			if (NoiseType == TEXT("Perlin FBM"))
+			{
+				// Gaea's FractalWarp configures FastNoiseSIMD as PerlinFractal/FBM,
+				// sets the requested octave count and gain, and leaves FastNoiseSIMD's
+				// default lacunarity at 2.0.
+				return GaeaFastNoiseSIMDCompat::PerlinFBM(
+					NX,
+					NY,
+					NZ,
+					FMath::Max(Octaves, 1),
+					2.0f,
+					Roughness,
+					Seed);
+			}
+
+			const GaeaFastNoiseSIMDCompat::FCellularSample Cellular =
+				GaeaFastNoiseSIMDCompat::Cellular(
+					NX,
+					NY,
+					NZ,
+					Jitter,
+					GaeaFastNoiseSIMDCompat::ECellularDistance::Euclidean,
+					Seed,
+					true);
+
+			if (NoiseType == TEXT("Voronoi R")) return Cellular.F1;
+			if (NoiseType == TEXT("Voronoi A")) return Cellular.F2;
+			if (NoiseType == TEXT("Voronoi P")) return Cellular.F1 + Cellular.F2;
+			if (NoiseType == TEXT("Voronoi S")) return Cellular.F1 * Cellular.F2;
+			if (NoiseType == TEXT("Voronoi M")) return Cellular.F1 / FMath::Max(Cellular.F2, UE_SMALL_NUMBER);
+
+			if (NoiseType == TEXT("Voronoi D"))
+			{
+				// FastNoiseSIMD's default cellular NoiseLookup is Simplex at frequency
+				// 0.2. The current Mountain/Ridge path does not request Voronoi D, so
+				// do not invent a substitute for it here. Returning the nearest-distance
+				// field keeps the unsupported branch deterministic until the supplied
+				// NoiseLookup path is ported.
+				return Cellular.F1;
+			}
+
+			return Cellular.F1;
+		}
+
+		void SampleWarpVector(
+			float X,
+			float Y,
+			float Z,
+			float Frequency,
+			const FFractalWarpSettings& Settings,
+			int32 SeedX,
+			int32 SeedY,
+			float Sign,
+			float& OutX,
+			float& OutY)
+		{
+			OutX = SampleFastNoiseWarp(
+				X,
+				Y,
+				Z,
+				Frequency,
+				Settings.NoiseType,
+				Settings.Octaves,
+				Settings.Roughness,
+				Settings.Jitter,
+				SeedX) * Sign;
+			OutY = SampleFastNoiseWarp(
+				X,
+				Y,
+				Z,
+				Frequency,
+				Settings.NoiseType,
+				Settings.Octaves,
+				Settings.Roughness,
+				Settings.Jitter,
+				SeedY) * Sign;
 
 			if (Settings.bNormalized)
 			{
+				// This normalization is not exercised by Mountain/Ridge fidelity paths,
+				// but preserve the recovered shape of the operation until the remaining
+				// obfuscated scalar is named from the supplied assembly.
 				const float LenSq = OutX * OutX + OutY * OutY + 0.1f;
 				const float InvLen = 0.5f / FMath::Sqrt(LenSq);
 				OutX *= InvLen;
@@ -203,35 +206,80 @@ namespace GaeaTerrainProceduralOps
 		const int32 H = Source.Domain.Dimensions.Y;
 		const float Resolution = static_cast<float>(W);
 		const float Size = FMath::Max(Settings.Size, 0.0001f);
+
+		// Directly recovered from QuadSpinner.Gaea.Nodes.Warps.FractalWarp:
+		//   num  = size * resolution
+		//   num2 = 1 / num
+		//   warp = strength * resolution * (persistStrength ? size : 1)
 		const float Frequency = 1.0f / (Size * FMath::Max(Resolution, 1.0f));
 		const float Warp = Settings.Strength * Resolution * (Settings.bPersistStrength ? Size : 1.0f);
-		const int32 Iterations = FMath::Max(Settings.Iterations, 1);
-		const float DirectionRadians = FMath::DegreesToRadians(Settings.ModulationDirectionDegrees);
-		const FVector2D ModAxis(-FMath::Cos(DirectionRadians), FMath::Sin(DirectionRadians));
+		const int32 RequestedIterations = FMath::Max(Settings.Iterations, 1);
+		const bool bPerlin = CanonicalWarpNoiseType(Settings.NoiseType) == TEXT("Perlin FBM");
+		const bool bNeedsPerturbationPass = !bPerlin && Settings.Perturbation > 0.0f;
 
-		if (Settings.Mode != TEXT("Bitmap") && Settings.Mode != TEXT("Vector Field Integral"))
+		// The supplied implementation adds one final Perlin perturbation iteration
+		// for cellular warp modes (except its special fourth iterative mode). The
+		// exact perturbation amplitude scalar is still obfuscated in the supplied
+		// assembly, so the source-certain Mountain/Perlin path is kept exact while
+		// cellular secondary perturbation remains deliberately disabled rather than
+		// replaced with another guessed coefficient.
+		const int32 Iterations = RequestedIterations;
+		(void)bNeedsPerturbationPass;
+
+		float DirectionDegrees = Settings.ModulationDirectionDegrees;
+		const float DirectionStep = 360.0f / static_cast<float>(RequestedIterations);
+		int32 SeedCursor = Settings.Seed;
+
+		if (Settings.Mode == TEXT("Vector Field"))
 		{
+			// Gaea IterativeWarpMode.Virtual: compose a coordinate field, then sample
+			// the original map once at the final coordinates.
 			TArray<FVector2D> Coordinates;
+			TArray<FVector2D> NextCoordinates;
 			Coordinates.SetNumUninitialized(W * H);
+			NextCoordinates.SetNumUninitialized(W * H);
 			for (int32 Y = 0; Y < H; ++Y)
 			{
 				for (int32 X = 0; X < W; ++X)
 				{
-					Coordinates[Y * W + X] = FVector2D(X, Y);
+					Coordinates[Y * W + X] = FVector2D(static_cast<double>(X), static_cast<double>(Y));
 				}
 			}
 
 			for (int32 Iter = 0; Iter < Iterations; ++Iter)
 			{
-				TArray<FVector2D> Next = Coordinates;
+				const float Radians = FMath::DegreesToRadians(DirectionDegrees);
+				const FVector2D ModAxis(-FMath::Cos(Radians), FMath::Sin(Radians));
+				DirectionDegrees += DirectionStep;
+				const float Sign = (Iter & 1) == 0 ? 1.0f : -1.0f;
+				const int32 SeedX = SeedCursor++;
+				const int32 SeedY = SeedCursor++;
+
 				for (int32 Y = 0; Y < H; ++Y)
 				{
 					for (int32 X = 0; X < W; ++X)
 					{
-						const FVector2D P = Coordinates[Y * W + X];
+						const FVector2D CurrentCoord = Coordinates[Y * W + X];
+						const float Z = Settings.ZScale > 0.0f
+							? Sample(Source, static_cast<float>(CurrentCoord.X), static_cast<float>(CurrentCoord.Y), Settings.EdgeBehaviour) * Settings.ZScale
+							: 0.0f;
+
+						// The decompiled Gaea code feeds the original pixel X/Y into FNSIMD
+						// on every Virtual iteration; only Z follows the composed coordinate
+						// field when zCoeff is enabled.
 						float WX = 0.0f;
 						float WY = 0.0f;
-						SampleWarpVector(P.X, P.Y, Frequency, Settings, Settings.Seed + Iter * 2, WX, WY);
+						SampleWarpVector(
+							static_cast<float>(X),
+							static_cast<float>(Y),
+							Z,
+							Frequency,
+							Settings,
+							SeedX,
+							SeedY,
+							Sign,
+							WX,
+							WY);
 
 						float ModOffset = 0.0f;
 						if (Settings.Modulator && Settings.Modulation > 0.0f)
@@ -241,12 +289,16 @@ namespace GaeaTerrainProceduralOps
 								* Resolution;
 						}
 
-						Next[Y * W + X] = FVector2D(
-							P.X + WX * Warp + ModAxis.X * ModOffset,
-							P.Y + WY * Warp + ModAxis.Y * ModOffset);
+						NextCoordinates[Y * W + X] = SampleVectorField(
+							Coordinates,
+							W,
+							H,
+							static_cast<float>(X) + WX * Warp + static_cast<float>(ModAxis.X) * ModOffset,
+							static_cast<float>(Y) + WY * Warp + static_cast<float>(ModAxis.Y) * ModOffset,
+							Settings.EdgeBehaviour);
 					}
 				}
-				Coordinates = MoveTemp(Next);
+				Swap(Coordinates, NextCoordinates);
 			}
 
 			OutField = Source;
@@ -255,33 +307,130 @@ namespace GaeaTerrainProceduralOps
 				for (int32 X = 0; X < W; ++X)
 				{
 					const FVector2D P = Coordinates[Y * W + X];
-					OutField.AtInterior(X, Y) = Sample(Source, P.X, P.Y, Settings.EdgeBehaviour);
+					OutField.AtInterior(X, Y) = Sample(Source, static_cast<float>(P.X), static_cast<float>(P.Y), Settings.EdgeBehaviour);
 				}
 			}
 		}
-		else
+		else if (Settings.Mode == TEXT("Bitmap"))
 		{
+			// Gaea IterativeWarpMode.Real: each iteration samples the current bitmap
+			// into the next bitmap, then makes that result the source of the next pass.
 			FGaeaScalarField Current = Source;
 			for (int32 Iter = 0; Iter < Iterations; ++Iter)
 			{
+				const float Radians = FMath::DegreesToRadians(DirectionDegrees);
+				const FVector2D ModAxis(-FMath::Cos(Radians), FMath::Sin(Radians));
+				DirectionDegrees += DirectionStep;
+				const float Sign = (Iter & 1) == 0 ? 1.0f : -1.0f;
+				const int32 SeedX = SeedCursor++;
+				const int32 SeedY = SeedCursor++;
 				FGaeaScalarField Next = Current;
+
 				for (int32 Y = 0; Y < H; ++Y)
 				{
 					for (int32 X = 0; X < W; ++X)
 					{
+						const float Z = Settings.ZScale > 0.0f ? Current.AtInterior(X, Y) * Settings.ZScale : 0.0f;
 						float WX = 0.0f;
 						float WY = 0.0f;
-						SampleWarpVector(static_cast<float>(X), static_cast<float>(Y), Frequency, Settings, Settings.Seed + Iter * 2, WX, WY);
+						SampleWarpVector(
+							static_cast<float>(X),
+							static_cast<float>(Y),
+							Z,
+							Frequency,
+							Settings,
+							SeedX,
+							SeedY,
+							Sign,
+							WX,
+							WY);
+
+						float ModOffset = 0.0f;
+						if (Settings.Modulator && Settings.Modulation > 0.0f)
+						{
+							ModOffset = (Settings.Modulator->AtInterior(X, Y) - 0.5f)
+								* Settings.Modulation
+								* Resolution;
+						}
 						Next.AtInterior(X, Y) = Sample(
 							Current,
-							X + WX * Warp,
-							Y + WY * Warp,
+							static_cast<float>(X) + WX * Warp + static_cast<float>(ModAxis.X) * ModOffset,
+							static_cast<float>(Y) + WY * Warp + static_cast<float>(ModAxis.Y) * ModOffset,
 							Settings.EdgeBehaviour);
 					}
 				}
 				Current = MoveTemp(Next);
 			}
 			OutField = MoveTemp(Current);
+		}
+		else
+		{
+			// Gaea IterativeWarpMode.Integral: accumulate displacement directly in
+			// coordinate vectors, then sample the source once. This path is included
+			// for contract completeness; Mountain itself uses Virtual mode.
+			TArray<FVector2D> Coordinates;
+			Coordinates.SetNumUninitialized(W * H);
+			for (int32 Y = 0; Y < H; ++Y)
+			{
+				for (int32 X = 0; X < W; ++X)
+				{
+					Coordinates[Y * W + X] = FVector2D(static_cast<double>(X), static_cast<double>(Y));
+				}
+			}
+
+			for (int32 Iter = 0; Iter < Iterations; ++Iter)
+			{
+				const float Radians = FMath::DegreesToRadians(DirectionDegrees);
+				const FVector2D ModAxis(-FMath::Cos(Radians), FMath::Sin(Radians));
+				DirectionDegrees += DirectionStep;
+				const float Sign = (Iter & 1) == 0 ? 1.0f : -1.0f;
+				const int32 SeedX = SeedCursor++;
+				const int32 SeedY = SeedCursor++;
+
+				for (int32 Y = 0; Y < H; ++Y)
+				{
+					for (int32 X = 0; X < W; ++X)
+					{
+						FVector2D& P = Coordinates[Y * W + X];
+						const float Z = Settings.ZScale > 0.0f
+							? Sample(Source, static_cast<float>(P.X), static_cast<float>(P.Y), Settings.EdgeBehaviour) * Settings.ZScale
+							: 0.0f;
+						float WX = 0.0f;
+						float WY = 0.0f;
+						SampleWarpVector(
+							static_cast<float>(P.X),
+							static_cast<float>(P.Y),
+							Z,
+							Frequency,
+							Settings,
+							SeedX,
+							SeedY,
+							Sign,
+							WX,
+							WY);
+
+						float ModOffset = 0.0f;
+						if (Settings.Modulator && Settings.Modulation > 0.0f)
+						{
+							ModOffset = (Settings.Modulator->AtInterior(X, Y) - 0.5f)
+								* Settings.Modulation
+								* Resolution;
+						}
+						P.X += WX * Warp + ModAxis.X * ModOffset;
+						P.Y += WY * Warp + ModAxis.Y * ModOffset;
+					}
+				}
+			}
+
+			OutField = Source;
+			for (int32 Y = 0; Y < H; ++Y)
+			{
+				for (int32 X = 0; X < W; ++X)
+				{
+					const FVector2D P = Coordinates[Y * W + X];
+					OutField.AtInterior(X, Y) = Sample(Source, static_cast<float>(P.X), static_cast<float>(P.Y), Settings.EdgeBehaviour);
+				}
+			}
 		}
 
 		if (OutError) OutError->Reset();
