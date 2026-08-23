@@ -8,7 +8,7 @@ namespace
 	{
 		FGaeaUtilityRegistrationHook()
 		{
-			FCoreDelegates::OnPostEngineInit.AddStatic(&FGaeaUtilityRegistrationHook::RegisterNodes);
+			FCoreDelegates::GetOnPostEngineInit().AddStatic(&FGaeaUtilityRegistrationHook::RegisterNodes);
 		}
 
 		static void RegisterNodes()
