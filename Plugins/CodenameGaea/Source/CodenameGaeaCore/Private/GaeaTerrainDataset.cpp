@@ -3,6 +3,30 @@
 namespace
 {
 	const FName HeightFieldName(TEXT("Height"));
+
+	bool IsIntrinsicHeightDerivedField(FName Name)
+	{
+		// These fields are analysis of the current Height surface and are therefore
+		// never safe to carry across a Height replacement. Geology/material/process
+		// fields are intentionally NOT listed here because they may be authored by
+		// graph nodes and must not be silently discarded.
+		static const TSet<FName> IntrinsicDerived =
+		{
+			TEXT("Elevation"),
+			TEXT("SlopeDegrees"),
+			TEXT("Concavity"),
+			TEXT("Convexity"),
+			TEXT("Mountain"),
+			TEXT("Foothill"),
+			TEXT("Plains"),
+			TEXT("FlowDirection"),
+			TEXT("FlowAccumulation"),
+			TEXT("CatchmentAreaKm2"),
+			TEXT("DistanceToOutletKm"),
+			TEXT("StreamOrder")
+		};
+		return IntrinsicDerived.Contains(Name);
+	}
 }
 
 bool FGaeaTerrainDataset::IsEmpty() const
@@ -38,7 +62,8 @@ bool FGaeaTerrainDataset::SetScalarField(const FGaeaScalarField& Field)
 		InvalidateHeightDerivedFields();
 	}
 	ScalarFields.Add(Name, Field);
-	HeightDerivedFields.Remove(Name);
+	if (IsIntrinsicHeightDerivedField(Name)) HeightDerivedFields.Add(Name);
+	else HeightDerivedFields.Remove(Name);
 	return true;
 }
 
@@ -55,7 +80,8 @@ bool FGaeaTerrainDataset::SetScalarField(FGaeaScalarField&& Field)
 		InvalidateHeightDerivedFields();
 	}
 	ScalarFields.Add(Name, MoveTemp(Field));
-	HeightDerivedFields.Remove(Name);
+	if (IsIntrinsicHeightDerivedField(Name)) HeightDerivedFields.Add(Name);
+	else HeightDerivedFields.Remove(Name);
 	return true;
 }
 
