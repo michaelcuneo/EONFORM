@@ -111,7 +111,6 @@ namespace GaeaNetworkProcess
 
 	bool RequireTerrain(
 		const FGaeaTerrainNodeInputs& Inputs,
-		const FGaeaTerrainEvaluationContext& Context,
 		FGaeaTerrainDataset& Dataset,
 		const FGaeaTerrainValue*& Input,
 		FString& Error)
@@ -124,11 +123,7 @@ namespace GaeaNetworkProcess
 			return false;
 		}
 		Dataset = Input->TerrainDataset;
-		return FGaeaTerrainDerivedData::EnsureHydrology(
-			Dataset,
-			Input->HeightScale,
-			Context.PhysicalMetrics,
-			&Error);
+		return true;
 	}
 
 	bool EvaluateAnastomosis(
@@ -140,8 +135,9 @@ namespace GaeaNetworkProcess
 	{
 		FGaeaTerrainDataset Dataset;
 		const FGaeaTerrainValue* Input = nullptr;
-		if (!RequireTerrain(Inputs, Context, Dataset, Input, Error)) return false;
+		if (!RequireTerrain(Inputs, Dataset, Input, Error)) return false;
 		if (!FGaeaTerrainDerivedData::EnsureContext(Dataset, Input->HeightScale, Context.PhysicalMetrics, &Error)) return false;
+		if (!FGaeaTerrainDerivedData::EnsureFlowAnalysis(Dataset, Input->HeightScale, Context.PhysicalMetrics, &Error)) return false;
 
 		const FGaeaScalarField* Source = Dataset.FindScalarField(GaeaTerrainFieldNames::Height);
 		const FGaeaScalarField* Catchment = Dataset.FindScalarField(GaeaTerrainFieldNames::CatchmentAreaKm2);
@@ -273,7 +269,7 @@ namespace GaeaNetworkProcess
 	{
 		FGaeaTerrainDataset Dataset;
 		const FGaeaTerrainValue* Input = nullptr;
-		if (!RequireTerrain(Inputs, Context, Dataset, Input, Error)) return false;
+		if (!RequireTerrain(Inputs, Dataset, Input, Error)) return false;
 		if (!FGaeaTerrainDerivedData::EnsureContext(Dataset, Input->HeightScale, Context.PhysicalMetrics, &Error)) return false;
 
 		const FGaeaScalarField* Source = Dataset.FindScalarField(GaeaTerrainFieldNames::Height);
