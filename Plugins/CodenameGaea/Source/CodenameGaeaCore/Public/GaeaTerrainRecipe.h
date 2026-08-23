@@ -135,6 +135,23 @@ namespace GaeaTerrainNodeTypes
 	CODENAMEGAEACORE_API extern const FName TextureBase;
 	CODENAMEGAEACORE_API extern const FName Texturizer;
 	CODENAMEGAEACORE_API extern const FName ColorThreshold;
+
+	// Public Utility nodes. These are thin graph wrappers over GaeaTerrainUtilityOps.
+	CODENAMEGAEACORE_API extern const FName Accumulator;
+	CODENAMEGAEACORE_API extern const FName Chokepoint;
+	CODENAMEGAEACORE_API extern const FName Compare;
+	CODENAMEGAEACORE_API extern const FName DataExtractor;
+	CODENAMEGAEACORE_API extern const FName Gate;
+	CODENAMEGAEACORE_API extern const FName Layers;
+	CODENAMEGAEACORE_API extern const FName Mask;
+	CODENAMEGAEACORE_API extern const FName Math;
+	CODENAMEGAEACORE_API extern const FName Mixer;
+	CODENAMEGAEACORE_API extern const FName Repeat;
+	CODENAMEGAEACORE_API extern const FName Reseed;
+	CODENAMEGAEACORE_API extern const FName Route;
+	CODENAMEGAEACORE_API extern const FName Seamless;
+	CODENAMEGAEACORE_API extern const FName Switch;
+	CODENAMEGAEACORE_API extern const FName Var;
 }
 
 USTRUCT(BlueprintType)
