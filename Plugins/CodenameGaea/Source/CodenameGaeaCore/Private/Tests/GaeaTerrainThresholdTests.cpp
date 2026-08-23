@@ -29,10 +29,14 @@ bool FGaeaTerrainThresholdDescriptorTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Threshold descriptor exists"), FGaeaTerrainNodeDescriptorRegistry::Get(GaeaTerrainNodeTypes::Threshold, Descriptor));
 	TestEqual(TEXT("Threshold input count"), Descriptor.Inputs.Num(), 1);
 	TestEqual(TEXT("Threshold output count"), Descriptor.Outputs.Num(), 1);
-	TestEqual(TEXT("Threshold parameter count"), Descriptor.Parameters.Num(), 4);
+	TestEqual(TEXT("Threshold parameter count"), Descriptor.Parameters.Num(), 1);
 	if (Descriptor.Outputs.Num() == 1)
 	{
 		TestEqual(TEXT("Threshold output pin"), Descriptor.Outputs[0].Name, FName(TEXT("Out")));
+	}
+	if (Descriptor.Parameters.Num() == 1)
+	{
+		TestEqual(TEXT("Threshold Level parameter"), Descriptor.Parameters[0].Name, FName(TEXT("Level")));
 	}
 	return true;
 }
@@ -58,9 +62,7 @@ bool FGaeaTerrainThresholdTerminalTest::RunTest(const FString& Parameters)
 	FGaeaTerrainNode Threshold;
 	Threshold.Id = FGuid(0x92000001, 0x92000002, 0x92000003, 0x92000004);
 	Threshold.Type = GaeaTerrainNodeTypes::Threshold;
-	Threshold.NumericParameters.Add(TEXT("Scale"), 0.5);
-	Threshold.BoolParameters.Add(TEXT("Adaptive"), false);
-	Threshold.BoolParameters.Add(TEXT("Invert"), false);
+	Threshold.NumericParameters.Add(TEXT("Level"), 0.5);
 
 	Recipe.Nodes = { Source, Threshold };
 	GaeaThresholdTests::Connect(Recipe, Source.Id, TEXT("Terrain"), Threshold.Id, TEXT("Input"));
