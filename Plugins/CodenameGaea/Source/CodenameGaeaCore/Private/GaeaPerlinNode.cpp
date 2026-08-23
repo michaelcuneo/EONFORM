@@ -1,10 +1,9 @@
 #include "GaeaPerlinNode.h"
 
-#include "GaeaGridDomain.h"
 #include "GaeaTerrainEvaluator.h"
 #include "GaeaTerrainFieldNames.h"
-#include "GaeaTerrainNoise.h"
 #include "GaeaTerrainNodeDescriptor.h"
+#include "GaeaTerrainProceduralOps.h"
 #include "GaeaTerrainRecipe.h"
 
 namespace
@@ -60,86 +59,61 @@ namespace
 		return Parameter;
 	}
 
-	float PerlinShape(float Value, FName Type)
+	FGaeaGridDomain BuildPerlinDomain(const FGaeaTerrainEvaluationContext& Context)
 	{
-		if (Type == TEXT("Ridged")) return FMath::Clamp(1.0f - FMath::Abs(Value), -1.0f, 1.0f);
-		if (Type == TEXT("Billowy")) return FMath::Clamp(FMath::Abs(Value) * 2.0f - 1.0f, -1.0f, 1.0f);
-		return FMath::Clamp(Value, -1.0f, 1.0f);
+		const int32 Width = FMath::Clamp(Context.TargetResolution.X > 1 ? Context.TargetResolution.X : 257, 2, 4097);
+		const int32 Height = FMath::Clamp(Context.TargetResolution.Y > 1 ? Context.TargetResolution.Y : Width, 2, 4097);
+		double WorldWidthCm = 100000.0;
+		double WorldDepthCm = 100000.0;
+		if (Context.PhysicalMetrics.HasWorldDimensions())
+		{
+			WorldWidthCm = Context.PhysicalMetrics.WorldWidthMeters * 100.0;
+			WorldDepthCm = Context.PhysicalMetrics.WorldDepthMeters * 100.0;
+		}
+		return FGaeaGridDomain::Make(
+			FIntPoint(Width, Height),
+			FVector2d(-WorldWidthCm * 0.5, -WorldDepthCm * 0.5),
+			FVector2d(WorldWidthCm * 0.5, WorldDepthCm * 0.5));
 	}
 
-	bool EvaluatePerlinNodeCurrent(const FGaeaTerrainNode& Node, const FGaeaTerrainNodeInputs&, const FGaeaTerrainEvaluationContext&, FGaeaTerrainNodeEvaluation& Out, FString& Error)
+	float ResolveHeightScale(const FGaeaTerrainEvaluationContext& Context)
 	{
-		// Build-domain controls are engine integration details, not Gaea node
-		// properties. Existing recipes may still carry them, so keep honoring
-		// them without exposing them on the public node.
-		const int32 Resolution = FMath::Clamp<int32>(static_cast<int32>(Node.GetInteger(TEXT("Resolution"), 257)), 2, 1025);
-		const float WorldSize = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("WorldSize"), 100000.0)), 1.0f, 10000000.0f);
-		const float HeightScale = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("HeightScale"), 8000.0)), 1.0f, 1000000.0f);
-
-		const FName Type = Node.GetName(TEXT("Type"), TEXT("FBM"));
-		if (Type != TEXT("FBM") && Type != TEXT("Ridged") && Type != TEXT("Billowy"))
+		if (Context.PhysicalMetrics.HasElevationScale())
 		{
-			Error = TEXT("Perlin Type must be FBM, Ridged, or Billowy.");
-			return false;
+			return static_cast<float>(Context.PhysicalMetrics.ElevationScaleMeters * 100.0);
 		}
-		const float Scale = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Scale"), 0.5)), 0.001f, 10.0f);
-		const int32 Octaves = FMath::Clamp(static_cast<int32>(Node.GetInteger(TEXT("Octaves"), 6)), 1, 16);
-		const float Gain = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Gain"), 0.5)), 0.0f, 1.0f);
-		const float HeightAmount = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Height"), 1.0)), 0.0f, 4.0f);
-		const int32 Seed = static_cast<int32>(Node.GetInteger(TEXT("Seed"), 1337));
-		const FName WarpType = Node.GetName(TEXT("WarpType"), TEXT("None"));
-		const float WarpFrequency = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("WarpFrequency"), 0.5)), 0.001f, 10.0f);
-		const float WarpAmplitude = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("WarpAmplitude"), 0.0)), 0.0f, 4.0f);
-		const int32 WarpOctaves = FMath::Clamp(static_cast<int32>(Node.GetInteger(TEXT("WarpOctaves"), 2)), 1, 8);
-		const float ScaleX = FMath::Max(static_cast<float>(Node.GetNumber(TEXT("ScaleX"), 1.0)), 0.001f);
-		const float ScaleY = FMath::Max(static_cast<float>(Node.GetNumber(TEXT("ScaleY"), 1.0)), 0.001f);
-		const float OffsetX = static_cast<float>(Node.GetNumber(TEXT("X"), 0.0));
-		const float OffsetY = static_cast<float>(Node.GetNumber(TEXT("Y"), 0.0));
+		return FMath::Max(Context.HeightScale, 1.0f);
+	}
 
-		const double HalfWorldSize = static_cast<double>(WorldSize) * 0.5;
-		const FGaeaGridDomain Domain = FGaeaGridDomain::Make(FIntPoint(Resolution, Resolution), FVector2d(-HalfWorldSize, -HalfWorldSize), FVector2d(HalfWorldSize, HalfWorldSize));
+	bool EvaluatePerlinNodeCurrent(const FGaeaTerrainNode& Node, const FGaeaTerrainNodeInputs&, const FGaeaTerrainEvaluationContext& Context, FGaeaTerrainNodeEvaluation& Out, FString& Error)
+	{
+		const FGaeaGridDomain Domain = BuildPerlinDomain(Context);
 		if (!Domain.IsValid())
 		{
 			Error = TEXT("Perlin produced an invalid grid domain.");
 			return false;
 		}
 
-		FGaeaFractalNoiseSettings Settings;
-		Settings.Frequency = FMath::Clamp(0.00055f / Scale, 0.000001f, 1.0f);
-		Settings.Octaves = Octaves;
-		Settings.Persistence = Gain;
-		Settings.Lacunarity = 2.0f;
-		FGaeaFractalNoiseSettings WarpSettings = Settings;
-		WarpSettings.Frequency = FMath::Clamp(Settings.Frequency * WarpFrequency, 0.000001f, 1.0f);
-		WarpSettings.Octaves = WarpOctaves;
+		GaeaTerrainProceduralOps::FPerlinSettings Settings;
+		Settings.Type = Node.GetName(TEXT("Type"), TEXT("FBM"));
+		Settings.Scale = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Scale"), 0.5)), 0.0001f, 1.0f);
+		Settings.Octaves = FMath::Clamp(static_cast<int32>(Node.GetInteger(TEXT("Octaves"), 10)), 1, 14);
+		Settings.Gain = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Gain"), 0.5)), 0.0f, 1.0f);
+		Settings.Seed = static_cast<int32>(Node.GetInteger(TEXT("Seed"), 1337));
+		Settings.WarpType = Node.GetName(TEXT("WarpType"), TEXT("Complex"));
+		Settings.WarpFrequency = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("WarpFrequency"), 0.05)), 0.0f, 1.0f);
+		Settings.WarpAmplitude = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("WarpAmplitude"), 0.5)), 0.0f, 1.0f);
+		Settings.WarpOctaves = FMath::Clamp(static_cast<int32>(Node.GetInteger(TEXT("WarpOctaves"), 10)), 1, 14);
+		Settings.ScaleX = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("ScaleX"), 1.0)), 0.0001f, 100.0f);
+		Settings.ScaleY = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("ScaleY"), 1.0)), 0.0001f, 100.0f);
+		Settings.X = 1.0f - FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("X"), 0.5)), 0.0f, 1.0f);
+		Settings.Y = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Y"), 0.5)), 0.0f, 1.0f);
 
-		FGaeaFieldDescriptor Descriptor;
-		Descriptor.Name = GaeaTerrainFieldNames::Height;
-		Descriptor.Unit = EGaeaFieldUnit::Normalized;
-		Descriptor.Interpolation = EGaeaInterpolation::Bilinear;
 		FGaeaScalarField HeightField;
-		HeightField.Initialize(Domain, Descriptor);
-		const FVector2D SeedOffset = FGaeaTerrainNoise::MakeSeedOffset(Seed);
-		const FVector2D WarpSeedA = FGaeaTerrainNoise::MakeSeedOffset(Seed ^ 0x51ed270b);
-		const FVector2D WarpSeedB = FGaeaTerrainNoise::MakeSeedOffset(Seed ^ 0x68bc21eb);
+		if (!GaeaTerrainProceduralOps::GeneratePerlin(Domain, Settings, HeightField, &Error)) return false;
 
-		for (int32 Y = 0; Y < Resolution; ++Y)
-		{
-			for (int32 X = 0; X < Resolution; ++X)
-			{
-				const FVector2d World = Domain.InteriorSampleToWorld(X, Y);
-				FVector2D P((static_cast<float>(World.X) + OffsetX) / ScaleX, (static_cast<float>(World.Y) + OffsetY) / ScaleY);
-				if (WarpType != TEXT("None") && WarpAmplitude > 0.0f)
-				{
-					const float WX = FGaeaTerrainNoise::SampleFractal(P, WarpSeedA, WarpSettings);
-					const float WY = FGaeaTerrainNoise::SampleFractal(P, WarpSeedB, WarpSettings);
-					const float Complexity = WarpType == TEXT("Complex") ? 2.0f : 1.0f;
-					P += FVector2D(WX, WY) * WarpAmplitude * WorldSize * 0.02f * Complexity;
-				}
-				const float Raw = FGaeaTerrainNoise::SampleFractal(P, SeedOffset, Settings);
-				HeightField.AtInterior(X, Y) = FMath::Clamp(PerlinShape(Raw, Type) * HeightAmount, -1.0f, 1.0f);
-			}
-		}
+		const float HeightAmount = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Height"), 1.0)), 0.0f, 1.0f);
+		for (float& Value : HeightField.Values) Value *= HeightAmount;
 
 		FGaeaTerrainDataset Dataset;
 		if (!Dataset.SetScalarField(MoveTemp(HeightField)))
@@ -147,7 +121,7 @@ namespace
 			Error = TEXT("Perlin could not publish its Height field.");
 			return false;
 		}
-		FGaeaTerrainValue Result = FGaeaTerrainValue::MakeTerrain(MoveTemp(Dataset), HeightScale);
+		FGaeaTerrainValue Result = FGaeaTerrainValue::MakeTerrain(MoveTemp(Dataset), ResolveHeightScale(Context));
 		if (!Result.IsValid())
 		{
 			Error = TEXT("Perlin produced an invalid terrain value.");
@@ -164,22 +138,22 @@ void RegisterGaeaPerlinNode()
 	Descriptor.Type = GaeaTerrainNodeTypes::PerlinNoise;
 	Descriptor.DisplayName = TEXT("Perlin");
 	Descriptor.Category = TEXT("Primitive");
-	Descriptor.Description = TEXT("Generates Perlin-based FBM, ridged, or billowy terrain with optional domain warp and transform controls.");
+	Descriptor.Description = TEXT("Generates Perlin FBM terrain at the active graph resolution with the documented warp and transform controls.");
 	Descriptor.Outputs.Add(PerlinTerrainPort(TEXT("Out"), TEXT("Out")));
 	Descriptor.Parameters.Add(PerlinNameParameter(TEXT("Type"), TEXT("Type"), TEXT("FBM"), { TEXT("FBM"), TEXT("Ridged"), TEXT("Billowy") }, TEXT("Noise")));
-	Descriptor.Parameters.Add(PerlinNumberParameter(TEXT("Scale"), TEXT("Scale"), 0.5, 0.001, 10.0, TEXT("Noise")));
-	Descriptor.Parameters.Add(PerlinIntegerParameter(TEXT("Octaves"), TEXT("Octaves"), 6, 1, 16, TEXT("Noise")));
+	Descriptor.Parameters.Add(PerlinNumberParameter(TEXT("Scale"), TEXT("Scale"), 0.5, 0.0, 1.0, TEXT("Noise")));
+	Descriptor.Parameters.Add(PerlinIntegerParameter(TEXT("Octaves"), TEXT("Octaves"), 10, 1, 14, TEXT("Noise")));
 	Descriptor.Parameters.Add(PerlinNumberParameter(TEXT("Gain"), TEXT("Gain"), 0.5, 0.0, 1.0, TEXT("Noise")));
-	Descriptor.Parameters.Add(PerlinNumberParameter(TEXT("Height"), TEXT("Height"), 1.0, 0.0, 4.0, TEXT("Noise")));
+	Descriptor.Parameters.Add(PerlinNumberParameter(TEXT("Height"), TEXT("Height"), 1.0, 0.0, 1.0, TEXT("Noise")));
 	Descriptor.Parameters.Add(PerlinIntegerParameter(TEXT("Seed"), TEXT("Seed"), 1337, -2147483647, 2147483647, TEXT("Noise")));
-	Descriptor.Parameters.Add(PerlinNameParameter(TEXT("WarpType"), TEXT("Type"), TEXT("None"), { TEXT("None"), TEXT("Simple"), TEXT("Complex") }, TEXT("Warp")));
-	Descriptor.Parameters.Add(PerlinNumberParameter(TEXT("WarpFrequency"), TEXT("Frequency"), 0.5, 0.001, 10.0, TEXT("Warp")));
-	Descriptor.Parameters.Add(PerlinNumberParameter(TEXT("WarpAmplitude"), TEXT("Amplitude"), 0.0, 0.0, 4.0, TEXT("Warp")));
-	Descriptor.Parameters.Add(PerlinIntegerParameter(TEXT("WarpOctaves"), TEXT("Octaves"), 2, 1, 8, TEXT("Warp")));
-	Descriptor.Parameters.Add(PerlinNumberParameter(TEXT("ScaleX"), TEXT("Scale X"), 1.0, 0.001, 10.0, TEXT("Transform")));
-	Descriptor.Parameters.Add(PerlinNumberParameter(TEXT("ScaleY"), TEXT("Scale Y"), 1.0, 0.001, 10.0, TEXT("Transform")));
-	Descriptor.Parameters.Add(PerlinNumberParameter(TEXT("X"), TEXT("X"), 0.0, -1000000.0, 1000000.0, TEXT("Transform")));
-	Descriptor.Parameters.Add(PerlinNumberParameter(TEXT("Y"), TEXT("Y"), 0.0, -1000000.0, 1000000.0, TEXT("Transform")));
+	Descriptor.Parameters.Add(PerlinNameParameter(TEXT("WarpType"), TEXT("Type"), TEXT("Complex"), { TEXT("None"), TEXT("Simple"), TEXT("Complex") }, TEXT("Warp")));
+	Descriptor.Parameters.Add(PerlinNumberParameter(TEXT("WarpFrequency"), TEXT("Frequency"), 0.05, 0.0, 1.0, TEXT("Warp")));
+	Descriptor.Parameters.Add(PerlinNumberParameter(TEXT("WarpAmplitude"), TEXT("Amplitude"), 0.5, 0.0, 1.0, TEXT("Warp")));
+	Descriptor.Parameters.Add(PerlinIntegerParameter(TEXT("WarpOctaves"), TEXT("Octaves"), 10, 1, 14, TEXT("Warp")));
+	Descriptor.Parameters.Add(PerlinNumberParameter(TEXT("ScaleX"), TEXT("Scale X"), 1.0, 0.0001, 100.0, TEXT("Transform")));
+	Descriptor.Parameters.Add(PerlinNumberParameter(TEXT("ScaleY"), TEXT("Scale Y"), 1.0, 0.0001, 100.0, TEXT("Transform")));
+	Descriptor.Parameters.Add(PerlinNumberParameter(TEXT("X"), TEXT("X"), 0.5, 0.0, 1.0, TEXT("Transform")));
+	Descriptor.Parameters.Add(PerlinNumberParameter(TEXT("Y"), TEXT("Y"), 0.5, 0.0, 1.0, TEXT("Transform")));
 	FGaeaTerrainNodeDescriptorRegistry::Register(Descriptor);
 	FGaeaTerrainNodeRegistry::Register(GaeaTerrainNodeTypes::PerlinNoise, EvaluatePerlinNodeCurrent);
 }
