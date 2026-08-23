@@ -31,4 +31,7 @@ namespace GaeaTerrainFieldNames
 	const FName FlowMapAccumulation(TEXT("FlowMapAccumulation"));
 	const FName FlowMapClassic(TEXT("FlowMapClassic"));
 	const FName FlowMapClassicHierarchy(TEXT("FlowMapClassicHierarchy"));
+	const FName Peaks(TEXT("Peaks"));
+	const FName RockMap(TEXT("RockMap"));
+	const FName Soil(TEXT("Soil"));
 }
