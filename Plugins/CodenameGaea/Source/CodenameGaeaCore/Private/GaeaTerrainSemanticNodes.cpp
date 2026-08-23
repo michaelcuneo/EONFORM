@@ -41,6 +41,17 @@ namespace
 		return Parameter;
 	}
 
+	FGaeaTerrainParameterDescriptor SemanticBoolean(FName Name, const TCHAR* DisplayName, bool Default, const TCHAR* Group)
+	{
+		FGaeaTerrainParameterDescriptor Parameter;
+		Parameter.Name = Name;
+		Parameter.DisplayName = DisplayName;
+		Parameter.Group = Group;
+		Parameter.Type = EGaeaTerrainParameterType::Boolean;
+		Parameter.DefaultBoolean = Default;
+		return Parameter;
+	}
+
 	FGaeaScalarField MakeSemanticField(const FGaeaGridDomain& Domain, FName Name)
 	{
 		FGaeaFieldDescriptor Descriptor;
@@ -98,8 +109,9 @@ namespace
 			return false;
 		}
 
-		const float Threshold = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Threshold"), 0.58)), 0.0f, 1.0f);
-		const float Falloff = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Falloff"), 0.18)), 0.001f, 1.0f);
+		const float Falloff = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Falloff"), 0.42)), 0.001f, 1.0f);
+		const bool bPrecise = Node.GetBool(TEXT("Precise"), false);
+		const float Threshold = FMath::Lerp(0.76f, 0.40f, Falloff);
 
 		FGaeaScalarField Peaks = MakeSemanticField(Elevation->Domain, GaeaTerrainFieldNames::Peaks);
 		for (int32 Y = 0; Y < Elevation->Domain.Dimensions.Y; ++Y)
@@ -110,7 +122,32 @@ namespace
 				const float C = FMath::Clamp(Convexity->AtInterior(X, Y), 0.0f, 1.0f);
 				const float M = FMath::Clamp(Mountain->AtInterior(X, Y), 0.0f, 1.0f);
 				const float S = FMath::Clamp(Slope->AtInterior(X, Y) / 65.0f, 0.0f, 1.0f);
-				const float Score = E * 0.42f + C * 0.30f + M * 0.20f + S * 0.08f;
+				float Score = E * 0.42f + C * 0.30f + M * 0.20f + S * 0.08f;
+
+				if (bPrecise)
+				{
+					float NeighborMax = 0.0f;
+					float NeighborMean = 0.0f;
+					int32 NeighborCount = 0;
+					for (int32 OY = -1; OY <= 1; ++OY)
+					{
+						for (int32 OX = -1; OX <= 1; ++OX)
+						{
+							if (OX == 0 && OY == 0) continue;
+							const int32 SX = FMath::Clamp(X + OX, 0, Elevation->Domain.Dimensions.X - 1);
+							const int32 SY = FMath::Clamp(Y + OY, 0, Elevation->Domain.Dimensions.Y - 1);
+							const float Neighbor = FMath::Clamp(Elevation->AtInterior(SX, SY), 0.0f, 1.0f);
+							NeighborMax = FMath::Max(NeighborMax, Neighbor);
+							NeighborMean += Neighbor;
+							++NeighborCount;
+						}
+					}
+					NeighborMean /= FMath::Max(NeighborCount, 1);
+					const float Prominence = FMath::Clamp((E - NeighborMean) * 8.0f + 0.5f, 0.0f, 1.0f);
+					const float IsLocalHigh = E + 0.002f >= NeighborMax ? 1.0f : 0.35f;
+					Score *= FMath::Lerp(0.55f, 1.20f, Prominence) * IsLocalHigh;
+				}
+
 				Peaks.AtInterior(X, Y) = Smooth01((Score - Threshold + Falloff) / Falloff);
 			}
 		}
@@ -155,8 +192,8 @@ namespace
 			return false;
 		}
 
-		const float Exposure = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Exposure"), 0.55)), 0.0f, 1.0f);
-		const float Steepness = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Steepness"), 0.52)), 0.0f, 1.0f);
+		const float Coverage = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Coverage"), 0.55)), 0.0f, 1.0f);
+		const float Density = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Density"), 0.52)), 0.0f, 1.0f);
 
 		FGaeaScalarField RockMap = MakeSemanticField(Slope->Domain, GaeaTerrainFieldNames::RockMap);
 		for (int32 Y = 0; Y < Slope->Domain.Dimensions.Y; ++Y)
@@ -168,9 +205,11 @@ namespace
 				const float W = FMath::Clamp(Weathering->AtInterior(X, Y), 0.0f, 1.0f);
 				const float Soil = FMath::Clamp(SoilDepth->AtInterior(X, Y), 0.0f, 1.0f);
 				const float Convex = FMath::Clamp(Convexity->AtInterior(X, Y), 0.0f, 1.0f);
-				const float Structural = H * 0.46f + S * FMath::Lerp(0.25f, 0.52f, Steepness) + Convex * 0.12f;
+				const float Structural = H * 0.46f + S * FMath::Lerp(0.25f, 0.52f, Density) + Convex * 0.12f;
 				const float CoverSuppression = Soil * 0.52f + W * 0.22f;
-				RockMap.AtInterior(X, Y) = FMath::Clamp((Structural - CoverSuppression + Exposure * 0.22f) * 1.25f, 0.0f, 1.0f);
+				const float Raw = FMath::Clamp((Structural - CoverSuppression + Coverage * 0.22f) * 1.25f, 0.0f, 1.0f);
+				const float DensityExponent = FMath::Lerp(1.65f, 0.72f, Density);
+				RockMap.AtInterior(X, Y) = FMath::Pow(Raw, DensityExponent) * FMath::Lerp(0.35f, 1.0f, Coverage);
 			}
 		}
 
@@ -217,8 +256,8 @@ namespace
 			return false;
 		}
 
-		const float Coverage = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Coverage"), 0.70)), 0.0f, 1.0f);
-		const float ValleyBias = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("ValleyBias"), 0.58)), 0.0f, 1.0f);
+		const float Amount = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Amount"), 0.70)), 0.0f, 1.0f);
+		const float Bias = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Bias"), 0.58)), 0.0f, 1.0f);
 
 		double MaxCatchment = UE_DOUBLE_SMALL_NUMBER;
 		for (int32 Y = 0; Y < Catchment->Domain.Dimensions.Y; ++Y)
@@ -243,8 +282,9 @@ namespace
 				const float SlopeStable = 1.0f - FMath::Clamp(Slope->AtInterior(X, Y) / 55.0f, 0.0f, 1.0f);
 				const float Catchment01 = static_cast<float>(FMath::Clamp(FMath::Loge(1.0 + FMath::Max(static_cast<double>(Catchment->AtInterior(X, Y)), 0.0)) / LogMaxCatchment, 0.0, 1.0));
 				const float Rock = ExistingRock ? FMath::Clamp(ExistingRock->AtInterior(X, Y), 0.0f, 1.0f) : 0.0f;
-				const float Accumulation = Base * 0.36f + Valley * FMath::Lerp(0.12f, 0.30f, ValleyBias) + Deposited * 0.18f + Moisture * 0.10f + Catchment01 * 0.08f;
-				Soil.AtInterior(X, Y) = FMath::Clamp(Accumulation * SlopeStable * Coverage * (1.0f - Rock * 0.72f), 0.0f, 1.0f);
+				const float Accumulation = Base * 0.36f + Valley * FMath::Lerp(0.12f, 0.30f, Bias) + Deposited * 0.18f + Moisture * 0.10f + Catchment01 * 0.08f;
+				const float Distribution = FMath::Pow(FMath::Clamp(Accumulation, 0.0f, 1.0f), FMath::Lerp(1.5f, 0.72f, Bias));
+				Soil.AtInterior(X, Y) = FMath::Clamp(Distribution * SlopeStable * Amount * (1.0f - Rock * 0.72f), 0.0f, 1.0f);
 			}
 		}
 
@@ -272,8 +312,8 @@ void RegisterGaeaTerrainSemanticNodes()
 		Descriptor.Inputs.Add(SemanticTerrainPort(TEXT("Terrain"), TEXT("Input")));
 		Descriptor.Outputs.Add(SemanticTerrainPort(TEXT("Out"), TEXT("Out")));
 		Descriptor.Outputs.Add(SemanticScalarPort(TEXT("Mask"), TEXT("Peaks")));
-		Descriptor.Parameters.Add(SemanticNumber(TEXT("Threshold"), TEXT("Threshold"), 0.58, 0.0, 1.0, TEXT("Selection")));
-		Descriptor.Parameters.Add(SemanticNumber(TEXT("Falloff"), TEXT("Falloff"), 0.18, 0.001, 1.0, TEXT("Selection")));
+		Descriptor.Parameters.Add(SemanticNumber(TEXT("Falloff"), TEXT("Falloff"), 0.42, 0.001, 1.0, TEXT("Selection")));
+		Descriptor.Parameters.Add(SemanticBoolean(TEXT("Precise"), TEXT("Precise"), false, TEXT("Selection")));
 		FGaeaTerrainNodeDescriptorRegistry::Register(Descriptor);
 		FGaeaTerrainNodeRegistry::Register(Descriptor.Type, EvaluatePeaks);
 	}
@@ -287,8 +327,8 @@ void RegisterGaeaTerrainSemanticNodes()
 		Descriptor.Inputs.Add(SemanticTerrainPort(TEXT("Terrain"), TEXT("Input")));
 		Descriptor.Outputs.Add(SemanticTerrainPort(TEXT("Out"), TEXT("Out")));
 		Descriptor.Outputs.Add(SemanticScalarPort(TEXT("Mask"), TEXT("Rock Map")));
-		Descriptor.Parameters.Add(SemanticNumber(TEXT("Exposure"), TEXT("Exposure"), 0.55, 0.0, 1.0, TEXT("Rock")));
-		Descriptor.Parameters.Add(SemanticNumber(TEXT("Steepness"), TEXT("Steepness"), 0.52, 0.0, 1.0, TEXT("Rock")));
+		Descriptor.Parameters.Add(SemanticNumber(TEXT("Coverage"), TEXT("Coverage"), 0.55, 0.0, 1.0, TEXT("Rock")));
+		Descriptor.Parameters.Add(SemanticNumber(TEXT("Density"), TEXT("Density"), 0.52, 0.0, 1.0, TEXT("Rock")));
 		FGaeaTerrainNodeDescriptorRegistry::Register(Descriptor);
 		FGaeaTerrainNodeRegistry::Register(Descriptor.Type, EvaluateRockMap);
 	}
@@ -302,8 +342,8 @@ void RegisterGaeaTerrainSemanticNodes()
 		Descriptor.Inputs.Add(SemanticTerrainPort(TEXT("Terrain"), TEXT("Input")));
 		Descriptor.Outputs.Add(SemanticTerrainPort(TEXT("Out"), TEXT("Out")));
 		Descriptor.Outputs.Add(SemanticScalarPort(TEXT("Mask"), TEXT("Soil")));
-		Descriptor.Parameters.Add(SemanticNumber(TEXT("Coverage"), TEXT("Coverage"), 0.70, 0.0, 1.0, TEXT("Soil")));
-		Descriptor.Parameters.Add(SemanticNumber(TEXT("ValleyBias"), TEXT("Valley Bias"), 0.58, 0.0, 1.0, TEXT("Soil")));
+		Descriptor.Parameters.Add(SemanticNumber(TEXT("Amount"), TEXT("Amount"), 0.70, 0.0, 1.0, TEXT("Soil")));
+		Descriptor.Parameters.Add(SemanticNumber(TEXT("Bias"), TEXT("Bias"), 0.58, 0.0, 1.0, TEXT("Soil")));
 		FGaeaTerrainNodeDescriptorRegistry::Register(Descriptor);
 		FGaeaTerrainNodeRegistry::Register(Descriptor.Type, EvaluateSoil);
 	}
