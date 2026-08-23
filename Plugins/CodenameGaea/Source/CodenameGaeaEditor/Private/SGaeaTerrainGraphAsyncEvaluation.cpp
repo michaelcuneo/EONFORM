@@ -21,6 +21,16 @@ namespace
 		OutContext.PhysicalMetrics = FGaeaTerrainPhysicalContext::GetActive();
 		OutContext.CacheContextRevision = FGaeaTerrainPhysicalContext::GetRevision();
 
+		const FGaeaTerrainGraphOutputSettings& OutputSettings = FGaeaTerrainOutputEditorState::Get().GetSettings();
+		if (OutputSettings.OutputResolution > 0)
+		{
+			const int32 Resolution = FMath::Clamp(OutputSettings.OutputResolution, 17, 8129);
+			OutContext.TargetResolution = FIntPoint(Resolution, Resolution);
+			OutContext.CacheContextRevision = HashCombineFast(
+				GetTypeHash(OutContext.CacheContextRevision),
+				GetTypeHash(Resolution));
+		}
+
 		const bool bUsesExternalSource = Recipe.Nodes.ContainsByPredicate([](const FGaeaTerrainNode& Node)
 		{
 			return Node.Type == GaeaTerrainNodeTypes::SourceDataset;
@@ -285,10 +295,6 @@ void SGaeaTerrainGraphPanel::StartNextAsyncEvaluation()
 						return;
 					}
 
-					// The evaluated dataset is the final editor snapshot. Expensive derived
-					// analysis such as drainage/hydrology is requested by graph nodes only
-					// when they actually consume it; the editor must never enrich every
-					// terrain implicitly after publication.
 					FGaeaTerrainOutputEditorState::Get().CompleteAnalysis(BaseRevision);
 					SetGraphActivity(Panel, EGaeaEditorGraphActivity::Idle);
 					Panel->StatusText = FText::FromString(FString::Printf(
