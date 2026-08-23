@@ -41,6 +41,8 @@
 #include "GaeaRecurveNode.h"
 #include "GaeaReferenceFidelityNodes.h"
 #include "GaeaReferenceFidelityExtendedNodes.h"
+#include "GaeaReferenceFidelityProcessNodes.h"
+#include "GaeaReferenceFidelityTransposeNode.h"
 #include "GaeaShaperNode.h"
 #include "GaeaSharpenNode.h"
 #include "GaeaSimulateEvolutionNodes.h"
@@ -57,6 +59,7 @@
 #include "GaeaThermalErosionNode.h"
 #include "GaeaThresholdNode.h"
 #include "GaeaTransformNode.h"
+#include "GaeaUtilityNodes.h"
 #include "GaeaWizardNodes.h"
 #include "GaeaZeroBordersNode.h"
 
@@ -172,6 +175,7 @@ public:
 		RegisterGaeaFractalTerracesNode();
 		RegisterGaeaTerraceNode();
 		RegisterGaeaSurfaceNodes();
+		RegisterGaeaUtilityNodes();
 
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::SourceDataset, TEXT("Source Dataset"), TEXT("Internal"), true);
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::TerrainShape, TEXT("Terrain Shape"), TEXT("Internal"), true);
@@ -272,10 +276,13 @@ public:
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Sine, TEXT("Sine"), TEXT("Legacy"), true);
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::MultiCombine, TEXT("MultiCombine"), TEXT("Legacy"), true);
 
-		// Audited Gaea-facing implementations register last so descriptor and
-		// evaluator fidelity wins over older compatibility implementations.
+		// Audited Gaea-facing implementations always register last. This makes the
+		// Core module the authoritative registration order and prevents legacy
+		// compatibility implementations from silently replacing corrected behavior.
 		RegisterGaeaReferenceFidelityNodes();
 		RegisterGaeaReferenceFidelityExtendedNodes();
+		RegisterGaeaReferenceFidelityTransposeNode();
+		RegisterGaeaReferenceFidelityProcessNodes();
 	}
 };
 
