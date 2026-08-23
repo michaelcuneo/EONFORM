@@ -30,7 +30,6 @@ public:
 		if (EditorGraph.IsValid()) EditorGraph->SetActivity(Activity);
 	}
 
-	/** Internal accessor for editor activity callbacks; graph ownership remains with this panel. */
 	UGaeaEditorGraph* GetEditorGraphForActivity() const
 	{
 		return EditorGraph.Get();
@@ -66,7 +65,11 @@ private:
 	FText GetAssetText() const;
 	FText GetStatusText() const;
 
+public:
+	/** Internal graph object exposed only so game-thread async activity callbacks can drive Slate feedback. */
 	TStrongObjectPtr<UGaeaEditorGraph> EditorGraph;
+
+private:
 	TStrongObjectPtr<UGaeaTerrainGraphAsset> CurrentAsset;
 	TSharedPtr<FUICommandList> GraphCommands;
 	TSharedPtr<SGraphEditor> GraphEditor;
@@ -77,11 +80,6 @@ private:
 	FSimpleDelegate OnEvaluated;
 	FText StatusText;
 
-	/**
-	 * Persistent node outputs for interactive authoring. The pointer is replaced
-	 * on asset switches so an obsolete worker can safely finish against its old
-	 * cache without racing the newly opened graph.
-	 */
 	TSharedPtr<FGaeaTerrainEvaluationCache, ESPMode::ThreadSafe> IncrementalEvaluationCache =
 		MakeShared<FGaeaTerrainEvaluationCache, ESPMode::ThreadSafe>();
 
