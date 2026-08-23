@@ -5,3 +5,8 @@ UGaeaEditorGraph::UGaeaEditorGraph(const FObjectInitializer& ObjectInitializer)
 {
 	bEditable = true;
 }
+
+void UGaeaEditorGraph::SetActivity(EGaeaEditorGraphActivity InActivity)
+{
+	Activity = InActivity;
+}
