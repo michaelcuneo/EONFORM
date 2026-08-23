@@ -1,14 +1,21 @@
 #include "GaeaTextureDeriveNodes.h"
 
+#include "Misc/CoreDelegates.h"
+
 namespace
 {
-	struct FGaeaTextureDeriveAutoRegister
+	struct FGaeaTextureDeriveRegistrationHook
 	{
-		FGaeaTextureDeriveAutoRegister()
+		FGaeaTextureDeriveRegistrationHook()
+		{
+			FCoreDelegates::OnPostEngineInit.AddStatic(&FGaeaTextureDeriveRegistrationHook::RegisterNodes);
+		}
+
+		static void RegisterNodes()
 		{
 			RegisterGaeaTextureDeriveNodes();
 		}
 	};
 
-	FGaeaTextureDeriveAutoRegister GTextureDeriveAutoRegister;
+	FGaeaTextureDeriveRegistrationHook GTextureDeriveRegistrationHook;
 }
