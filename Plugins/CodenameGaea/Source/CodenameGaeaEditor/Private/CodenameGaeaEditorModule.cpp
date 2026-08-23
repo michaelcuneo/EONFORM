@@ -9,7 +9,6 @@
 #include "GaeaTerrainGraphPin.h"
 #include "SGaeaTerrainInspector.h"
 #include "SGaeaTerrainOutputPanel.h"
-#include "Styling/SlateIcon.h"
 #include "ToolMenus.h"
 #include "Widgets/Docking/SDockTab.h"
 
