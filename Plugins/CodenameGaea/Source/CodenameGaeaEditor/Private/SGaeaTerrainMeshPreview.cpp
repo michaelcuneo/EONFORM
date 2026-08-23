@@ -1,5 +1,6 @@
 #include "SGaeaTerrainMeshPreview.h"
 
+#include "Components/BaseDynamicMeshComponent.h"
 #include "Components/DynamicMeshComponent.h"
 #include "EditorViewportClient.h"
 #include "GaeaTerrainFieldNames.h"
@@ -37,6 +38,8 @@ void SGaeaTerrainMeshPreview::Construct(const FArguments& InArgs)
 		PreviewMeshComponent->SetGenerateOverlapEvents(false);
 		PreviewMeshComponent->SetCastShadow(true);
 		PreviewMeshComponent->SetMaterial(0, UMaterial::GetDefaultMaterial(MD_Surface));
+		PreviewMeshComponent->SetColorOverrideMode(EDynamicMeshComponentColorOverrideMode::VertexColors);
+		PreviewMeshComponent->SetVertexColorSpaceTransformMode(EDynamicMeshVertexColorTransformMode::LinearToSRGB);
 		PreviewScene.AddComponent(PreviewMeshComponent, FTransform::Identity);
 	}
 
@@ -143,9 +146,14 @@ void SGaeaTerrainMeshPreview::SetTerrain(const FGaeaTerrainDatasetSnapshot& Snap
 
 	const int32 VertexCount = Mesh.VertexCount();
 	const int32 TriangleCount = Mesh.TriangleCount();
+	const bool bHasBaseColor = Mesh.HasVertexColors();
 	PreviewMeshComponent->SetMesh(MoveTemp(Mesh));
+	PreviewMeshComponent->SetColorOverrideMode(
+		bHasBaseColor ? EDynamicMeshComponentColorOverrideMode::VertexColors : EDynamicMeshComponentColorOverrideMode::None);
 	StatusText = FText::FromString(FString::Printf(
-		TEXT("Preview %d vertices   %d triangles   sea level 0 m"),
+		bHasBaseColor
+			? TEXT("Preview %d vertices   %d triangles   SatMap color   sea level 0 m")
+			: TEXT("Preview %d vertices   %d triangles   sea level 0 m"),
 		VertexCount,
 		TriangleCount));
 	FrameTerrain();
