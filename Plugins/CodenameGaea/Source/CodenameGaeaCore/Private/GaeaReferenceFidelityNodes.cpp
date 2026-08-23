@@ -432,6 +432,7 @@ namespace GaeaReferenceFidelity
 		const FName OutputMode = Node.GetName(TEXT("Output"), TEXT("Clamp"));
 		const FName Enhance = Node.GetName(TEXT("Enhance"), TEXT("None"));
 		const bool bTerrain = AValue->Type == EGaeaTerrainValueType::Terrain;
+		const bool bRawTerrainMultiply = bTerrain && Mode == TEXT("Multiply");
 		FGaeaScalarField Result = *A;
 		TArray<float> Result01;
 		Result01.SetNumUninitialized(Result.Values.Num());
@@ -440,14 +441,34 @@ namespace GaeaReferenceFidelity
 		{
 			for (int32 X = 0; X < A->Domain.Dimensions.X; ++X)
 			{
-				const float AV = bTerrain ? To01(A->AtInterior(X, Y)) : FMath::Clamp(A->AtInterior(X, Y), 0.0f, 1.0f);
-				const float BV = bTerrain ? To01(B->AtInterior(X, Y)) : FMath::Clamp(B->AtInterior(X, Y), 0.0f, 1.0f);
-				float V = FMath::Lerp(AV, BlendMode(AV, BV, Mode), Ratio);
-				// Gaea Combine mask semantics: white selects Input1, black selects Input2.
-				if (Mask)
+				const float ARaw = A->AtInterior(X, Y);
+				const float BRaw = B->AtInterior(X, Y);
+				const float AV = bTerrain ? To01(ARaw) : FMath::Clamp(ARaw, 0.0f, 1.0f);
+				const float BV = bTerrain ? To01(BRaw) : FMath::Clamp(BRaw, 0.0f, 1.0f);
+				float V;
+				if (bRawTerrainMultiply)
 				{
-					const float M = FMath::Clamp(Mask->AtInterior(X, Y), 0.0f, 1.0f);
-					V = FMath::Lerp(BV, AV, M);
+					// Terrain multiplication is geometric composition, not an image-space
+					// blend. Multiply the authored terrain values directly so literal zero
+					// remains an absorbing value (0 * x == 0), then return to the normal
+					// Combine processing domain for enhancement/output handling.
+					float Raw = FMath::Lerp(ARaw, ARaw * BRaw, Ratio);
+					if (Mask)
+					{
+						const float M = FMath::Clamp(Mask->AtInterior(X, Y), 0.0f, 1.0f);
+						Raw = FMath::Lerp(BRaw, ARaw, M);
+					}
+					V = To01(Raw);
+				}
+				else
+				{
+					V = FMath::Lerp(AV, BlendMode(AV, BV, Mode), Ratio);
+					// Gaea Combine mask semantics: white selects Input1, black selects Input2.
+					if (Mask)
+					{
+						const float M = FMath::Clamp(Mask->AtInterior(X, Y), 0.0f, 1.0f);
+						V = FMath::Lerp(BV, AV, M);
+					}
 				}
 				const int32 StorageIndex = Result.Domain.GetStorageIndex(X, Y);
 				Result01[StorageIndex] = V;
