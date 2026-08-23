@@ -7,6 +7,7 @@
 #include "GaeaTerrainDerivedData.h"
 #include "GaeaTerrainEvaluator.h"
 #include "GaeaTerrainFieldNames.h"
+#include "GaeaTerrainFractalWarp.h"
 #include "GaeaTerrainNodeDescriptor.h"
 #include "GaeaTerrainPhysicalMetrics.h"
 #include "GaeaTerrainProceduralOps.h"
@@ -69,7 +70,7 @@ namespace
 		P.bHasMinimum = true;
 		P.Minimum = static_cast<double>(Min);
 		P.bHasMaximum = true;
-		P.Maximum = static_cast<double>(Max);
+		P.Maximum = Max;
 		return P;
 	}
 
@@ -152,20 +153,20 @@ namespace
 		Settings.ScaleX = 1.0f;
 		Settings.ScaleY = 1.0f;
 
-		// These are the three distinct Ridge parameter bands visible in the supplied
-		// Mountain implementation. Unknown packed constants remain isolated here.
+		// Mountain owns the visible footprint through its public Scale parameter.
+		// Do not manufacture a second coarse-to-fine footprint hierarchy by driving
+		// its child Ridges far away from Ridge's authored 0.75 scale. The three
+		// layers get their hierarchy from Definition and independent seeds instead.
+		Settings.Scale = 0.75f;
 		switch (Layer)
 		{
 		case 0:
-			Settings.Scale = Random.FRandRange(0.50f, 0.75f);
 			Settings.Definition = 0.40f;
 			break;
 		case 1:
-			Settings.Scale = Random.FRandRange(0.25f, 0.50f);
 			Settings.Definition = Random.FRandRange(0.50f, 1.00f);
 			break;
 		default:
-			Settings.Scale = Random.FRandRange(0.14f, 0.38f);
 			Settings.Definition = Random.FRandRange(0.10f, 0.60f);
 			break;
 		}
@@ -193,7 +194,7 @@ namespace
 		Settings.Jitter = 0.45f;
 
 		FGaeaScalarField Warped;
-		if (!GaeaTerrainProceduralOps::FractalWarp(Height, Settings, Warped, &Error)) return false;
+		if (!GaeaTerrainProceduralOps::FractalWarpFidelity(Height, Settings, Warped, &Error)) return false;
 		for (int32 I = 0; I < Height.Values.Num(); ++I)
 		{
 			Height.Values[I] = FMath::Min(Height.Values[I], Warped.Values[I]);
@@ -446,7 +447,6 @@ namespace
 			}
 		}
 
-		// The supplied Gradients.RadialGradient uses smoothstep radial falloff.
 		GaeaTerrainProceduralOps::ApplyRadialGradientMultiply(
 			Height,
 			static_cast<float>(Domain.Dimensions.X) * XCenter,
@@ -454,8 +454,6 @@ namespace
 			static_cast<float>(Domain.Dimensions.X) * MountainScale,
 			1.0f);
 
-		// The supplied Mountain implementation applies Min(base, FractalWarp(base))
-		// to every style except Old, before multiplying by Height.
 		if (Style != TEXT("Old") && !ApplyMountainPreWarp(Height, Seed + 27, Error)) return false;
 		for (float& Value : Height.Values) Value *= HeightAmount;
 
