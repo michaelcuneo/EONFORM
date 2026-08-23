@@ -132,7 +132,7 @@ namespace
 		return OutMask.IsValid();
 	}
 
-	bool EvaluateErosionNodeCurrent(const FGaeaTerrainNode& Node, const FGaeaTerrainNodeInputs& Inputs, const FGaeaTerrainEvaluationContext&, FGaeaTerrainNodeEvaluation& Out, FString& Error)
+	bool EvaluateErosionNodeCurrent(const FGaeaTerrainNode& Node, const FGaeaTerrainNodeInputs& Inputs, const FGaeaTerrainEvaluationContext& Context, FGaeaTerrainNodeEvaluation& Out, FString& Error)
 	{
 		const FGaeaTerrainValue* const* InputPtr = Inputs.Find(TEXT("Terrain"));
 		const FGaeaTerrainValue* Input = InputPtr ? *InputPtr : nullptr;
@@ -144,7 +144,12 @@ namespace
 
 		FGaeaTerrainDataset PreparedDataset = Input->TerrainDataset;
 		FGaeaTerrainDerivedDataSettings DerivedSettings;
-		if (!FGaeaTerrainDerivedData::EnsureHydraulicInputs(PreparedDataset, FMath::Max(Input->HeightScale, 1.0f), DerivedSettings, &Error)) return false;
+		if (!FGaeaTerrainDerivedData::EnsureHydraulicInputs(
+			PreparedDataset,
+			FMath::Max(Input->HeightScale, 1.0f),
+			Context.PhysicalMetrics,
+			DerivedSettings,
+			&Error)) return false;
 		const FGaeaScalarField* Height = PreparedDataset.FindScalarField(GaeaTerrainFieldNames::Height);
 		if (!Height || !Height->IsValid())
 		{
@@ -190,11 +195,26 @@ namespace
 		Settings.bAggressiveMode = Node.GetBool(TEXT("AggressiveMode"), Settings.bAggressiveMode);
 		Settings.bDeterministic = Node.GetBool(TEXT("Deterministic"), Settings.bDeterministic);
 
+		const FVector2d DomainCellSize = Height->Domain.GetCellSize();
+		const double DomainRepresentativeCentimeters = FMath::Max(
+			FMath::Min(FMath::Abs(DomainCellSize.X), FMath::Abs(DomainCellSize.Y)),
+			UE_DOUBLE_SMALL_NUMBER);
+		const double PhysicalSampleSpacingMeters = Context.PhysicalMetrics.ResolveRepresentativeSampleSpacingMeters(
+			Height->Domain.Dimensions,
+			DomainCellSize);
+		const double PhysicalElevationScaleMeters = Context.PhysicalMetrics.ResolveElevationScaleMeters(Input->HeightScale);
+		Settings.PhysicalSampleSpacingMeters = PhysicalSampleSpacingMeters;
+		Settings.PhysicalElevationScaleMeters = PhysicalElevationScaleMeters;
+		const float SolverHeightScale = static_cast<float>(FMath::Max(
+			PhysicalElevationScaleMeters / FMath::Max(PhysicalSampleSpacingMeters, UE_DOUBLE_SMALL_NUMBER)
+				* DomainRepresentativeCentimeters,
+			1.0));
+
 		FGaeaScalarField BiasMask;
 		const FGaeaScalarField* EffectiveArea = nullptr;
 		if (Settings.SelectiveProcessing != TEXT("None"))
 		{
-			if (!ErosionBuildBiasMask(Node, *Height, FMath::Max(Input->HeightScale, 1.0f), AreaInput, BiasMask))
+			if (!ErosionBuildBiasMask(Node, *Height, SolverHeightScale, AreaInput, BiasMask))
 			{
 				Error = TEXT("Erosion could not build its selective processing Area mask.");
 				return false;
@@ -205,7 +225,7 @@ namespace
 		FGaeaHydraulicErosionResult Result;
 		if (!FGaeaHydraulicErosion::Evaluate(
 			*Height,
-			FMath::Max(Input->HeightScale, 1.0f),
+			SolverHeightScale,
 			Settings,
 			Result,
 			PreparedDataset.FindScalarField(GaeaTerrainFieldNames::Rainfall),
@@ -224,10 +244,29 @@ namespace
 		FGaeaScalarField WearOutput = Result.Wear;
 		FGaeaScalarField DepositsOutput = Result.Deposits;
 		FGaeaScalarField FlowOutput = Result.Flow;
-		PreparedDataset.SetScalarField(MoveTemp(Result.Height));
-		PreparedDataset.SetScalarField(MoveTemp(Result.Wear));
-		PreparedDataset.SetScalarField(MoveTemp(Result.Deposits));
-		PreparedDataset.SetScalarField(MoveTemp(Result.Flow));
+		if (!PreparedDataset.SetScalarField(MoveTemp(Result.Height))
+			|| !PreparedDataset.SetScalarField(MoveTemp(Result.Wear))
+			|| !PreparedDataset.SetScalarField(MoveTemp(Result.Deposits))
+			|| !PreparedDataset.SetScalarField(MoveTemp(Result.Flow)))
+		{
+			Error = TEXT("Erosion could not publish its terrain fields.");
+			return false;
+		}
+
+		// The new Height invalidates analysis of the pre-erosion surface. Rebuild
+		// intrinsic context and drainage against the actual eroded terrain before
+		// publishing downstream, while preserving authored geology/process fields.
+		if (!FGaeaTerrainDerivedData::EnsureContext(
+			PreparedDataset,
+			FMath::Max(Input->HeightScale, 1.0f),
+			Context.PhysicalMetrics,
+			&Error)) return false;
+		if (!FGaeaTerrainDerivedData::EnsureHydrology(
+			PreparedDataset,
+			FMath::Max(Input->HeightScale, 1.0f),
+			Context.PhysicalMetrics,
+			&Error)) return false;
+
 		FGaeaTerrainValue TerrainResult = FGaeaTerrainValue::MakeTerrain(MoveTemp(PreparedDataset), Input->HeightScale);
 		if (!TerrainResult.IsValid())
 		{
