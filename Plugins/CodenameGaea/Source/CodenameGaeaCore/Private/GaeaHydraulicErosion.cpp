@@ -51,6 +51,263 @@ namespace
 		const float Unit = static_cast<float>(Hash & 0xffffu) / 65535.0f;
 		return FMath::Lerp(0.9f, 1.1f, Unit);
 	}
+
+	bool ApplyAdvancedFlowErosion(
+		FGaeaScalarField& HeightField,
+		float HeightScale,
+		const FGaeaHydraulicErosionSettings& Settings,
+		TArray<float>* OutFlowAccumulation,
+		const TArray<float>* RainfallMask,
+		const TArray<float>* ErosionMask,
+		const TArray<float>* DepositionMask,
+		const TArray<float>* RockHardness,
+		const TArray<float>* SoilDepth,
+		TArray<float>* OutWear,
+		TArray<float>* OutDeposits,
+		const TArray<float>* AreaMask,
+		const TArray<float>* InitialSediment)
+	{
+		const int32 Width = HeightField.Domain.Dimensions.X;
+		const int32 Height = HeightField.Domain.Dimensions.Y;
+		const int32 NumCells = HeightField.Values.Num();
+		if (Width < 3 || Height < 3 || NumCells != Width * Height)
+		{
+			return false;
+		}
+
+		const FVector2d CellSize = HeightField.Domain.GetCellSize();
+		const double DomainSpacing = FMath::Max(FMath::Min(FMath::Abs(CellSize.X), FMath::Abs(CellSize.Y)), UE_DOUBLE_SMALL_NUMBER);
+		const double SampleSpacingMeters = Settings.PhysicalSampleSpacingMeters > UE_DOUBLE_SMALL_NUMBER
+			? Settings.PhysicalSampleSpacingMeters
+			: DomainSpacing;
+		const double ElevationScaleMeters = Settings.PhysicalElevationScaleMeters > UE_DOUBLE_SMALL_NUMBER
+			? Settings.PhysicalElevationScaleMeters
+			: static_cast<double>(HeightScale);
+		const double SlopeScale = ElevationScaleMeters / FMath::Max(SampleSpacingMeters, UE_DOUBLE_SMALL_NUMBER);
+
+		const float FeatureScale = FMath::Clamp(Settings.FeatureScale, 0.25f, 8.0f);
+		const float Strength = FMath::Max(Settings.Strength, 0.0f) * (Settings.bAggressiveMode ? 1.65f : 1.0f);
+		const float Downcutting = FMath::Clamp(Settings.Downcutting, 0.0f, 2.0f);
+		const float Debris = FMath::Clamp(Settings.Debris, 0.0f, 1.0f);
+		const float CapacityFactor = FMath::Max(Settings.SedimentCapacity * FMath::Lerp(0.65f, 1.55f, Debris), 0.01f);
+		const float ErosionRate = FMath::Clamp(Settings.ErosionRate * Strength, 0.0f, 8.0f);
+		const float DepositionRate = FMath::Clamp(Settings.DepositionRate, 0.0f, 1.0f);
+		const float SedimentRemoval = FMath::Clamp(Settings.SedimentRemoval, 0.0f, 1.0f);
+		const float BaseLevel = FMath::Clamp(Settings.BaseLevel, -1.0f, 1.0f);
+		const float BaseRockSoftness = FMath::Clamp(Settings.RockSoftness, 0.0f, 1.0f);
+		const float Inhibition = FMath::Clamp(Settings.Inhibition, 0.0f, 1.0f);
+		const float Volume = FMath::Clamp(Settings.Volume, 0.05f, 4.0f);
+		const float Rainfall = FMath::Max(Settings.Rainfall * Volume, 0.00001f);
+		const bool bSelectErosionStrength = Settings.SelectiveProcessing == TEXT("ErosionStrength");
+		const bool bSelectRockSoftness = Settings.SelectiveProcessing == TEXT("RockSoftness");
+		const bool bSelectPrecipitation = Settings.SelectiveProcessing == TEXT("Precipitation");
+		const int32 RuntimeSeed = Settings.bDeterministic
+			? Settings.Seed
+			: Settings.Seed ^ static_cast<int32>(FPlatformTime::Cycles());
+
+		TArray<int32> Receiver;
+		TArray<uint8> DonorCount;
+		TArray<int32> Queue;
+		TArray<int32> Order;
+		TArray<float> Runoff;
+		TArray<float> Sediment;
+		TArray<float> DeltaHeight;
+		TArray<float> Flow;
+		TArray<float> Wear;
+		TArray<float> Deposits;
+		Receiver.SetNumUninitialized(NumCells);
+		DonorCount.SetNumZeroed(NumCells);
+		Queue.Reserve(NumCells);
+		Order.Reserve(NumCells);
+		Runoff.SetNumZeroed(NumCells);
+		Sediment.SetNumZeroed(NumCells);
+		DeltaHeight.SetNumZeroed(NumCells);
+		Flow.SetNumZeroed(NumCells);
+		Wear.SetNumZeroed(NumCells);
+		Deposits.SetNumZeroed(NumCells);
+
+		if (InitialSediment && InitialSediment->Num() == NumCells)
+		{
+			for (int32 I = 0; I < NumCells; ++I)
+			{
+				Sediment[I] = FMath::Max((*InitialSediment)[I], 0.0f);
+			}
+		}
+
+		static const FIntPoint Neighbors[] = {
+			FIntPoint(-1, 0), FIntPoint(1, 0), FIntPoint(0, -1), FIntPoint(0, 1),
+			FIntPoint(-1, -1), FIntPoint(1, -1), FIntPoint(-1, 1), FIntPoint(1, 1)
+		};
+		auto Index = [Width](int32 X, int32 Y) { return Y * Width + X; };
+
+		for (int32 Iteration = 0; Iteration < Settings.Iterations; ++Iteration)
+		{
+			FMemory::Memset(Receiver.GetData(), 0xff, NumCells * sizeof(int32));
+			FMemory::Memzero(DonorCount.GetData(), NumCells * sizeof(uint8));
+			FMemory::Memzero(Runoff.GetData(), NumCells * sizeof(float));
+			FMemory::Memzero(DeltaHeight.GetData(), NumCells * sizeof(float));
+			Queue.Reset();
+			Order.Reset();
+
+			// Build a strictly downhill D8 receiver graph. Because every receiver is
+			// lower than its donor, this graph is acyclic and can be accumulated in O(N).
+			for (int32 Y = 0; Y < Height; ++Y)
+			{
+				for (int32 X = 0; X < Width; ++X)
+				{
+					const int32 I = Index(X, Y);
+					const float Current = HeightField.Values[I];
+					float BestGradient = 0.0f;
+					int32 BestReceiver = -1;
+					for (const FIntPoint& Offset : Neighbors)
+					{
+						const int32 NX = X + Offset.X;
+						const int32 NY = Y + Offset.Y;
+						if (NX < 0 || NX >= Width || NY < 0 || NY >= Height) continue;
+						const int32 NI = Index(NX, NY);
+						const float Drop = Current - HeightField.Values[NI];
+						if (Drop <= 1.0e-7f) continue;
+						const float Distance = Offset.X != 0 && Offset.Y != 0 ? UE_SQRT_2 : 1.0f;
+						const float Gradient = Drop / Distance;
+						if (Gradient > BestGradient)
+						{
+							BestGradient = Gradient;
+							BestReceiver = NI;
+						}
+					}
+					Receiver[I] = BestReceiver;
+					if (BestReceiver >= 0 && DonorCount[BestReceiver] < MAX_uint8)
+					{
+						++DonorCount[BestReceiver];
+					}
+
+					const float Area = MaskValue(AreaMask, I, NumCells);
+					const float SelectiveRain = bSelectPrecipitation ? Area : 1.0f;
+					const float RainJitter = SeedVariation(RuntimeSeed, Iteration, I);
+					Runoff[I] = Rainfall * MaskValue(RainfallMask, I, NumCells) * SelectiveRain * RainJitter;
+				}
+			}
+
+			// Sources have no donors. Propagating them downstream yields contributing
+			// runoff while also giving us a source-to-outlet processing order.
+			for (int32 I = 0; I < NumCells; ++I)
+			{
+				if (DonorCount[I] == 0) Queue.Add(I);
+			}
+			for (int32 Head = 0; Head < Queue.Num(); ++Head)
+			{
+				const int32 I = Queue[Head];
+				Order.Add(I);
+				const int32 R = Receiver[I];
+				if (R >= 0)
+				{
+					Runoff[R] += Runoff[I];
+					if (DonorCount[R] > 0 && --DonorCount[R] == 0) Queue.Add(R);
+				}
+			}
+
+			// The strict-lower receiver rule should make every component acyclic, but
+			// keep isolated pathological samples deterministic rather than dropping them.
+			if (Order.Num() != NumCells)
+			{
+				TBitArray<> Seen(false, NumCells);
+				for (const int32 I : Order) Seen[I] = true;
+				for (int32 I = 0; I < NumCells; ++I) if (!Seen[I]) Order.Add(I);
+			}
+
+			for (const int32 I : Order)
+			{
+				const int32 R = Receiver[I];
+				if (R < 0) continue;
+
+				const int32 X = I % Width;
+				const int32 Y = I / Width;
+				const int32 RX = R % Width;
+				const int32 RY = R / Width;
+				const float DistanceCells = (X != RX && Y != RY) ? UE_SQRT_2 : 1.0f;
+				const float Drop = FMath::Max(HeightField.Values[I] - HeightField.Values[R], 0.0f);
+				const float PhysicalSlope = FMath::Max(
+					static_cast<float>(Drop * SlopeScale / DistanceCells / FeatureScale),
+					Settings.MinimumSlope);
+
+				const float LocalRain = FMath::Max(Rainfall, 1.0e-6f);
+				const float ContributingCells = FMath::Max(Runoff[I] / LocalRain, 1.0f);
+				const float FlowResponse = FMath::Clamp(FMath::Pow(FMath::Log2(1.0f + ContributingCells), 0.82f), 0.0f, 7.5f);
+				const float SlopeResponse = FMath::Pow(FMath::Clamp(PhysicalSlope, 0.0f, 4.0f), 0.78f);
+				const float StreamPower = FlowResponse * SlopeResponse;
+				const float Capacity = StreamPower * CapacityFactor * 0.0028f * Volume;
+
+				const float Area = MaskValue(AreaMask, I, NumCells);
+				const float SelectiveStrength = bSelectErosionStrength ? Area : 1.0f;
+				const float LocalSoftness = bSelectRockSoftness ? BaseRockSoftness * Area : BaseRockSoftness;
+				const float Resistance = HardnessResistance(RockHardness, I, NumCells, LocalSoftness);
+				const float InhibitionFactor = 1.0f - FMath::Clamp(Wear[I] * Inhibition * 7.0f, 0.0f, 0.92f);
+				const float Variation = SeedVariation(RuntimeSeed + 7919, Iteration, I);
+				const float ErosionEligibility = MaskValue(ErosionMask, I, NumCells) * SelectiveStrength;
+
+				float LocalSediment = Sediment[I];
+				if (LocalSediment < Capacity && HeightField.Values[I] > BaseLevel)
+				{
+					const float DowncuttingBoost = 1.0f + Downcutting * FMath::Clamp(FlowResponse / 5.0f, 0.0f, 1.0f);
+					const float Potential = (Capacity - LocalSediment)
+						* ErosionRate
+						* Resistance
+						* ErosionEligibility
+						* InhibitionFactor
+						* DowncuttingBoost
+						* Variation;
+					const float MaxIncision = FMath::Lerp(0.0012f, 0.0045f, FMath::Clamp(FlowResponse / 7.5f, 0.0f, 1.0f));
+					const float Erode = FMath::Min3(Potential, MaxIncision, FMath::Max(HeightField.Values[I] - BaseLevel, 0.0f));
+					if (Erode > 0.0f)
+					{
+						DeltaHeight[I] -= Erode;
+						Wear[I] += Erode;
+						LocalSediment += Erode;
+
+						// Feature scale widens mature channels slightly instead of turning every
+						// drainage line into a one-cell trench.
+						const float BankShare = FMath::Clamp(0.025f + (FeatureScale - 0.5f) * 0.025f, 0.015f, 0.15f);
+						if (BankShare > 0.0f && X > 0 && X + 1 < Width && Y > 0 && Y + 1 < Height)
+						{
+							const float BankCut = Erode * BankShare;
+							DeltaHeight[Index(X - 1, Y)] -= BankCut * 0.35f;
+							DeltaHeight[Index(X + 1, Y)] -= BankCut * 0.35f;
+							DeltaHeight[Index(X, Y - 1)] -= BankCut * 0.35f;
+							DeltaHeight[Index(X, Y + 1)] -= BankCut * 0.35f;
+						}
+					}
+				}
+				else if (LocalSediment > Capacity)
+				{
+					const float SoilRetention = SoilDepth && SoilDepth->Num() == NumCells
+						? FMath::Lerp(0.85f, 1.35f, FMath::Clamp((*SoilDepth)[I], 0.0f, 1.0f))
+						: 1.0f;
+					const float Deposit = (LocalSediment - Capacity)
+						* DepositionRate
+						* MaskValue(DepositionMask, I, NumCells)
+						* SoilRetention;
+					DeltaHeight[I] += Deposit;
+					Deposits[I] += Deposit;
+					LocalSediment -= Deposit;
+				}
+
+				Sediment[I] = 0.0f;
+				Sediment[R] += LocalSediment * (1.0f - SedimentRemoval);
+				Flow[I] += FlowResponse;
+			}
+
+			for (int32 I = 0; I < NumCells; ++I)
+			{
+				const float NextHeight = HeightField.Values[I] + DeltaHeight[I];
+				HeightField.Values[I] = FMath::Max(NextHeight, BaseLevel);
+			}
+		}
+
+		if (OutFlowAccumulation) *OutFlowAccumulation = MoveTemp(Flow);
+		if (OutWear) *OutWear = MoveTemp(Wear);
+		if (OutDeposits) *OutDeposits = MoveTemp(Deposits);
+		return true;
+	}
 }
 
 bool FGaeaHydraulicErosionResult::IsValid() const
@@ -81,6 +338,24 @@ bool FGaeaHydraulicErosion::ApplyInPlace(
 		if (OutWear) OutWear->Reset();
 		if (OutDeposits) OutDeposits->Reset();
 		return false;
+	}
+
+	if (Settings.bAdvancedFlowSolver)
+	{
+		return ApplyAdvancedFlowErosion(
+			HeightField,
+			HeightScale,
+			Settings,
+			OutFlowAccumulation,
+			RainfallMask,
+			ErosionMask,
+			DepositionMask,
+			RockHardness,
+			SoilDepth,
+			OutWear,
+			OutDeposits,
+			AreaMask,
+			InitialSediment);
 	}
 
 	const int32 ResolutionX = HeightField.Domain.Dimensions.X;
