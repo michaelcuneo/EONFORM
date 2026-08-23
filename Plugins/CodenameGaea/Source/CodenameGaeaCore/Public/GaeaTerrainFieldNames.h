@@ -34,4 +34,11 @@ namespace GaeaTerrainFieldNames
 	CODENAMEGAEACORE_API extern const FName DistanceToOutletKm;
 	/** Strahler stream order derived from the D8 drainage tree. */
 	CODENAMEGAEACORE_API extern const FName StreamOrder;
+
+	// Public Derive flow-map semantics built from the persistent hydrology state.
+	CODENAMEGAEACORE_API extern const FName FlowMap;
+	CODENAMEGAEACORE_API extern const FName FlowMapDirection;
+	CODENAMEGAEACORE_API extern const FName FlowMapAccumulation;
+	CODENAMEGAEACORE_API extern const FName FlowMapClassic;
+	CODENAMEGAEACORE_API extern const FName FlowMapClassicHierarchy;
 }
