@@ -20,6 +20,14 @@ namespace GaeaEditorNodeTypes
 	extern const FName TerrainOutput;
 }
 
+UENUM()
+enum class EGaeaEditorGraphActivity : uint8
+{
+	Idle,
+	Solving,
+	Analyzing
+};
+
 UCLASS()
 class UGaeaEditorGraph : public UEdGraph
 {
@@ -27,6 +35,15 @@ class UGaeaEditorGraph : public UEdGraph
 
 public:
 	UGaeaEditorGraph(const FObjectInitializer& ObjectInitializer);
+
+	void SetActivity(EGaeaEditorGraphActivity InActivity);
+	EGaeaEditorGraphActivity GetActivity() const { return Activity; }
+	bool IsBusy() const { return Activity != EGaeaEditorGraphActivity::Idle; }
+
+private:
+	/** Editor-only transient worker state used purely for graph activity feedback. */
+	UPROPERTY(Transient)
+	EGaeaEditorGraphActivity Activity = EGaeaEditorGraphActivity::Idle;
 };
 
 UCLASS()
