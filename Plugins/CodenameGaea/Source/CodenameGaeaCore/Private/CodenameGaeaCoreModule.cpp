@@ -20,6 +20,7 @@
 #include "GaeaErosionNode.h"
 #include "GaeaFileNodeDecoder.h"
 #include "GaeaFlipNode.h"
+#include "GaeaFlowMapNodes.h"
 #include "GaeaFractalTerracesNode.h"
 #include "GaeaGaborNode.h"
 #include "GaeaHeightNode.h"
@@ -115,6 +116,7 @@ public:
 		RegisterGaeaHeightNode();
 		RegisterGaeaAngleNode();
 		RegisterGaeaSlopeNode();
+		RegisterGaeaFlowMapNodes();
 		RegisterGaeaCombineNode();
 		RegisterGaeaClampNode();
 
@@ -251,6 +253,8 @@ public:
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Curvature, TEXT("Curvature"), TEXT("Derive"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Height, TEXT("Height"), TEXT("Derive"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Slope, TEXT("Slope"), TEXT("Derive"));
+		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::FlowMap, TEXT("FlowMap"), TEXT("Derive"));
+		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::FlowMapClassic, TEXT("FlowMapClassic"), TEXT("Derive"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Combine, TEXT("Combine"), TEXT("Utility"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::ZeroBorders, TEXT("Edge"), TEXT("Utility"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Invert, TEXT("Invert"), TEXT("Legacy"), true);
