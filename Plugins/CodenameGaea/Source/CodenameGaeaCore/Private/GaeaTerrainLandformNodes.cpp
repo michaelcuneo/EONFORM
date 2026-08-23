@@ -1,5 +1,6 @@
 #include "GaeaTerrainLandformNodes.h"
 
+#include "GaeaReferenceFidelityExtendedNodes.h"
 #include "GaeaReferenceFidelityMountainNodes.h"
 #include "GaeaReferenceFidelityNodes.h"
 #include "GaeaReferenceFidelityProcessNodes.h"
@@ -130,6 +131,10 @@ namespace
 		{
 			RegisterGaeaReferenceFidelityProcessNodes();
 		}
+		if (!FGaeaTerrainNodeRegistry::IsRegistered(GaeaTerrainNodeTypes::Stratify))
+		{
+			RegisterGaeaReferenceFidelityExtendedNodes();
+		}
 		if (!FGaeaTerrainNodeRegistry::IsRegistered(GaeaTerrainNodeTypes::Shaper))
 		{
 			RegisterGaeaShaperNode();
@@ -173,10 +178,6 @@ namespace
 		}
 
 		const float TargetHeight = FMath::Clamp(RequestedHeight, 0.0f, 0.985f);
-		// Simulation is authoritative after the pre-erosion form has been built.
-		// Never inflate an eroded result merely to touch the authored maximum: that
-		// magnifies talus/deposits and makes carved drainage appear embossed. Only
-		// scale down when the processed result exceeds the requested ceiling.
 		const float Scale = MaxHeight > TargetHeight && MaxHeight > UE_SMALL_NUMBER
 			? TargetHeight / MaxHeight
 			: 1.0f;
@@ -271,7 +272,7 @@ namespace
 		EnsureAuditedMountainNodes();
 
 		const bool bReduceDetails = Node.GetBool(TEXT("ReduceDetails"), false);
-		const float MountainScale = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Scale"), 1.0)), 0.1f, 2.0f);
+		const float MountainScale = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Scale"), 1.0)), 0.01f, 2.0f);
 		const float RequestedHeight = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Height"), 0.92)), 0.0f, 1.0f);
 		const FName Style = Node.GetName(TEXT("Style"), TEXT("Basic"));
 		const FName Bulk = Node.GetName(TEXT("Bulk"), TEXT("Medium"));
@@ -280,126 +281,162 @@ namespace
 		const float OffsetY = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Y"), 0.0)), -1.5f, 1.5f);
 		const double ReferenceWorldMeters = ResolveReferenceWorldMeters(Context);
 
+		const bool bEroded = Style == TEXT("Eroded");
+		const bool bOld = Style == TEXT("Old");
+		const bool bAlpine = Style == TEXT("Alpine");
+		const bool bStrata = Style == TEXT("Strata");
 		const float BulkFactor = Bulk == TEXT("Low") ? 0.82f : Bulk == TEXT("High") ? 1.18f : 1.0f;
-		const float SupportScale = FMath::Clamp(MountainScale * BulkFactor * 1.06f, 0.16f, 2.0f);
-		const float PeakScale = FMath::Clamp(0.34f / FMath::Max(MountainScale * BulkFactor, 0.15f), 0.10f, 0.88f);
-		const float RidgeScale = FMath::Clamp(PeakScale * 1.28f, 0.10f, 1.0f);
-		const float SummitModulation = Style == TEXT("Alpine") ? 0.40f : Style == TEXT("Eroded") ? 0.44f : Style == TEXT("Old") ? 0.26f : 0.34f;
-		const double MacroErosionMeters = FMath::Clamp(ReferenceWorldMeters * (Style == TEXT("Alpine") ? 0.026 : Style == TEXT("Eroded") ? 0.038 : 0.034), 450.0, 6000.0);
-		const double FineErosionMeters = FMath::Clamp(MacroErosionMeters * (Style == TEXT("Alpine") ? 0.28 : 0.36), 140.0, 1800.0);
-		const double ThermalFeatureMeters = FMath::Clamp(ReferenceWorldMeters * (Style == TEXT("Old") ? 0.007 : Style == TEXT("Alpine") ? 0.0035 : 0.005), 35.0, 650.0);
+
+		// Mountain Scale is a perceptual footprint scale. Keep the same structural
+		// complexity inside that footprint by inversely scaling the internal
+		// Voronoi wavelength. At Scale 0.03 this intentionally reaches ~11x, which
+		// is valid for the public Voronoi node and preserves morphology instead of
+		// collapsing to a single radial nipple.
+		const float FootprintScale = FMath::Clamp(MountainScale * BulkFactor * (bAlpine ? 0.92f : 1.06f), 0.01f, 4.0f);
+		const float StructureScale = FMath::Clamp((bAlpine ? 0.44f : 0.34f) / FMath::Max(MountainScale * BulkFactor, 0.01f), 0.02f, 16.0f);
+		const float RidgeScale = FMath::Clamp(StructureScale * (bAlpine ? 1.46f : 1.28f), 0.02f, 16.0f);
+		const double MacroErosionMeters = FMath::Clamp(ReferenceWorldMeters * (bOld ? 0.050 : bEroded ? 0.036 : bAlpine ? 0.024 : 0.030), 250.0, 7000.0);
+		const double FineErosionMeters = FMath::Clamp(MacroErosionMeters * (bOld ? 0.30 : bAlpine ? 0.26 : 0.34), 80.0, 2000.0);
+		const double ThermalFeatureMeters = FMath::Clamp(ReferenceWorldMeters * (bOld ? 0.009 : bAlpine ? 0.0035 : 0.005), 30.0, 800.0);
 
 		FGaeaTerrainRecipe Recipe;
-		Recipe.Nodes.Reserve(9);
-		Recipe.Connections.Reserve(10);
+		Recipe.Nodes.Reserve(14);
+		Recipe.Connections.Reserve(16);
 		uint32 Ordinal = 1;
 
+		// ---- Shared Basic form -------------------------------------------------
+		// Basic is the authoritative pre-erosion mountain. Eroded and Old begin
+		// from this exact same form and differ only in the amount of subsequent
+		// geomorphic processing. Alpine intentionally selects a different form.
 		FGaeaTerrainNode& Support = AddNode(Recipe, GaeaTerrainNodeTypes::RadialGradient, Seed, Ordinal++);
-		Support.NumericParameters.Add(TEXT("Scale"), SupportScale);
+		Support.NumericParameters.Add(TEXT("Scale"), FootprintScale);
 		Support.NumericParameters.Add(TEXT("Height"), 1.0);
 		Support.NumericParameters.Add(TEXT("X"), OffsetX);
 		Support.NumericParameters.Add(TEXT("Y"), OffsetY);
 
 		FGaeaTerrainNode& Peaks = AddNode(Recipe, GaeaTerrainNodeTypes::Voronoi, Seed, Ordinal++);
-		Peaks.NumericParameters.Add(TEXT("Scale"), PeakScale);
-		Peaks.NumericParameters.Add(TEXT("Jitter"), Style == TEXT("Alpine") ? 1.18 : 0.92);
-		Peaks.NameParameters.Add(TEXT("Form"), Style == TEXT("Old") ? TEXT("A") : TEXT("P"));
-		Peaks.NumericParameters.Add(TEXT("Gain"), Style == TEXT("Alpine") ? 1.15 : 0.92);
+		Peaks.NumericParameters.Add(TEXT("Scale"), StructureScale);
+		Peaks.NumericParameters.Add(TEXT("Jitter"), bAlpine ? 1.22 : 0.94);
+		Peaks.NameParameters.Add(TEXT("Form"), bAlpine ? TEXT("A") : TEXT("P"));
+		Peaks.NumericParameters.Add(TEXT("Gain"), bAlpine ? 1.24 : 0.94);
 		Peaks.IntegerParameters.Add(TEXT("Seed"), static_cast<int64>(Seed) + 17);
 		Peaks.NameParameters.Add(TEXT("WarpType"), TEXT("Complex"));
-		Peaks.NumericParameters.Add(TEXT("WarpFrequency"), Style == TEXT("Alpine") ? 0.78 : 0.58);
-		Peaks.NumericParameters.Add(TEXT("WarpAmplitude"), Style == TEXT("Old") ? 0.18 : 0.32);
-		Peaks.IntegerParameters.Add(TEXT("WarpOctaves"), 3);
-		Peaks.NumericParameters.Add(TEXT("ScaleX"), Bulk == TEXT("High") ? 0.78 : 1.0);
-		Peaks.NumericParameters.Add(TEXT("ScaleY"), Bulk == TEXT("Low") ? 1.12 : 0.92);
+		Peaks.NumericParameters.Add(TEXT("WarpFrequency"), bAlpine ? 0.84 : 0.60);
+		Peaks.NumericParameters.Add(TEXT("WarpAmplitude"), bAlpine ? 0.48 : 0.32);
+		Peaks.IntegerParameters.Add(TEXT("WarpOctaves"), bReduceDetails ? 2 : 4);
+		Peaks.NumericParameters.Add(TEXT("ScaleX"), Bulk == TEXT("High") ? 0.80 : 1.0);
+		Peaks.NumericParameters.Add(TEXT("ScaleY"), Bulk == TEXT("Low") ? 1.12 : 0.94);
 		Peaks.NumericParameters.Add(TEXT("X"), OffsetX * 0.08f);
 		Peaks.NumericParameters.Add(TEXT("Y"), OffsetY * 0.08f);
 
 		FGaeaTerrainNode& RidgeGuide = AddNode(Recipe, GaeaTerrainNodeTypes::Voronoi, Seed, Ordinal++);
 		RidgeGuide.NumericParameters.Add(TEXT("Scale"), RidgeScale);
-		RidgeGuide.NumericParameters.Add(TEXT("Jitter"), 1.05);
-		RidgeGuide.NameParameters.Add(TEXT("Form"), TEXT("R"));
-		RidgeGuide.NumericParameters.Add(TEXT("Gain"), Style == TEXT("Alpine") ? 1.32 : 1.02);
+		RidgeGuide.NumericParameters.Add(TEXT("Jitter"), bAlpine ? 1.20 : 1.05);
+		RidgeGuide.NameParameters.Add(TEXT("Form"), bAlpine ? TEXT("D") : TEXT("R"));
+		RidgeGuide.NumericParameters.Add(TEXT("Gain"), bAlpine ? 1.38 : 1.04);
 		RidgeGuide.IntegerParameters.Add(TEXT("Seed"), static_cast<int64>(Seed) + 83);
 		RidgeGuide.NameParameters.Add(TEXT("WarpType"), TEXT("Complex"));
-		RidgeGuide.NumericParameters.Add(TEXT("WarpFrequency"), 0.72);
-		RidgeGuide.NumericParameters.Add(TEXT("WarpAmplitude"), 0.26);
-		RidgeGuide.IntegerParameters.Add(TEXT("WarpOctaves"), 3);
+		RidgeGuide.NumericParameters.Add(TEXT("WarpFrequency"), bAlpine ? 0.86 : 0.72);
+		RidgeGuide.NumericParameters.Add(TEXT("WarpAmplitude"), bAlpine ? 0.38 : 0.26);
+		RidgeGuide.IntegerParameters.Add(TEXT("WarpOctaves"), bReduceDetails ? 2 : 4);
 
 		FGaeaTerrainNode& Base = AddNode(Recipe, GaeaTerrainNodeTypes::Combine, Seed, Ordinal++);
 		Base.NameParameters.Add(TEXT("Mode"), TEXT("Multiply"));
-		Base.NumericParameters.Add(TEXT("Ratio"), SummitModulation);
+		Base.NumericParameters.Add(TEXT("Ratio"), bAlpine ? 0.48 : 0.34);
 		Base.NameParameters.Add(TEXT("Output"), TEXT("Clamp"));
 		Link(Recipe, Support, TEXT("Out"), Base, TEXT("Input1"));
 		Link(Recipe, Peaks, TEXT("Out"), Base, TEXT("Input2"));
 
 		FGaeaTerrainNode& Shaper = AddNode(Recipe, GaeaTerrainNodeTypes::Shaper, Seed, Ordinal++);
-		Shaper.NumericParameters.Add(TEXT("Shape"), Style == TEXT("Old") ? 0.018 : Style == TEXT("Alpine") ? 0.085 : 0.055);
-		Shaper.NumericParameters.Add(TEXT("LocalEffect"), Style == TEXT("Alpine") ? 0.20 : 0.11);
-		Shaper.NumericParameters.Add(TEXT("LocalArea"), 0.52);
+		Shaper.NumericParameters.Add(TEXT("Shape"), bAlpine ? 0.11 : 0.055);
+		Shaper.NumericParameters.Add(TEXT("LocalEffect"), bAlpine ? 0.24 : 0.11);
+		Shaper.NumericParameters.Add(TEXT("LocalArea"), bAlpine ? 0.44 : 0.52);
 		Shaper.BoolParameters.Add(TEXT("MaintainFineDetails"), true);
-		Shaper.NumericParameters.Add(TEXT("DetailSize"), bReduceDetails ? 0.55 : 0.27);
+		Shaper.NumericParameters.Add(TEXT("DetailSize"), bReduceDetails ? 0.55 : bAlpine ? 0.20 : 0.27);
 		Link(Recipe, Base, TEXT("Out"), Shaper, TEXT("Terrain"));
 
 		FGaeaTerrainNode& SlopeWarp = AddNode(Recipe, GaeaTerrainNodeTypes::SlopeWarp, Seed, Ordinal++);
-		SlopeWarp.NumericParameters.Add(TEXT("Intensity"), Style == TEXT("Alpine") ? 0.36 : Style == TEXT("Old") ? 0.17 : 0.27);
-		SlopeWarp.IntegerParameters.Add(TEXT("Iterations"), bReduceDetails ? 1 : 2);
-		SlopeWarp.NumericParameters.Add(TEXT("Direction"), Style == TEXT("Strata") ? 18.0 : 0.0);
+		SlopeWarp.NumericParameters.Add(TEXT("Intensity"), bAlpine ? 0.44 : bStrata ? 0.31 : 0.27);
+		SlopeWarp.IntegerParameters.Add(TEXT("Iterations"), bReduceDetails ? 1 : bAlpine ? 3 : 2);
+		SlopeWarp.NumericParameters.Add(TEXT("Direction"), bStrata ? 24.0 : 0.0);
 		SlopeWarp.BoolParameters.Add(TEXT("Normalized"), true);
 		SlopeWarp.NameParameters.Add(TEXT("Quality"), bReduceDetails ? TEXT("Medium") : TEXT("High"));
 		SlopeWarp.NameParameters.Add(TEXT("Antialiasing"), bReduceDetails ? TEXT("Off") : TEXT("x4"));
 		Link(Recipe, Shaper, TEXT("Out"), SlopeWarp, TEXT("Input"));
 		Link(Recipe, RidgeGuide, TEXT("Out"), SlopeWarp, TEXT("Guide"));
 
-		FGaeaTerrainNode& Macro = AddNode(Recipe, GaeaTerrainNodeTypes::Erosion2, Seed, Ordinal++);
-		Macro.IntegerParameters.Add(TEXT("Duration"), bReduceDetails ? 12 : Style == TEXT("Eroded") ? 42 : Style == TEXT("Alpine") ? 34 : 28);
-		Macro.NumericParameters.Add(TEXT("Downcutting"), Style == TEXT("Alpine") ? 0.76 : Style == TEXT("Old") ? 0.42 : 0.60);
-		Macro.NumericParameters.Add(TEXT("ErosionScale"), MacroErosionMeters);
-		Macro.IntegerParameters.Add(TEXT("Seed"), static_cast<int64>(Seed) + 307);
-		Macro.NumericParameters.Add(TEXT("SuspendedLoad"), 0.58);
-		Macro.NumericParameters.Add(TEXT("BedLoad"), 0.48);
-		Macro.NumericParameters.Add(TEXT("CoarseSediments"), Style == TEXT("Alpine") ? 0.36 : 0.28);
-		Macro.NumericParameters.Add(TEXT("Shape"), Style == TEXT("Alpine") ? 0.62 : 0.48);
-		Macro.NumericParameters.Add(TEXT("ShapeSharpness"), Style == TEXT("Alpine") ? 0.68 : 0.50);
-		Macro.NumericParameters.Add(TEXT("ShapeDetailScale"), bReduceDetails ? 0.45 : 0.88);
-		Macro.BoolParameters.Add(TEXT("EnableOrographic"), Style == TEXT("Alpine"));
-		Macro.NumericParameters.Add(TEXT("Direction"), 25.0);
-		Macro.NumericParameters.Add(TEXT("DirectionalPrecipitation"), 0.42);
-		Macro.NumericParameters.Add(TEXT("RainShadow"), 0.12);
-		Link(Recipe, SlopeWarp, TEXT("Out"), Macro, TEXT("Terrain"));
+		FGaeaTerrainNode* LastProcess = &SlopeWarp;
 
-		FGaeaTerrainNode* LastProcess = &Macro;
-		if (!bReduceDetails)
+		// ---- Style branches ----------------------------------------------------
+		// Basic stops at the authored mountain form. Eroded is Basic plus moderate
+		// weathering; Old is the same Basic form with substantially more erosion.
+		// Alpine uses the alternate sharp/ridged form above, then receives only the
+		// process needed to turn those structures into glacial-looking relief.
+		if (bEroded || bOld || bAlpine)
 		{
-			FGaeaTerrainNode& Fine = AddNode(Recipe, GaeaTerrainNodeTypes::Erosion2, Seed, Ordinal++);
-			Fine.IntegerParameters.Add(TEXT("Duration"), Style == TEXT("Eroded") ? 24 : 16);
-			Fine.NumericParameters.Add(TEXT("Downcutting"), Style == TEXT("Alpine") ? 0.62 : 0.46);
-			Fine.NumericParameters.Add(TEXT("ErosionScale"), FineErosionMeters);
-			Fine.IntegerParameters.Add(TEXT("Seed"), static_cast<int64>(Seed) + 503);
-			Fine.NumericParameters.Add(TEXT("SuspendedLoad"), 0.38);
-			Fine.NumericParameters.Add(TEXT("BedLoad"), 0.30);
-			Fine.NumericParameters.Add(TEXT("CoarseSediments"), 0.18);
-			Fine.NumericParameters.Add(TEXT("Shape"), 0.30);
-			Fine.NumericParameters.Add(TEXT("ShapeSharpness"), 0.48);
-			Fine.NumericParameters.Add(TEXT("ShapeDetailScale"), 0.72);
-			Link(Recipe, Macro, TEXT("Out"), Fine, TEXT("Terrain"));
-			LastProcess = &Fine;
+			FGaeaTerrainNode& Macro = AddNode(Recipe, GaeaTerrainNodeTypes::Erosion2, Seed, Ordinal++);
+			Macro.IntegerParameters.Add(TEXT("Duration"), bReduceDetails ? 12 : bOld ? 58 : bEroded ? 34 : 30);
+			Macro.NumericParameters.Add(TEXT("Downcutting"), bOld ? 0.48 : bEroded ? 0.58 : 0.70);
+			Macro.NumericParameters.Add(TEXT("ErosionScale"), MacroErosionMeters);
+			Macro.IntegerParameters.Add(TEXT("Seed"), static_cast<int64>(Seed) + 307);
+			Macro.NumericParameters.Add(TEXT("SuspendedLoad"), bOld ? 0.72 : bEroded ? 0.60 : 0.52);
+			Macro.NumericParameters.Add(TEXT("BedLoad"), bOld ? 0.62 : bEroded ? 0.48 : 0.42);
+			Macro.NumericParameters.Add(TEXT("CoarseSediments"), bOld ? 0.44 : bEroded ? 0.30 : 0.32);
+			Macro.NumericParameters.Add(TEXT("Shape"), bOld ? 0.56 : bEroded ? 0.48 : 0.64);
+			Macro.NumericParameters.Add(TEXT("ShapeSharpness"), bOld ? 0.38 : bEroded ? 0.50 : 0.72);
+			Macro.NumericParameters.Add(TEXT("ShapeDetailScale"), bReduceDetails ? 0.42 : bAlpine ? 0.92 : 0.76);
+			Macro.BoolParameters.Add(TEXT("EnableOrographic"), bAlpine);
+			Macro.NumericParameters.Add(TEXT("Direction"), 25.0);
+			Macro.NumericParameters.Add(TEXT("DirectionalPrecipitation"), 0.42);
+			Macro.NumericParameters.Add(TEXT("RainShadow"), 0.12);
+			Link(Recipe, *LastProcess, TEXT("Out"), Macro, TEXT("Terrain"));
+			LastProcess = &Macro;
+
+			if (!bReduceDetails && (bOld || bEroded || bAlpine))
+			{
+				FGaeaTerrainNode& Fine = AddNode(Recipe, GaeaTerrainNodeTypes::Erosion2, Seed, Ordinal++);
+				Fine.IntegerParameters.Add(TEXT("Duration"), bOld ? 34 : bEroded ? 18 : 14);
+				Fine.NumericParameters.Add(TEXT("Downcutting"), bOld ? 0.36 : bEroded ? 0.44 : 0.58);
+				Fine.NumericParameters.Add(TEXT("ErosionScale"), FineErosionMeters);
+				Fine.IntegerParameters.Add(TEXT("Seed"), static_cast<int64>(Seed) + 503);
+				Fine.NumericParameters.Add(TEXT("SuspendedLoad"), bOld ? 0.56 : 0.38);
+				Fine.NumericParameters.Add(TEXT("BedLoad"), bOld ? 0.48 : 0.30);
+				Fine.NumericParameters.Add(TEXT("CoarseSediments"), bOld ? 0.34 : 0.18);
+				Fine.NumericParameters.Add(TEXT("Shape"), bOld ? 0.44 : bAlpine ? 0.34 : 0.30);
+				Fine.NumericParameters.Add(TEXT("ShapeSharpness"), bOld ? 0.30 : bAlpine ? 0.58 : 0.46);
+				Fine.NumericParameters.Add(TEXT("ShapeDetailScale"), bAlpine ? 0.86 : 0.68);
+				Link(Recipe, *LastProcess, TEXT("Out"), Fine, TEXT("Terrain"));
+				LastProcess = &Fine;
+			}
+
+			FGaeaTerrainNode& Thermal = AddNode(Recipe, GaeaTerrainNodeTypes::Thermal2, Seed, Ordinal++);
+			Thermal.IntegerParameters.Add(TEXT("Duration"), bReduceDetails ? 4 : bOld ? 22 : bEroded ? 10 : 8);
+			Thermal.NumericParameters.Add(TEXT("Strength"), bOld ? 0.44 : bEroded ? 0.24 : 0.18);
+			Thermal.NumericParameters.Add(TEXT("Anisotropy"), bAlpine ? 0.12 : 0.03);
+			Thermal.NumericParameters.Add(TEXT("Angle"), bAlpine ? 41.0 : bOld ? 32.0 : 35.0);
+			Thermal.NumericParameters.Add(TEXT("SedimentRemoval"), bAlpine ? 0.32 : bOld ? 0.20 : 0.12);
+			Thermal.NumericParameters.Add(TEXT("FeatureScale"), ThermalFeatureMeters);
+			Link(Recipe, *LastProcess, TEXT("Out"), Thermal, TEXT("Terrain"));
+			LastProcess = &Thermal;
+		}
+		else if (bStrata)
+		{
+			// Strata is not "more erosion". Preserve the Basic massif and apply a
+			// directional, broken rock-layer treatment that reads as long-term exposed
+			// and wind-worked stone rather than fluvial incision.
+			FGaeaTerrainNode& Stratify = AddNode(Recipe, GaeaTerrainNodeTypes::Stratify, Seed, Ordinal++);
+			Stratify.NumericParameters.Add(TEXT("Spacing"), bReduceDetails ? 0.42 : 0.24);
+			Stratify.IntegerParameters.Add(TEXT("Octaves"), bReduceDetails ? 3 : 6);
+			Stratify.NumericParameters.Add(TEXT("Intensity"), bReduceDetails ? 0.34 : 0.62);
+			Stratify.NumericParameters.Add(TEXT("Shape"), 0.72);
+			Stratify.IntegerParameters.Add(TEXT("Seed"), static_cast<int64>(Seed) + 911);
+			Stratify.NumericParameters.Add(TEXT("TiltAmount"), 0.28);
+			Stratify.NumericParameters.Add(TEXT("Direction"), 26.0);
+			Link(Recipe, *LastProcess, TEXT("Out"), Stratify, TEXT("Terrain"));
+			LastProcess = &Stratify;
 		}
 
-		FGaeaTerrainNode& Thermal = AddNode(Recipe, GaeaTerrainNodeTypes::Thermal2, Seed, Ordinal++);
-		Thermal.IntegerParameters.Add(TEXT("Duration"), bReduceDetails ? 5 : Style == TEXT("Old") ? 16 : 10);
-		Thermal.NumericParameters.Add(TEXT("Strength"), Style == TEXT("Old") ? 0.36 : Style == TEXT("Alpine") ? 0.20 : 0.24);
-		Thermal.NumericParameters.Add(TEXT("Anisotropy"), Style == TEXT("Alpine") ? 0.10 : 0.03);
-		Thermal.NumericParameters.Add(TEXT("Angle"), Style == TEXT("Alpine") ? 39.0 : 35.0);
-		Thermal.NumericParameters.Add(TEXT("SedimentRemoval"), Style == TEXT("Alpine") ? 0.18 : 0.08);
-		Thermal.NumericParameters.Add(TEXT("FeatureScale"), ThermalFeatureMeters);
-		Link(Recipe, *LastProcess, TEXT("Out"), Thermal, TEXT("Terrain"));
-
-		// The hydraulic/thermal surface is the final morphology. Do not add Craggy
-		// after erosion or multiply the support back over it: both operations can
-		// visually bury incision and create spike/ribbon artifacts unrelated to the
-		// process outputs. Rocky surface treatment belongs downstream as its own node.
-		Recipe.OutputNode = Thermal.Id;
+		Recipe.OutputNode = LastProcess->Id;
 
 		FGaeaTerrainEvaluationContext InnerContext = Context;
 		const FGaeaTerrainEvaluationResult Evaluation = FGaeaTerrainEvaluator::Evaluate(Recipe, InnerContext);
@@ -449,7 +486,7 @@ void RegisterGaeaTerrainLandformNodes()
 	D.Type = GaeaTerrainNodeTypes::Mountain;
 	D.DisplayName = TEXT("Mountain");
 	D.Category = TEXT("Terrain");
-	D.Description = TEXT("Process-authored mountain massif built from Gaea-style Voronoi form, shaping, distortion, hydraulic incision and thermal weathering.");
+	D.Description = TEXT("Gaea-style mountain generator: Basic authors the massif; Eroded and Old progressively weather it; Alpine selects a distinct sharp-ridge form; Strata applies directional exposed-rock structure.");
 	D.Outputs = {
 		TerrainOut(),
 		ScalarOut(TEXT("Mass"), TEXT("Mass")),
@@ -460,7 +497,7 @@ void RegisterGaeaTerrainLandformNodes()
 		ScalarOut(TEXT("RockExposure"), TEXT("Rock Exposure")),
 		ScalarOut(TEXT("CryosphereEligibility"), TEXT("Cryosphere Eligibility"))
 	};
-	D.Parameters.Add(Num(TEXT("Scale"), TEXT("Scale"), 1.0, 0.1, 2.0, TEXT("Mountain")));
+	D.Parameters.Add(Num(TEXT("Scale"), TEXT("Scale"), 1.0, 0.01, 2.0, TEXT("Mountain")));
 	D.Parameters.Add(Num(TEXT("Height"), TEXT("Height"), 0.92, 0.0, 1.0, TEXT("Mountain")));
 	D.Parameters.Add(Choice(TEXT("Style"), TEXT("Style"), TEXT("Basic"), { TEXT("Basic"), TEXT("Eroded"), TEXT("Old"), TEXT("Alpine"), TEXT("Strata") }, TEXT("Mountain")));
 	D.Parameters.Add(Choice(TEXT("Bulk"), TEXT("Bulk"), TEXT("Medium"), { TEXT("Low"), TEXT("Medium"), TEXT("High") }, TEXT("Mountain")));
