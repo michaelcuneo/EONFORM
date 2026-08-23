@@ -5,6 +5,11 @@
 #include "GaeaTerrainNodeDescriptor.h"
 #include "GaeaTerrainRecipe.h"
 
+namespace GaeaTerrainNodeTypes
+{
+	const FName Ridge(TEXT("Ridge"));
+}
+
 namespace
 {
 	FGaeaTerrainPortDescriptor RidgeTerrainOut()
@@ -264,8 +269,6 @@ bool FGaeaRidgeGenerator::Generate(
 	FGaeaScalarField Guide;
 	Guide.Initialize(Domain, Descriptor, 0.0f);
 
-	// Ridge scale controls the broad cellular skeleton. Larger values make the
-	// structural cells broader rather than simply increasing octave frequency.
 	const float CellFrequency = FMath::Lerp(20.0f, 3.2f, Scale);
 	for (int32 Y = 0; Y < Height; ++Y)
 	{
@@ -283,9 +286,6 @@ bool FGaeaRidgeGenerator::Generate(
 		}
 	}
 
-	// Break the terrace guide itself so it does not produce mechanically straight
-	// displacement bands. Definition controls how coherent versus intricate the
-	// guide remains.
 	FGaeaScalarField WarpedGuide = Guide;
 	const float GuideWarpSamples = FMath::Lerp(3.0f, 22.0f, 1.0f - Definition);
 	for (int32 Y = 0; Y < Height; ++Y)
@@ -301,8 +301,6 @@ bool FGaeaRidgeGenerator::Generate(
 		}
 	}
 
-	// The guide displaces the Voronoi ridge skeleton along a diagonal direction.
-	// This turns closed cellular edges into long branching ridge chains.
 	FGaeaScalarField Directed = Structure;
 	const float DirectionRadians = FMath::DegreesToRadians(45.0f);
 	const FVector2D Axis(FMath::Cos(DirectionRadians), FMath::Sin(DirectionRadians));
@@ -317,8 +315,6 @@ bool FGaeaRidgeGenerator::Generate(
 		}
 	}
 
-	// A second independent vector deformation creates the smaller irregularities
-	// that keep the ridge from reading as a warped Voronoi diagram.
 	FGaeaScalarField FractalWarped = Directed;
 	const float SecondaryWarpSamples = FMath::Lerp(2.0f, 16.0f, Scale);
 	for (int32 Y = 0; Y < Height; ++Y)
