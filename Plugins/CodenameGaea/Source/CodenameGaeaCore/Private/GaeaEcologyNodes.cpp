@@ -184,9 +184,11 @@ namespace GaeaEcology
 				const float MoistureValue = FMath::Clamp(Rain * 0.62f + Catch * 0.24f + Concavity->AtInterior(X, Y) * 0.14f - Evap * 0.35f, 0.0f, 1.0f);
 				Moisture.AtInterior(X, Y) = MoistureValue;
 
-				const float MoistureFit = 1.0f - FMath::Clamp(FMath::Abs(MoistureValue - MoisturePreference) / FMath::Max(0.55f, MoisturePreference), 0.0f, 1.0f);
+				const float RawMoistureFit = 1.0f - FMath::Clamp(FMath::Abs(MoistureValue - MoisturePreference) / FMath::Max(0.55f, MoisturePreference), 0.0f, 1.0f);
+				const float MoistureFit = 0.15f + 0.85f * RawMoistureFit;
 				const float Soil = FMath::Clamp(SoilDepth->AtInterior(X, Y) * 0.72f + Deposition->AtInterior(X, Y) * 0.28f, 0.0f, 1.0f);
-				const float SoilFit = SmoothStep01((Soil - SoilPreference * 0.35f) / FMath::Max(0.7f - SoilPreference * 0.35f, 0.1f));
+				const float RawSoilFit = SmoothStep01((Soil - SoilPreference * 0.35f) / FMath::Max(0.7f - SoilPreference * 0.35f, 0.1f));
+				const float SoilFit = (bShrubs ? 0.18f : 0.08f) + (bShrubs ? 0.82f : 0.92f) * RawSoilFit;
 				const float SlopeFit = 1.0f - SmoothStep01(Slope->AtInterior(X, Y) / MaxSlope);
 				const float Shelter = FMath::Lerp(1.0f, 0.55f + Concavity->AtInterior(X, Y) * 0.45f, ShelterStrength);
 				const float ElevationFit = FMath::Clamp(1.0f + (Elevation->AtInterior(X, Y) - 0.5f) * ElevationBias, 0.0f, 1.0f);
