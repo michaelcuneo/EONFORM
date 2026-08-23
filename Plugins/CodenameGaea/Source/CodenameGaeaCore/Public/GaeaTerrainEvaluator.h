@@ -15,6 +15,13 @@ struct CODENAMEGAEACORE_API FGaeaTerrainEvaluationContext
 	FGaeaTerrainPhysicalMetrics PhysicalMetrics = FGaeaTerrainPhysicalContext::GetActive();
 
 	/**
+	 * Preferred evaluation resolution for source/terrain nodes. Zero means the
+	 * node may choose an appropriate native working resolution. Expensive
+	 * composites may clamp very large requests until tiled evaluation is active.
+	 */
+	FIntPoint TargetResolution = FIntPoint::ZeroValue;
+
+	/**
 	 * Changes whenever an external part of the evaluation context changes.
 	 * Incremental evaluation mixes this into node signatures so physical output
 	 * settings or external source revisions cannot accidentally reuse stale data.
