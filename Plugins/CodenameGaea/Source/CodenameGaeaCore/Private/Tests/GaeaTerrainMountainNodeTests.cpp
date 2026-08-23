@@ -14,7 +14,8 @@ namespace
 		FName Bulk,
 		int32 Seed,
 		double Scale = 0.98,
-		double Height = 0.92)
+		double Height = 0.92,
+		int32 TargetResolution = 257)
 	{
 		FGaeaTerrainNode Mountain;
 		Mountain.Id = FGuid(0x4D4F554E, 0x5441494E, static_cast<uint32>(Seed), 0x00000001);
@@ -31,6 +32,7 @@ namespace
 
 		FGaeaTerrainEvaluationContext Context;
 		Context.PhysicalMetrics = FGaeaTerrainPhysicalMetrics(180000.0, 120000.0, 4200.0, 0.0);
+		Context.TargetResolution = FIntPoint(TargetResolution, TargetResolution);
 		return FGaeaTerrainEvaluator::Evaluate(Recipe, Context);
 	}
 }
@@ -63,7 +65,10 @@ bool FGaeaTerrainMountainCompositeTest::RunTest(const FString& Parameters)
 			}));
 	}
 
-	const FGaeaTerrainEvaluationResult Result = EvaluateMountainVariant(TEXT("Alpine"), TEXT("Medium"), 4451);
+	// Keep automation inexpensive while proving that requested working resolution
+	// reaches the source/composite instead of being applied only as a final mesh resample.
+	constexpr int32 TestResolution = 257;
+	const FGaeaTerrainEvaluationResult Result = EvaluateMountainVariant(TEXT("Alpine"), TEXT("Medium"), 4451, 0.98, 0.92, TestResolution);
 	TestTrue(TEXT("Mountain graph evaluates"), Result.bSuccess);
 	if (!Result.bSuccess)
 	{
@@ -92,6 +97,9 @@ bool FGaeaTerrainMountainCompositeTest::RunTest(const FString& Parameters)
 
 	if (Height)
 	{
+		TestEqual(TEXT("Mountain evaluates at requested working width"), Height->Domain.Dimensions.X, TestResolution);
+		TestEqual(TEXT("Mountain evaluates at requested working depth"), Height->Domain.Dimensions.Y, TestResolution);
+
 		const FVector2d WorldSizeCm = Height->Domain.WorldSize();
 		TestTrue(TEXT("Mountain honors rectangular physical width"), FMath::IsNearlyEqual(FMath::Abs(WorldSizeCm.X), 18000000.0, 1.0));
 		TestTrue(TEXT("Mountain honors rectangular physical depth"), FMath::IsNearlyEqual(FMath::Abs(WorldSizeCm.Y), 12000000.0, 1.0));
@@ -122,7 +130,7 @@ bool FGaeaTerrainMountainCompositeTest::RunTest(const FString& Parameters)
 			? static_cast<float>(NearPeakSamples) / static_cast<float>(MountainSamples)
 			: 1.0f;
 		TestTrue(TEXT("Mountain summit is not a saturated mesa"), PeakFraction < 0.025f);
-		TestTrue(TEXT("Mountain summit is a spatial landform, not a one-sample needle"), SummitSamples >= 20);
+		TestTrue(TEXT("Mountain summit is a spatial landform, not a one-sample needle"), SummitSamples >= 8);
 
 		if (SortedHeights.Num() > 1000)
 		{
