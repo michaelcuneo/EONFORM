@@ -28,10 +28,10 @@ bool FGaeaTerrainTransformDescriptorTest::RunTest(const FString& Parameters)
 	FGaeaTerrainNodeDescriptor Descriptor;
 	TestTrue(TEXT("Transform descriptor exists"), FGaeaTerrainNodeDescriptorRegistry::Get(GaeaTerrainNodeTypes::Transform, Descriptor));
 	TestEqual(TEXT("Transform display name"), Descriptor.DisplayName, FString(TEXT("Transform")));
-	TestEqual(TEXT("Transform category"), Descriptor.Category, FString(TEXT("Adjustments")));
+	TestEqual(TEXT("Transform category"), Descriptor.Category, FString(TEXT("Modify")));
 	TestEqual(TEXT("Transform input count"), Descriptor.Inputs.Num(), 1);
 	TestEqual(TEXT("Transform output count"), Descriptor.Outputs.Num(), 1);
-	TestEqual(TEXT("Transform parameter count"), Descriptor.Parameters.Num(), 10);
+	TestEqual(TEXT("Transform parameter count"), Descriptor.Parameters.Num(), 11);
 	if (Descriptor.Outputs.Num() == 1)
 	{
 		TestEqual(TEXT("Transform output pin"), Descriptor.Outputs[0].Name, FName(TEXT("Out")));
