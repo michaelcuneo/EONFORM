@@ -153,20 +153,20 @@ namespace
 		Settings.ScaleX = 1.0f;
 		Settings.ScaleY = 1.0f;
 
-		// Mountain owns the visible footprint through its public Scale parameter.
-		// Do not manufacture a second coarse-to-fine footprint hierarchy by driving
-		// its child Ridges far away from Ridge's authored 0.75 scale. The three
-		// layers get their hierarchy from Definition and independent seeds instead.
-		Settings.Scale = 0.75f;
+		// These are the three distinct Ridge parameter bands recovered from the
+		// Mountain implementation. Keep the coarse-to-fine construction intact.
 		switch (Layer)
 		{
 		case 0:
+			Settings.Scale = Random.FRandRange(0.50f, 0.75f);
 			Settings.Definition = 0.40f;
 			break;
 		case 1:
+			Settings.Scale = Random.FRandRange(0.25f, 0.50f);
 			Settings.Definition = Random.FRandRange(0.50f, 1.00f);
 			break;
 		default:
+			Settings.Scale = Random.FRandRange(0.14f, 0.38f);
 			Settings.Definition = Random.FRandRange(0.10f, 0.60f);
 			break;
 		}
