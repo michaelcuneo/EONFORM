@@ -25,6 +25,12 @@ public:
 
 	virtual void UpdateGraphNode() override;
 	virtual TSharedPtr<SGraphPin> CreatePinWidget(UEdGraphPin* Pin) const override;
+	virtual void Tick(const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime) override;
+
+private:
+	FSlateColor GetSolveGlowColor() const;
+	FSlateColor GetSolveStatusColor() const;
+	FText GetSolveStatusText() const;
 };
 
 class FGaeaTerrainGraphNodeFactory final : public FGraphPanelNodeFactory
