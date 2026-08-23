@@ -72,9 +72,6 @@ namespace GaeaReferenceFidelityProcess
 
 	float PhysicalScaleToSolver(double Meters, double ReferenceMeters)
 	{
-		// The solver's internal feature response remains bounded, but the public
-		// contract is physical. Mapping through a fixed metre reference keeps the
-		// same authored value stable as build resolution changes.
 		return FMath::Clamp(static_cast<float>(Meters / FMath::Max(ReferenceMeters, 1.0)), 0.25f, 8.0f);
 	}
 
@@ -177,9 +174,9 @@ namespace GaeaReferenceFidelityProcess
 		S.bAggressiveMode = Node.GetBool(TEXT("AggressiveMode"), false);
 		S.bDeterministic = Node.GetBool(TEXT("Deterministic"), true);
 		const FName AreaEffect = Node.GetName(TEXT("AreaEffect"), TEXT("None"));
-		if (AreaEffect == TEXT("Erosion Strength")) S.SelectiveProcessing = TEXT("ErosionStrength");
-		else if (AreaEffect == TEXT("Rock Softness")) S.SelectiveProcessing = TEXT("RockSoftness");
-		else if (AreaEffect == TEXT("Precipitation Amount")) S.SelectiveProcessing = TEXT("Precipitation");
+		if (AreaEffect == TEXT("ErosionStrength") || AreaEffect == TEXT("Erosion Strength")) S.SelectiveProcessing = TEXT("ErosionStrength");
+		else if (AreaEffect == TEXT("RockSoftness") || AreaEffect == TEXT("Rock Softness")) S.SelectiveProcessing = TEXT("RockSoftness");
+		else if (AreaEffect == TEXT("PrecipitationAmount") || AreaEffect == TEXT("Precipitation Amount")) S.SelectiveProcessing = TEXT("Precipitation");
 		ConfigurePhysical(*Height, Input->HeightScale, Context, S);
 
 		FGaeaScalarField Area;
@@ -228,8 +225,6 @@ namespace GaeaReferenceFidelityProcess
 		const float BedAngle = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("BedDischargeAngle"), 28.0)), 0.0f, 80.0f);
 		const float Coarse = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("CoarseSediments"), 0.3)), 0.0f, 1.0f);
 		const float CoarseAngle = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("CoarseDischargeAngle"), 38.0)), 0.0f, 80.0f);
-		const float DepositionBoost = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("DepositionBoost"), 0.2)), 0.0f, 2.0f);
-		const float ExtraDeposition = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("ExtraDepositionBoost"), 0.0)), 0.0f, 2.0f);
 		const float Shape = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Shape"), 0.5)), 0.0f, 1.0f);
 		const float Sharpness = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("ShapeSharpness"), 0.5)), 0.0f, 1.0f);
 		const float DetailScale = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("ShapeDetailScale"), 1.0)), 0.0f, 1.0f);
@@ -270,9 +265,10 @@ namespace GaeaReferenceFidelityProcess
 			}
 		}
 
-		const float AngleWeightedLoad = Suspended * FMath::Lerp(1.25f, 0.45f, SuspendedAngle / 80.0f)
-			+ Bed * FMath::Lerp(1.0f, 0.52f, BedAngle / 80.0f)
-			+ Coarse * FMath::Lerp(0.72f, 0.30f, CoarseAngle / 80.0f);
+		const float SuspendedDischarge = Suspended * FMath::Lerp(1.25f, 0.45f, SuspendedAngle / 80.0f);
+		const float BedDischarge = Bed * FMath::Lerp(1.0f, 0.52f, BedAngle / 80.0f);
+		const float CoarseDischarge = Coarse * FMath::Lerp(0.72f, 0.30f, CoarseAngle / 80.0f);
+		const float AngleWeightedLoad = SuspendedDischarge + BedDischarge + CoarseDischarge;
 		FGaeaHydraulicErosionSettings S;
 		S.Iterations = Duration;
 		S.Downcutting = Downcutting;
@@ -282,7 +278,13 @@ namespace GaeaReferenceFidelityProcess
 		S.Debris = FMath::Clamp(0.18f + Bed * 0.34f + Coarse * 0.48f, 0.0f, 1.0f);
 		S.Volume = FMath::Clamp(0.45f + Suspended + Bed * 0.55f, 0.1f, 4.0f);
 		S.SedimentCapacity = FMath::Clamp(0.28f + AngleWeightedLoad * 0.55f, 0.08f, 2.0f);
-		S.DepositionRate = FMath::Clamp(0.05f + 0.13f * (DepositionBoost + ExtraDeposition) + 0.10f * Coarse, 0.01f, 0.65f);
+		// Erosion2's documented sediment controls determine discharge and resting
+		// sediment. Do not inject an undocumented global deposition booster: it can
+		// turn drainage paths into raised ribbons and makes the public controls lie.
+		S.DepositionRate = FMath::Clamp(
+			0.025f + BedDischarge * 0.055f + CoarseDischarge * 0.11f + SuspendedDischarge * 0.012f,
+			0.01f,
+			0.28f);
 		S.MinimumSlope = FMath::Lerp(0.018f, 0.004f, DetailScale);
 		S.Seed = Seed;
 		S.bDeterministic = true;
@@ -317,7 +319,7 @@ namespace GaeaReferenceFidelityProcess
 			Num(TEXT("Downcutting"), TEXT("Downcutting"), 0.5, 0.0, 2.0, TEXT("Downcutting")), Num(TEXT("Inhibition"), TEXT("Inhibition"), 0.0, 0.0, 1.0, TEXT("Downcutting")), Num(TEXT("BaseLevel"), TEXT("Base Level"), -1.0, -1.0, 1.0, TEXT("Downcutting")),
 			Num(TEXT("FeatureScale"), TEXT("Feature Scale (m)"), 2000.0, 1.0, 20000.0, TEXT("Scale")), Bool(TEXT("RealScale"), TEXT("Real Scale"), true, TEXT("Scale")), Num(TEXT("TerrainScale"), TEXT("Terrain Scale"), 1.0, 0.01, 100.0, TEXT("Scale")), Num(TEXT("Verticality"), TEXT("Verticality"), 1.0, 0.01, 10.0, TEXT("Scale")),
 			Num(TEXT("Debris"), TEXT("Debris"), 0.5, 0.0, 1.0, TEXT("Flow")), Num(TEXT("Volume"), TEXT("Volume"), 1.0, 0.0, 4.0, TEXT("Flow")), Num(TEXT("SedimentRemoval"), TEXT("Sediment Removal"), 0.0, 0.0, 1.0, TEXT("Flow")),
-			Choice(TEXT("AreaEffect"), TEXT("Area Effect"), TEXT("None"), { TEXT("Erosion Strength"), TEXT("Rock Softness"), TEXT("Precipitation Amount"), TEXT("None") }, TEXT("Selective Processing")), Choice(TEXT("BiasType"), TEXT("Bias Type"), TEXT("Altitude"), { TEXT("Altitude"), TEXT("Slope") }, TEXT("Selective Processing")), Num(TEXT("Bias"), TEXT("Bias"), 0.5, 0.0, 1.0, TEXT("Selective Processing")), Bool(TEXT("Reverse"), TEXT("Reverse"), false, TEXT("Selective Processing")),
+			Choice(TEXT("AreaEffect"), TEXT("Area Effect"), TEXT("None"), { TEXT("ErosionStrength"), TEXT("RockSoftness"), TEXT("PrecipitationAmount"), TEXT("None") }, TEXT("Selective Processing")), Choice(TEXT("BiasType"), TEXT("Bias Type"), TEXT("Altitude"), { TEXT("Altitude"), TEXT("Slope") }, TEXT("Selective Processing")), Num(TEXT("Bias"), TEXT("Bias"), 0.5, 0.0, 1.0, TEXT("Selective Processing")), Bool(TEXT("Reverse"), TEXT("Reverse"), false, TEXT("Selective Processing")),
 			Int(TEXT("Seed"), TEXT("Seed"), 1337, -2147483647, 2147483647), Bool(TEXT("AggressiveMode"), TEXT("Aggressive Mode"), false), Bool(TEXT("Deterministic"), TEXT("Deterministic"), true)
 		};
 		FGaeaTerrainNodeDescriptorRegistry::Register(D); FGaeaTerrainNodeRegistry::Register(D.Type, EvaluateErosion);
@@ -326,12 +328,12 @@ namespace GaeaReferenceFidelityProcess
 	void RegisterErosion2()
 	{
 		FGaeaTerrainNodeDescriptor D; D.Type = GaeaTerrainNodeTypes::Erosion2; D.DisplayName = TEXT("Erosion2"); D.Category = TEXT("Simulate");
-		D.Description = TEXT("Advanced hydraulic erosion with broad-to-fine physical erosion scale, sediment classes, shape controls and orographic rainfall.");
+		D.Description = TEXT("Advanced hydraulic erosion with physical erosion scale, documented sediment discharge controls, shape controls and orographic rainfall.");
 		D.Inputs.Add(Port(TEXT("Terrain"), TEXT("Input"), TEXT("Terrain")));
 		D.Outputs.Add(Port(TEXT("Out"), TEXT("Out"), TEXT("Terrain"))); D.Outputs.Add(Port(TEXT("Wear"), TEXT("Wear"), TEXT("ScalarField"))); D.Outputs.Add(Port(TEXT("Deposits"), TEXT("Deposits"), TEXT("ScalarField"))); D.Outputs.Add(Port(TEXT("Flow"), TEXT("Flow"), TEXT("ScalarField")));
 		D.Parameters = {
 			Int(TEXT("Duration"), TEXT("Duration"), 64, 1, 512, TEXT("General")), Num(TEXT("Downcutting"), TEXT("Downcutting"), 0.35, 0.0, 1.0, TEXT("General")), Num(TEXT("ErosionScale"), TEXT("Erosion Scale"), 500.0, 1.0, 20000.0, TEXT("General")), Int(TEXT("Seed"), TEXT("Seed"), 1337, -2147483647, 2147483647, TEXT("General")),
-			Num(TEXT("SuspendedLoad"), TEXT("Suspended Load"), 0.5, 0.0, 1.0, TEXT("Sediment Discharge")), Num(TEXT("SuspendedDischargeAngle"), TEXT("Discharge Angle"), 18.0, 0.0, 80.0, TEXT("Sediment Discharge")), Num(TEXT("BedLoad"), TEXT("Bed Load"), 0.45, 0.0, 1.0, TEXT("Sediment Discharge")), Num(TEXT("BedDischargeAngle"), TEXT("Discharge Angle"), 28.0, 0.0, 80.0, TEXT("Sediment Discharge")), Num(TEXT("CoarseSediments"), TEXT("Coarse Sediments"), 0.3, 0.0, 1.0, TEXT("Sediment Discharge")), Num(TEXT("CoarseDischargeAngle"), TEXT("Discharge Angle"), 38.0, 0.0, 80.0, TEXT("Sediment Discharge")), Num(TEXT("DepositionBoost"), TEXT("Deposition Boost"), 0.2, 0.0, 2.0, TEXT("Sediment Discharge")), Num(TEXT("ExtraDepositionBoost"), TEXT("Extra Deposition Boost"), 0.0, 0.0, 2.0, TEXT("Sediment Discharge")),
+			Num(TEXT("SuspendedLoad"), TEXT("Suspended Load"), 0.5, 0.0, 1.0, TEXT("Sediment Discharge")), Num(TEXT("SuspendedDischargeAngle"), TEXT("Discharge Angle"), 18.0, 0.0, 80.0, TEXT("Sediment Discharge")), Num(TEXT("BedLoad"), TEXT("Bed Load"), 0.45, 0.0, 1.0, TEXT("Sediment Discharge")), Num(TEXT("BedDischargeAngle"), TEXT("Discharge Angle"), 28.0, 0.0, 80.0, TEXT("Sediment Discharge")), Num(TEXT("CoarseSediments"), TEXT("Coarse Sediments"), 0.3, 0.0, 1.0, TEXT("Sediment Discharge")), Num(TEXT("CoarseDischargeAngle"), TEXT("Discharge Angle"), 38.0, 0.0, 80.0, TEXT("Sediment Discharge")),
 			Num(TEXT("Shape"), TEXT("Shape"), 0.5, 0.0, 1.0, TEXT("Shape")), Num(TEXT("ShapeSharpness"), TEXT("Shape Sharpness"), 0.5, 0.0, 1.0, TEXT("Shape")), Num(TEXT("ShapeDetailScale"), TEXT("Shape Detail Scale"), 1.0, 0.0, 1.0, TEXT("Shape")),
 			Bool(TEXT("EnableOrographic"), TEXT("Enable"), false, TEXT("Orographic Influence")), Num(TEXT("DirectionalPrecipitation"), TEXT("Directional Precipitation"), 0.5, 0.0, 1.0, TEXT("Orographic Influence")), Num(TEXT("Direction"), TEXT("Direction"), 0.0, -360.0, 360.0, TEXT("Orographic Influence")), Num(TEXT("RainShadow"), TEXT("Rain Shadow"), 0.5, 0.0, 1.0, TEXT("Orographic Influence")), Num(TEXT("SlopeMin"), TEXT("Slope Min"), 0.0, 0.0, 90.0, TEXT("Orographic Influence")), Num(TEXT("SlopeMax"), TEXT("Slope Max"), 90.0, 0.0, 90.0, TEXT("Orographic Influence")), Num(TEXT("AltitudeMin"), TEXT("Altitude Min"), 0.0, 0.0, 1.0, TEXT("Orographic Influence")), Num(TEXT("AltitudeMax"), TEXT("Altitude Max"), 1.0, 0.0, 1.0, TEXT("Orographic Influence")), Bool(TEXT("Reverse"), TEXT("Reverse"), false, TEXT("Orographic Influence"))
 		};
