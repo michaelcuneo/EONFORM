@@ -1,6 +1,5 @@
 #include "GaeaUtilityNodes.h"
 
-#include "Engine/Engine.h"
 #include "Misc/CoreDelegates.h"
 
 namespace
@@ -9,14 +8,7 @@ namespace
 	{
 		FGaeaUtilityRegistrationHook()
 		{
-			if (GEngine)
-			{
-				RegisterNodes();
-			}
-			else
-			{
-				FCoreDelegates::OnPostEngineInit.AddStatic(&FGaeaUtilityRegistrationHook::RegisterNodes);
-			}
+			FCoreDelegates::OnPostEngineInit.AddStatic(&FGaeaUtilityRegistrationHook::RegisterNodes);
 		}
 
 		static void RegisterNodes()
