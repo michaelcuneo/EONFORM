@@ -3,6 +3,7 @@
 #include "DesktopPlatformModule.h"
 #include "GaeaEditorGraph.h"
 #include "GaeaTerrainRecipe.h"
+#include "HAL/PlatformTime.h"
 #include "IDesktopPlatform.h"
 #include "SGraphPin.h"
 #include "Styling/AppStyle.h"
@@ -76,6 +77,7 @@ namespace
 void SGaeaTerrainGraphNode::Construct(const FArguments& InArgs, UEdGraphNode* InNode)
 {
 	GraphNode = InNode;
+	LastObservedActivity = EGaeaEditorGraphActivity::Idle;
 	SetCursor(EMouseCursor::CardinalCross);
 	UpdateGraphNode();
 }
@@ -181,7 +183,14 @@ void SGaeaTerrainGraphNode::Tick(const FGeometry& AllottedGeometry, const double
 {
 	SGraphNode::Tick(AllottedGeometry, InCurrentTime, InDeltaTime);
 	const UGaeaEditorGraph* Graph = GraphNode ? Cast<UGaeaEditorGraph>(GraphNode->GetGraph()) : nullptr;
-	if (Graph && Graph->IsBusy())
+	const EGaeaEditorGraphActivity CurrentActivity = Graph ? Graph->GetActivity() : EGaeaEditorGraphActivity::Idle;
+
+	if (CurrentActivity != LastObservedActivity)
+	{
+		LastObservedActivity = CurrentActivity;
+		Invalidate(EInvalidateWidgetReason::Layout);
+	}
+	if (CurrentActivity != EGaeaEditorGraphActivity::Idle)
 	{
 		Invalidate(EInvalidateWidgetReason::Paint);
 	}
