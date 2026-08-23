@@ -28,7 +28,7 @@ bool FGaeaTerrainShaperDescriptorTest::RunTest(const FString& Parameters)
 	FGaeaTerrainNodeDescriptor Descriptor;
 	TestTrue(TEXT("Shaper descriptor exists"), FGaeaTerrainNodeDescriptorRegistry::Get(GaeaTerrainNodeTypes::Shaper, Descriptor));
 	TestEqual(TEXT("Shaper display name"), Descriptor.DisplayName, FString(TEXT("Shaper")));
-	TestEqual(TEXT("Shaper category"), Descriptor.Category, FString(TEXT("Profile")));
+	TestEqual(TEXT("Shaper category"), Descriptor.Category, FString(TEXT("Modify")));
 	TestEqual(TEXT("Shaper input count"), Descriptor.Inputs.Num(), 1);
 	TestEqual(TEXT("Shaper output count"), Descriptor.Outputs.Num(), 1);
 	TestEqual(TEXT("Shaper parameter count"), Descriptor.Parameters.Num(), 5);
