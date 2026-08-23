@@ -11,8 +11,13 @@ bool FGaeaTerrainBlurTest::RunTest(const FString& Parameters)
 {
 	FGaeaTerrainNodeDescriptor Descriptor;
 	TestTrue(TEXT("Blur descriptor exists"), FGaeaTerrainNodeDescriptorRegistry::Get(GaeaTerrainNodeTypes::Blur, Descriptor));
+	TestEqual(TEXT("Blur category"), Descriptor.Category, FString(TEXT("Modify")));
 	TestEqual(TEXT("Blur output is Out"), Descriptor.Outputs[0].Name, FName(TEXT("Out")));
-	TestEqual(TEXT("Blur has five parameters"), Descriptor.Parameters.Num(), 5);
+	TestEqual(TEXT("Blur has one parameter"), Descriptor.Parameters.Num(), 1);
+	if (Descriptor.Parameters.Num() == 1)
+	{
+		TestEqual(TEXT("Blur parameter is Radius"), Descriptor.Parameters[0].Name, FName(TEXT("Radius")));
+	}
 
 	FGaeaTerrainRecipe Recipe;
 	FGaeaTerrainNode Source;
@@ -26,9 +31,7 @@ bool FGaeaTerrainBlurTest::RunTest(const FString& Parameters)
 	FGaeaTerrainNode Blur;
 	Blur.Id = FGuid(0x72000001, 0x72000002, 0x72000003, 0x72000004);
 	Blur.Type = GaeaTerrainNodeTypes::Blur;
-	Blur.NumericParameters.Add(TEXT("Power"), 0.75);
-	Blur.IntegerParameters.Add(TEXT("Iterations"), 2);
-	Blur.NameParameters.Add(TEXT("Type"), TEXT("Gaussian"));
+	Blur.NumericParameters.Add(TEXT("Radius"), 0.35);
 
 	Recipe.Nodes = { Source, Blur };
 	FGaeaTerrainConnection Connection;
