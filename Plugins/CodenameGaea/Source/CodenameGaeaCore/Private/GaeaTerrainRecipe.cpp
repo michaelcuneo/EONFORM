@@ -41,6 +41,8 @@ namespace GaeaTerrainNodeTypes
 	const FName Glacier(TEXT("Glacier"));
 	const FName Anastomosis(TEXT("Anastomosis"));
 	const FName Lichtenberg(TEXT("Lichtenberg"));
+	const FName Trees(TEXT("Trees"));
+	const FName Shrubs(TEXT("Shrubs"));
 	const FName Sediments(TEXT("Sediments"));
 	const FName Debris(TEXT("Debris"));
 	const FName Scree(TEXT("Scree"));
