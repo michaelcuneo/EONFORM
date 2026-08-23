@@ -3,6 +3,7 @@
 #include "GaeaTerrainEvaluator.h"
 #include "GaeaTerrainFieldNames.h"
 #include "GaeaTerrainNodeDescriptor.h"
+#include "GaeaTerrainProceduralOps.h"
 #include "GaeaTerrainRecipe.h"
 
 namespace GaeaTerrainNodeTypes
@@ -55,7 +56,6 @@ namespace
 	{
 		const int32 Width = FMath::Clamp(Context.TargetResolution.X > 1 ? Context.TargetResolution.X : 257, 2, 4097);
 		const int32 Height = FMath::Clamp(Context.TargetResolution.Y > 1 ? Context.TargetResolution.Y : Width, 2, 4097);
-
 		double WorldWidthCm = 100000.0;
 		double WorldDepthCm = 100000.0;
 		if (Context.PhysicalMetrics.HasWorldDimensions())
@@ -63,7 +63,6 @@ namespace
 			WorldWidthCm = Context.PhysicalMetrics.WorldWidthMeters * 100.0;
 			WorldDepthCm = Context.PhysicalMetrics.WorldDepthMeters * 100.0;
 		}
-
 		return FGaeaGridDomain::Make(
 			FIntPoint(Width, Height),
 			FVector2d(-WorldWidthCm * 0.5, -WorldDepthCm * 0.5),
@@ -77,138 +76,6 @@ namespace
 			return static_cast<float>(Context.PhysicalMetrics.ElevationScaleMeters * 100.0);
 		}
 		return FMath::Max(Context.HeightScale, 1.0f);
-	}
-
-	uint32 RidgeHash(uint32 X)
-	{
-		X ^= X >> 16;
-		X *= 0x7feb352dU;
-		X ^= X >> 15;
-		X *= 0x846ca68bU;
-		X ^= X >> 16;
-		return X;
-	}
-
-	float RidgeHash01(int32 X, int32 Y, int32 Seed, uint32 Salt = 0)
-	{
-		uint32 H = static_cast<uint32>(X) * 0x9e3779b9U;
-		H ^= static_cast<uint32>(Y) * 0x85ebca6bU;
-		H ^= static_cast<uint32>(Seed) * 0xc2b2ae35U;
-		H ^= Salt;
-		return static_cast<float>(RidgeHash(H) & 0x00ffffffU) / 16777215.0f;
-	}
-
-	float SmoothNoise(float X, float Y, int32 Seed, uint32 Salt = 0)
-	{
-		const int32 X0 = FMath::FloorToInt(X);
-		const int32 Y0 = FMath::FloorToInt(Y);
-		const float FX = X - static_cast<float>(X0);
-		const float FY = Y - static_cast<float>(Y0);
-		const float SX = FX * FX * (3.0f - 2.0f * FX);
-		const float SY = FY * FY * (3.0f - 2.0f * FY);
-		const float A = FMath::Lerp(RidgeHash01(X0, Y0, Seed, Salt), RidgeHash01(X0 + 1, Y0, Seed, Salt), SX);
-		const float B = FMath::Lerp(RidgeHash01(X0, Y0 + 1, Seed, Salt), RidgeHash01(X0 + 1, Y0 + 1, Seed, Salt), SX);
-		return FMath::Lerp(A, B, SY) * 2.0f - 1.0f;
-	}
-
-	float Fbm(float X, float Y, float Frequency, int32 Octaves, float Persistence, int32 Seed, uint32 Salt)
-	{
-		float Sum = 0.0f;
-		float Weight = 0.0f;
-		float Amplitude = 1.0f;
-		for (int32 Octave = 0; Octave < Octaves; ++Octave)
-		{
-			Sum += SmoothNoise(X * Frequency, Y * Frequency, Seed + Octave * 193, Salt + static_cast<uint32>(Octave) * 7919u) * Amplitude;
-			Weight += Amplitude;
-			Frequency *= 2.03f;
-			Amplitude *= Persistence;
-		}
-		return Weight > UE_SMALL_NUMBER ? Sum / Weight : 0.0f;
-	}
-
-	struct FRidgeVoronoi
-	{
-		float F1 = TNumericLimits<float>::Max();
-		float F2 = TNumericLimits<float>::Max();
-		float CellValue = 0.5f;
-	};
-
-	FRidgeVoronoi SampleVoronoi(float X, float Y, int32 Seed)
-	{
-		const int32 BaseX = FMath::FloorToInt(X);
-		const int32 BaseY = FMath::FloorToInt(Y);
-		FRidgeVoronoi Result;
-		for (int32 CellY = BaseY - 2; CellY <= BaseY + 2; ++CellY)
-		{
-			for (int32 CellX = BaseX - 2; CellX <= BaseX + 2; ++CellX)
-			{
-				const float FeatureX = static_cast<float>(CellX) + 0.5f + (RidgeHash01(CellX, CellY, Seed, 0x17u) - 0.5f) * 0.5f;
-				const float FeatureY = static_cast<float>(CellY) + 0.5f + (RidgeHash01(CellY, CellX, Seed, 0x91u) - 0.5f) * 0.5f;
-				const float DX = X - FeatureX;
-				const float DY = Y - FeatureY;
-				const float Distance = FMath::Sqrt(DX * DX + DY * DY);
-				if (Distance < Result.F1)
-				{
-					Result.F2 = Result.F1;
-					Result.F1 = Distance;
-					Result.CellValue = RidgeHash01(CellX, CellY, Seed, 0x71u);
-				}
-				else if (Distance < Result.F2)
-				{
-					Result.F2 = Distance;
-				}
-			}
-		}
-		return Result;
-	}
-
-	float VoronoiP(const FRidgeVoronoi& Cell)
-	{
-		// Ridge is driven by broad P-form cells, not F2-F1 cell boundaries.
-		// Keeping the cell-to-cell amplitude variation restrained preserves broad
-		// mountain masses while still preventing a regular field of identical domes.
-		const float Peak = FMath::Clamp(1.0f - Cell.F1 * 1.12f, 0.0f, 1.0f);
-		const float Shoulder = FMath::Pow(Peak, 1.18f);
-		const float CellAmplitude = FMath::Lerp(0.86f, 1.08f, Cell.CellValue);
-		return FMath::Clamp(Shoulder * CellAmplitude, 0.0f, 1.0f);
-	}
-
-	float TerraceGuide(float Value, float Variation)
-	{
-		constexpr int32 TerraceCount = 19;
-		constexpr float Uniformity = 0.64f;
-		constexpr float Steepness = 0.22f;
-		const float Phase = Variation * (1.0f - Uniformity) / static_cast<float>(TerraceCount);
-		const float Scaled = FMath::Clamp(Value + Phase, 0.0f, 1.0f) * static_cast<float>(TerraceCount);
-		const float Base = FMath::FloorToFloat(Scaled);
-		const float Fraction = FMath::Frac(Scaled);
-		const float Sharpness = FMath::Lerp(1.0f, 8.0f, Steepness);
-		return FMath::Clamp((Base + FMath::Pow(Fraction, Sharpness)) / static_cast<float>(TerraceCount), 0.0f, 1.0f);
-	}
-
-	float Bilinear(const FGaeaScalarField& Field, float X, float Y)
-	{
-		X = FMath::Clamp(X, 0.0f, static_cast<float>(Field.Domain.Dimensions.X - 1));
-		Y = FMath::Clamp(Y, 0.0f, static_cast<float>(Field.Domain.Dimensions.Y - 1));
-		const int32 X0 = FMath::FloorToInt(X);
-		const int32 Y0 = FMath::FloorToInt(Y);
-		const int32 X1 = FMath::Min(X0 + 1, Field.Domain.Dimensions.X - 1);
-		const int32 Y1 = FMath::Min(Y0 + 1, Field.Domain.Dimensions.Y - 1);
-		const float TX = X - static_cast<float>(X0);
-		const float TY = Y - static_cast<float>(Y0);
-		return FMath::Lerp(
-			FMath::Lerp(Field.AtInterior(X0, Y0), Field.AtInterior(X1, Y0), TX),
-			FMath::Lerp(Field.AtInterior(X0, Y1), Field.AtInterior(X1, Y1), TX),
-			TY);
-	}
-
-	void NormalizePositive(FGaeaScalarField& Field)
-	{
-		float MaxValue = 0.0f;
-		for (const float Value : Field.Values) MaxValue = FMath::Max(MaxValue, Value);
-		if (MaxValue <= UE_SMALL_NUMBER) return;
-		const float InvMax = 1.0f / MaxValue;
-		for (float& Value : Field.Values) Value = FMath::Max(Value, 0.0f) * InvMax;
 	}
 
 	bool EvaluateRidgeNode(
@@ -242,7 +109,6 @@ namespace
 			Error = TEXT("Ridge could not publish Height.");
 			return false;
 		}
-
 		FGaeaTerrainValue Value = FGaeaTerrainValue::MakeTerrain(MoveTemp(Dataset), ResolveRidgeHeightScale(Context));
 		if (!Value.IsValid())
 		{
@@ -267,111 +133,140 @@ bool FGaeaRidgeGenerator::Generate(
 	};
 
 	if (!Domain.IsValid()) return Fail(TEXT("Ridge requires a valid evaluation domain."));
-	const int32 Width = Domain.Dimensions.X;
-	const int32 Height = Domain.Dimensions.Y;
-	if (Width < 2 || Height < 2) return Fail(TEXT("Ridge requires at least a 2x2 domain."));
+	if (Domain.Dimensions.X < 2 || Domain.Dimensions.Y < 2) return Fail(TEXT("Ridge requires at least a 2x2 domain."));
 
 	const float Scale = FMath::Clamp(Settings.Scale, 0.0001f, 1.0f);
 	const float Definition = FMath::Clamp(Settings.Definition, 0.0f, 1.0f);
-	const float ScaleX = FMath::Max(Settings.ScaleX, 0.0001f);
-	const float ScaleY = FMath::Max(Settings.ScaleY, 0.0001f);
-	const float MinDimension = static_cast<float>(FMath::Min(Width, Height));
 
-	FGaeaFieldDescriptor Descriptor;
-	Descriptor.Name = GaeaTerrainFieldNames::Height;
-	Descriptor.Unit = EGaeaFieldUnit::Normalized;
-	Descriptor.Interpolation = EGaeaInterpolation::Bilinear;
+	// Ridge follows the supplied Landscapes.Ridge operation topology exactly:
+	// Voronoi -> Perlin -> Terrace -> Max(Terrace, FractalWarp(Terrace))
+	// -> DirectionWarpF(Voronoi, Guide) -> FractalWarp -> Min -> range/profile -> Height.
+	// The few constants still hidden behind Gaea's packed constant table are kept
+	// isolated here as calibration values rather than changing the topology.
+	constexpr float RidgeVoronoiScaleCoefficient = 0.72f;
+	constexpr float RidgePerlinScale = 0.75f;
+	constexpr int32 RidgePerlinOctaves = 12;
+	constexpr float RidgePerlinGain = 0.5f;
+	constexpr int32 RidgeTerraceCount = 29;
+	constexpr float RidgeTerraceUniformity = 0.6f;
+	constexpr float RidgeTerraceSteepness = 0.2f;
+	constexpr float RidgeTerraceIntensity = 0.85f;
+	constexpr float DirectionStrengthCoefficient = 1.25f;
+	constexpr float SecondaryWarpStrength = 0.35f;
+
+	GaeaTerrainProceduralOps::FVoronoiSettings VoronoiSettings;
+	VoronoiSettings.Scale = FMath::Clamp(1.0f - Scale * RidgeVoronoiScaleCoefficient, 0.0001f, 1.0f);
+	VoronoiSettings.Function = TEXT("Euclidean");
+	VoronoiSettings.Form = TEXT("P");
+	VoronoiSettings.Gain = 0.5f;
+	VoronoiSettings.WarpType = TEXT("Complex");
+	VoronoiSettings.WarpFrequency = 0.1f;
+	VoronoiSettings.WarpAmplitude = 0.05f;
+	VoronoiSettings.WarpOctaves = 10;
+	VoronoiSettings.Seed = Settings.Seed;
+	VoronoiSettings.ScaleX = Settings.ScaleX;
+	VoronoiSettings.ScaleY = Settings.ScaleY;
+	VoronoiSettings.Jitter = 0.45f;
 
 	FGaeaScalarField Structure;
-	Structure.Initialize(Domain, Descriptor, 0.0f);
-	FGaeaScalarField Guide;
-	Guide.Initialize(Domain, Descriptor, 0.0f);
+	if (!GaeaTerrainProceduralOps::GenerateVoronoi(Domain, VoronoiSettings, Structure, OutError)) return false;
 
-	// Scale governs the size of the structural masses. The old implementation
-	// accidentally used Voronoi cell edges here, which creates a spike/web field.
-	const float CellFrequency = FMath::Lerp(9.0f, 2.75f, Scale);
-	for (int32 Y = 0; Y < Height; ++Y)
+	GaeaTerrainProceduralOps::FPerlinSettings PerlinSettings;
+	PerlinSettings.Scale = RidgePerlinScale;
+	PerlinSettings.Octaves = RidgePerlinOctaves;
+	PerlinSettings.Gain = RidgePerlinGain;
+	PerlinSettings.Type = TEXT("FBM");
+	PerlinSettings.Seed = Settings.Seed + 1;
+	PerlinSettings.WarpType = TEXT("None");
+	PerlinSettings.WarpFrequency = 0.0f;
+	PerlinSettings.WarpAmplitude = 0.0f;
+	PerlinSettings.WarpOctaves = 1;
+	PerlinSettings.ScaleX = 1.0f;
+	PerlinSettings.ScaleY = 1.0f;
+
+	FGaeaScalarField Control;
+	if (!GaeaTerrainProceduralOps::GeneratePerlin(Domain, PerlinSettings, Control, OutError)) return false;
+
+	FGaeaScalarField Terraced;
+	if (!GaeaTerrainProceduralOps::ApplyTerrace(
+		Control,
+		RidgeTerraceCount,
+		RidgeTerraceUniformity,
+		RidgeTerraceSteepness,
+		RidgeTerraceIntensity,
+		Settings.Seed + 3,
+		false,
+		Terraced,
+		OutError)) return false;
+
+	GaeaTerrainProceduralOps::FFractalWarpSettings GuideWarpSettings;
+	GuideWarpSettings.Size = FMath::Clamp(1.0f - Definition * 0.55f, 0.05f, 1.0f);
+	GuideWarpSettings.Strength = 1.0f;
+	GuideWarpSettings.bPersistStrength = true;
+	GuideWarpSettings.ZScale = 0.0f;
+	GuideWarpSettings.NoiseType = TEXT("Perlin FBM");
+	GuideWarpSettings.Perturbation = 0.5f;
+	GuideWarpSettings.Octaves = 12;
+	GuideWarpSettings.Roughness = 0.5f;
+	GuideWarpSettings.bNormalized = false;
+	GuideWarpSettings.Iterations = 1;
+	GuideWarpSettings.Mode = TEXT("Vector Field");
+	GuideWarpSettings.EdgeBehaviour = GaeaTerrainProceduralOps::EEdgeBehaviour::Edge;
+	GuideWarpSettings.Seed = Settings.Seed + 2;
+
+	FGaeaScalarField WarpedGuide;
+	if (!GaeaTerrainProceduralOps::FractalWarp(Terraced, GuideWarpSettings, WarpedGuide, OutError)) return false;
+	FGaeaScalarField Guide = Terraced;
+	for (int32 I = 0; I < Guide.Values.Num(); ++I)
 	{
-		const float V = static_cast<float>(Y) / static_cast<float>(Height - 1) - 0.5f;
-		for (int32 X = 0; X < Width; ++X)
-		{
-			const float U = static_cast<float>(X) / static_cast<float>(Width - 1) - 0.5f;
-			const FRidgeVoronoi Cell = SampleVoronoi(U * CellFrequency * ScaleX, V * CellFrequency * ScaleY, Settings.Seed);
-			Structure.AtInterior(X, Y) = VoronoiP(Cell);
-
-			const float ControlNoise = Fbm(U, V, 3.0f, 8, 0.52f, Settings.Seed + 1, 0x251u);
-			const float Control01 = FMath::Clamp(ControlNoise * 0.5f + 0.5f, 0.0f, 1.0f);
-			const float Variation = Fbm(U, V, 1.6f, 3, 0.5f, Settings.Seed + 3, 0x413u) * 0.5f;
-			Guide.AtInterior(X, Y) = TerraceGuide(Control01, Variation);
-		}
+		Guide.Values[I] = FMath::Max(Terraced.Values[I], WarpedGuide.Values[I]);
 	}
 
-	// Deform the control field gently before it drives the structural field.
-	FGaeaScalarField WarpedGuide = Guide;
-	const float GuideWarpSamples = MinDimension * FMath::Lerp(0.012f, 0.030f, 1.0f - Definition);
-	for (int32 Y = 0; Y < Height; ++Y)
-	{
-		const float V = static_cast<float>(Y) / static_cast<float>(Height - 1);
-		for (int32 X = 0; X < Width; ++X)
-		{
-			const float U = static_cast<float>(X) / static_cast<float>(Width - 1);
-			const float WX = Fbm(U, V, 4.2f, 4, 0.52f, Settings.Seed + 2, 0x451u);
-			const float WY = Fbm(U, V, 4.2f, 4, 0.52f, Settings.Seed + 2, 0x8a3u);
-			const float Sampled = Bilinear(Guide, X + WX * GuideWarpSamples, Y + WY * GuideWarpSamples);
-			WarpedGuide.AtInterior(X, Y) = FMath::Max(Guide.AtInterior(X, Y), Sampled);
-		}
-	}
+	FGaeaScalarField Directed;
+	const float DirectionStrengthPixels = Definition * DirectionStrengthCoefficient * static_cast<float>(Domain.Dimensions.X);
+	if (!GaeaTerrainProceduralOps::DirectionWarpPixels(
+		Structure,
+		Guide,
+		DirectionStrengthPixels,
+		45.0f,
+		GaeaTerrainProceduralOps::EEdgeBehaviour::Mirror,
+		Directed,
+		OutError)) return false;
 
-	// The guide now advects broad P-form masses into coherent ridges. Keep the
-	// displacement bounded in sample space; the previous 0.5*resolution-class
-	// displacement was the other source of needle-like folds.
-	FGaeaScalarField Directed = Structure;
-	const float DirectionRadians = FMath::DegreesToRadians(45.0f);
-	const FVector2D Axis(FMath::Cos(DirectionRadians), FMath::Sin(DirectionRadians));
-	const float DirectionStrength = Definition * MinDimension * 0.075f;
-	for (int32 Y = 0; Y < Height; ++Y)
-	{
-		for (int32 X = 0; X < Width; ++X)
-		{
-			const float GuideSigned = WarpedGuide.AtInterior(X, Y) * 2.0f - 1.0f;
-			const float Distance = GuideSigned * DirectionStrength;
-			Directed.AtInterior(X, Y) = Bilinear(Structure, X - Axis.X * Distance, Y - Axis.Y * Distance);
-		}
-	}
+	GaeaTerrainProceduralOps::FFractalWarpSettings SecondaryWarpSettings;
+	SecondaryWarpSettings.Size = FMath::Max(Scale * 0.5f, 0.0001f);
+	SecondaryWarpSettings.Strength = SecondaryWarpStrength;
+	SecondaryWarpSettings.bPersistStrength = true;
+	SecondaryWarpSettings.ZScale = 0.0f;
+	SecondaryWarpSettings.NoiseType = TEXT("Voronoi R");
+	SecondaryWarpSettings.Perturbation = 0.4f;
+	SecondaryWarpSettings.Octaves = 12;
+	SecondaryWarpSettings.Roughness = 0.5f;
+	SecondaryWarpSettings.bNormalized = false;
+	SecondaryWarpSettings.Iterations = 1;
+	SecondaryWarpSettings.Mode = TEXT("Vector Field");
+	SecondaryWarpSettings.EdgeBehaviour = GaeaTerrainProceduralOps::EEdgeBehaviour::Mirror;
+	SecondaryWarpSettings.Seed = Settings.Seed + 5;
 
-	// A second, lower-amplitude vector warp breaks straightness without destroying
-	// the broad ridge silhouette.
-	FGaeaScalarField FractalWarped = Directed;
-	const float SecondaryWarpSamples = MinDimension * FMath::Lerp(0.008f, 0.028f, Scale);
-	const float SecondaryFrequency = FMath::Lerp(5.5f, 2.8f, Scale);
-	for (int32 Y = 0; Y < Height; ++Y)
-	{
-		const float V = static_cast<float>(Y) / static_cast<float>(Height - 1);
-		for (int32 X = 0; X < Width; ++X)
-		{
-			const float U = static_cast<float>(X) / static_cast<float>(Width - 1);
-			const float WX = Fbm(U, V, SecondaryFrequency, 4, 0.55f, Settings.Seed + 5, 0x17bdu);
-			const float WY = Fbm(U, V, SecondaryFrequency, 4, 0.55f, Settings.Seed + 5, 0x2a51u);
-			FractalWarped.AtInterior(X, Y) = Bilinear(Directed, X + WX * SecondaryWarpSamples, Y + WY * SecondaryWarpSamples);
-		}
-	}
+	FGaeaScalarField SecondaryWarped;
+	if (!GaeaTerrainProceduralOps::FractalWarp(Directed, SecondaryWarpSettings, SecondaryWarped, OutError)) return false;
 
-	OutHeight.Initialize(Domain, Descriptor, 0.0f);
-	for (int32 Y = 0; Y < Height; ++Y)
+	OutHeight = Directed;
+	for (int32 I = 0; I < OutHeight.Values.Num(); ++I)
 	{
-		for (int32 X = 0; X < Width; ++X)
-		{
-			const float Combined = FMath::Min(Directed.AtInterior(X, Y), FractalWarped.AtInterior(X, Y));
-			const float DefinitionCurve = FMath::Lerp(1.28f, 0.86f, Definition);
-			OutHeight.AtInterior(X, Y) = FMath::Pow(FMath::Clamp(Combined, 0.0f, 1.0f), DefinitionCurve);
-		}
+		// The supplied code applies Min, then a range operation (0..Scale), then
+		// a parameterless normalization/profile operation. Preserve that observed
+		// behavior without inventing another terrain generator: clamp by Scale,
+		// normalize, then apply Height.
+		OutHeight.Values[I] = FMath::Min(Directed.Values[I], SecondaryWarped.Values[I]);
+		OutHeight.Values[I] = FMath::Clamp(OutHeight.Values[I], 0.0f, Scale);
 	}
-
-	NormalizePositive(OutHeight);
+	GaeaTerrainProceduralOps::NormalizePositive(OutHeight);
 	for (float& Value : OutHeight.Values)
 	{
-		Value = FMath::Clamp(Value * Settings.Height, 0.0f, FMath::Max(Settings.Height, 0.0f));
+		Value *= Settings.Height;
 	}
+	OutHeight.Descriptor.Name = GaeaTerrainFieldNames::Height;
 
 	if (OutError) OutError->Reset();
 	return OutHeight.IsValid();
@@ -383,7 +278,7 @@ void RegisterGaeaRidgeNode()
 	D.Type = GaeaTerrainNodeTypes::Ridge;
 	D.DisplayName = TEXT("Ridge");
 	D.Category = TEXT("Terrain");
-	D.Description = TEXT("Generates broad branching terrain ridges from cellular mass structure, a terraced control field, directional deformation, and multi-scale warp.");
+	D.Description = TEXT("Generates terrain ridges from the shared Voronoi, Perlin, Terrace and Warp operations.");
 	D.Outputs.Add(RidgeTerrainOut());
 	D.Parameters = {
 		RidgeNumber(TEXT("Scale"), TEXT("Scale"), 0.75, 0.0001, 1.0, TEXT("Ridge")),
@@ -393,7 +288,6 @@ void RegisterGaeaRidgeNode()
 		RidgeNumber(TEXT("ScaleX"), TEXT("Scale X"), 1.0, 0.0001, 100.0, TEXT("Transform")),
 		RidgeNumber(TEXT("ScaleY"), TEXT("Scale Y"), 1.0, 0.0001, 100.0, TEXT("Transform"))
 	};
-
 	FGaeaTerrainNodeDescriptorRegistry::Register(D);
 	FGaeaTerrainNodeRegistry::Register(D.Type, EvaluateRidgeNode);
 }
