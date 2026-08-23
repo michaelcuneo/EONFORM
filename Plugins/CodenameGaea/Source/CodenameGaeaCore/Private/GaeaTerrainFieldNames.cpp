@@ -10,6 +10,13 @@ namespace GaeaTerrainFieldNames
 	const FName Mountain(TEXT("Mountain"));
 	const FName Foothill(TEXT("Foothill"));
 	const FName Plains(TEXT("Plains"));
+	const FName MountainMass(TEXT("MountainMass"));
+	const FName Uplift(TEXT("Uplift"));
+	const FName RidgeNetwork(TEXT("RidgeNetwork"));
+	const FName DrainageReadiness(TEXT("DrainageReadiness"));
+	const FName ErosionEligibility(TEXT("ErosionEligibility"));
+	const FName RockExposure(TEXT("RockExposure"));
+	const FName CryosphereEligibility(TEXT("CryosphereEligibility"));
 	const FName Thermal(TEXT("Thermal"));
 	const FName Rainfall(TEXT("Rainfall"));
 	const FName HydraulicErosion(TEXT("HydraulicErosion"));
