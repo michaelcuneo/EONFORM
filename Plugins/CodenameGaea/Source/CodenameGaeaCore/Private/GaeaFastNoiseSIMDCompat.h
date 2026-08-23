@@ -61,8 +61,6 @@ namespace GaeaFastNoiseSIMDCompat
 	inline int32 Hash(int32 Seed, int32 X, int32 Y, int32 Z)
 	{
 		const int32 Cubic = HashHB(Seed, X, Y, Z);
-		// FastNoiseSIMD performs an arithmetic 13-bit right shift on the signed
-		// hash lane before XORing it back into the hash.
 		return Cubic ^ (Cubic >> 13);
 	}
 
@@ -82,7 +80,9 @@ namespace GaeaFastNoiseSIMDCompat
 		const int32 H13 = H & 13;
 		const float U = H13 < 8 ? X : Y;
 		const float V = H13 < 2 ? Y : (H13 == 12 ? X : Z);
-		const float SignedU = H < 0 ? -U : U;
+		// FastNoiseSIMD builds the sign masks by shifting hash bit 0 and bit 1
+		// into the float sign bit. They are not based on the signed hash value.
+		const float SignedU = (H & 1) != 0 ? -U : U;
 		const float SignedV = (H & 2) != 0 ? -V : V;
 		return SignedU + SignedV;
 	}
@@ -197,8 +197,6 @@ namespace GaeaFastNoiseSIMDCompat
 		if (Function == ECellularDistance::Manhattan) return Manhattan;
 		if (Function == ECellularDistance::Natural)
 		{
-			// FastNoiseSIMD redefines Natural specifically for Distance/Distance2
-			// returns. CellValue and NoiseLookup retain Euclidean + Manhattan.
 			return bDistanceReturn ? Euclidean * Manhattan : Euclidean + Manhattan;
 		}
 		return Euclidean;
