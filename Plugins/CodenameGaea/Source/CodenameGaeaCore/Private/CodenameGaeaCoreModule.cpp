@@ -11,6 +11,7 @@
 #include "GaeaConstantNode.h"
 #include "GaeaCracksNode.h"
 #include "GaeaCurvatureNode.h"
+#include "GaeaCryosphereNodes.h"
 #include "GaeaDenoiseNode.h"
 #include "GaeaDistanceNode.h"
 #include "GaeaDotNoiseNode.h"
@@ -101,6 +102,7 @@ public:
 		RegisterGaeaSimulateEvolutionNodes();
 		RegisterGaeaLakeNode();
 		RegisterGaeaSeaNode();
+		RegisterGaeaCryosphereNodes();
 		RegisterGaeaCurvatureNode();
 		RegisterGaeaHeightNode();
 		RegisterGaeaAngleNode();
@@ -185,6 +187,7 @@ public:
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::ThermalErosion, TEXT("Thermal"), TEXT("Simulate"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Lake, TEXT("Lake"), TEXT("Simulate"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Sea, TEXT("Sea"), TEXT("Simulate"));
+		ApplyCurrentGaeaPublicMetadata(FName(TEXT("Snow")), TEXT("Snow"), TEXT("Simulate"));
 
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Adjust, TEXT("Adjust"), TEXT("Modify"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Aperture, TEXT("Aperture"), TEXT("Modify"));
