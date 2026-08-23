@@ -46,4 +46,10 @@ namespace GaeaTerrainFieldNames
 	CODENAMEGAEACORE_API extern const FName Peaks;
 	CODENAMEGAEACORE_API extern const FName RockMap;
 	CODENAMEGAEACORE_API extern const FName Soil;
+
+	// Surface-analysis fields. Normal channels are encoded from signed [-1, 1] to [0, 1].
+	CODENAMEGAEACORE_API extern const FName NormalX;
+	CODENAMEGAEACORE_API extern const FName NormalY;
+	CODENAMEGAEACORE_API extern const FName NormalZ;
+	CODENAMEGAEACORE_API extern const FName Occlusion;
 }
