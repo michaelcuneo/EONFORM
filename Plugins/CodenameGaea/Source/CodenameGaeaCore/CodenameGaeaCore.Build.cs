@@ -6,6 +6,10 @@ public class CodenameGaeaCore : ModuleRules
     {
         PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 
+        // This module has many file-local helper functions. Disable unity so
+        // anonymous/file-local helper names remain isolated per translation unit.
+        bUseUnity = false;
+
         PublicDependencyModuleNames.AddRange(new string[]
         {
             "Core",
