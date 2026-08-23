@@ -2,6 +2,7 @@
 
 #include "GaeaGridDomain.h"
 #include "GaeaHydraulicErosion.h"
+#include "GaeaRidgeNode.h"
 #include "GaeaScalarField.h"
 #include "GaeaTerrainDerivedData.h"
 #include "GaeaTerrainEvaluator.h"
@@ -199,115 +200,33 @@ namespace
 			TY);
 	}
 
-	struct FMountainRidgeSettings
+	FGaeaRidgeSettings MakeMountainRidgeSettings(FRandomStream& Random, int32 Layer, int32 Seed)
 	{
-		float Frequency = 2.0f;
-		float Definition = 1.0f;
-		float RotationRadians = 0.0f;
-		float CrossAxisScale = 0.65f;
-		float WarpAmount = 0.16f;
-		int32 Octaves = 5;
-	};
+		FGaeaRidgeSettings Settings;
+		Settings.Height = 0.6f;
+		Settings.Seed = Seed;
+		Settings.ScaleX = 1.0f;
+		Settings.ScaleY = 1.0f;
 
-	FMountainRidgeSettings MakeRidgeSettings(FRandomStream& Random, bool bReduceDetails, int32 Layer)
-	{
-		FMountainRidgeSettings Settings;
-		Settings.Frequency = Random.FRandRange(1.45f, 2.75f) * (1.0f + static_cast<float>(Layer) * 0.16f);
-		Settings.Definition = Random.FRandRange(0.90f, 1.75f);
-		Settings.RotationRadians = Random.FRandRange(-PI, PI);
-		Settings.CrossAxisScale = Random.FRandRange(0.48f, 0.76f);
-		Settings.WarpAmount = Random.FRandRange(0.10f, 0.24f);
-		Settings.Octaves = bReduceDetails ? 4 : 6;
+		// The recovered Mountain contract uses three Ridge calls with distinct
+		// seeded scale/definition ranges. Keep those ranges independent here so
+		// Mountain consumes the same Ridge kernel without duplicating its math.
+		switch (Layer)
+		{
+		case 0:
+			Settings.Scale = Random.FRandRange(0.48f, 0.78f);
+			Settings.Definition = 0.40f;
+			break;
+		case 1:
+			Settings.Scale = Random.FRandRange(0.28f, 0.56f);
+			Settings.Definition = Random.FRandRange(0.50f, 1.00f);
+			break;
+		default:
+			Settings.Scale = Random.FRandRange(0.14f, 0.38f);
+			Settings.Definition = Random.FRandRange(0.10f, 0.60f);
+			break;
+		}
 		return Settings;
-	}
-
-	FGaeaScalarField GenerateMountainRidge(
-		const FGaeaGridDomain& Domain,
-		const FMountainRidgeSettings& Settings,
-		int32 Seed,
-		uint32 Salt)
-	{
-		FGaeaScalarField Out = MakeHeightField(Domain);
-		const float CosA = FMath::Cos(Settings.RotationRadians);
-		const float SinA = FMath::Sin(Settings.RotationRadians);
-		const float OffsetX = Hash01(Seed, 17, Seed, Salt) * 47.0f + 3.0f;
-		const float OffsetY = Hash01(31, Seed, Seed, Salt ^ 0x8f31u) * 53.0f + 7.0f;
-
-		for (int32 Y = 0; Y < Domain.Dimensions.Y; ++Y)
-		{
-			const float V = Domain.Dimensions.Y > 1
-				? static_cast<float>(Y) / static_cast<float>(Domain.Dimensions.Y - 1)
-				: 0.0f;
-			for (int32 X = 0; X < Domain.Dimensions.X; ++X)
-			{
-				const float U = Domain.Dimensions.X > 1
-					? static_cast<float>(X) / static_cast<float>(Domain.Dimensions.X - 1)
-					: 0.0f;
-
-				const float CX = U - 0.5f;
-				const float CY = V - 0.5f;
-				float RX = CX * CosA - CY * SinA;
-				float RY = (CX * SinA + CY * CosA) * Settings.CrossAxisScale;
-
-				const float WarpX = SmoothNoise(
-					RX * Settings.Frequency * 0.72f + OffsetX,
-					RY * Settings.Frequency * 0.72f + OffsetY,
-					Seed + 911,
-					Salt ^ 0x51a7u);
-				const float WarpY = SmoothNoise(
-					RX * Settings.Frequency * 0.72f + OffsetY,
-					RY * Settings.Frequency * 0.72f + OffsetX,
-					Seed + 1613,
-					Salt ^ 0xb37du);
-				RX += WarpX * Settings.WarpAmount;
-				RY += WarpY * Settings.WarpAmount;
-
-				float Frequency = Settings.Frequency;
-				float Amplitude = 1.0f;
-				float Sum = 0.0f;
-				float WeightSum = 0.0f;
-				float RidgeWeight = 1.0f;
-
-				for (int32 Octave = 0; Octave < Settings.Octaves; ++Octave)
-				{
-					const float N = SmoothNoise(
-						RX * Frequency + OffsetX,
-						RY * Frequency + OffsetY,
-						Seed + Octave * 193,
-						Salt + static_cast<uint32>(Octave) * 7919u);
-					float Ridge = 1.0f - FMath::Abs(N);
-					Ridge = FMath::Pow(FMath::Clamp(Ridge, 0.0f, 1.0f), Settings.Definition);
-					Ridge *= FMath::Lerp(0.68f, 1.0f, RidgeWeight);
-					Sum += Ridge * Amplitude;
-					WeightSum += Amplitude;
-					RidgeWeight = FMath::Clamp(Ridge * 1.85f, 0.0f, 1.0f);
-					Frequency *= 2.03f;
-					Amplitude *= 0.52f;
-				}
-
-				const float RidgeValue = WeightSum > UE_SMALL_NUMBER ? Sum / WeightSum : 0.0f;
-				Out.AtInterior(X, Y) = FMath::Pow(FMath::Clamp(RidgeValue, 0.0f, 1.0f), 1.15f);
-			}
-		}
-		return Out;
-	}
-
-	void NormalizePositiveField(FGaeaScalarField& Field)
-	{
-		float MaxValue = 0.0f;
-		for (const float Value : Field.Values)
-		{
-			MaxValue = FMath::Max(MaxValue, Value);
-		}
-		if (MaxValue <= UE_SMALL_NUMBER)
-		{
-			return;
-		}
-		const float InvMax = 1.0f / MaxValue;
-		for (float& Value : Field.Values)
-		{
-			Value = FMath::Max(Value, 0.0f) * InvMax;
-		}
 	}
 
 	void ApplyRadialFootprint(FGaeaScalarField& Height, float Scale, float XCenter, float YCenter)
@@ -639,21 +558,24 @@ namespace
 			return false;
 		}
 
-		// Recovered Gaea 2.3 architecture:
-		//   Ridge(seed) + Ridge(seed+1) + Ridge(seed+3)
-		//   -> one radial footprint mask using Scale/X/Y
-		//   -> fractal warp/min
-		//   -> Height multiplication
-		//   -> style process
-		//   -> final Bulk transform.
-		// Scale never changes the Ridge frequencies; it only changes the footprint.
+		// Mountain and the public Ridge node now share one implementation. The
+		// mountain supplies three seeded Ridge parameter sets, then performs only
+		// its own footprint/style/bulk orchestration.
 		FRandomStream RidgeRandom(Seed);
-		const FMountainRidgeSettings RidgeSettings0 = MakeRidgeSettings(RidgeRandom, bReduceDetails, 0);
-		const FMountainRidgeSettings RidgeSettings1 = MakeRidgeSettings(RidgeRandom, bReduceDetails, 1);
-		const FMountainRidgeSettings RidgeSettings2 = MakeRidgeSettings(RidgeRandom, bReduceDetails, 2);
-		FGaeaScalarField Ridge0 = GenerateMountainRidge(Domain, RidgeSettings0, Seed, 0x13579u);
-		FGaeaScalarField Ridge1 = GenerateMountainRidge(Domain, RidgeSettings1, Seed + 1, 0x2468bu);
-		FGaeaScalarField Ridge2 = GenerateMountainRidge(Domain, RidgeSettings2, Seed + 3, 0x97531u);
+		const FGaeaRidgeSettings RidgeSettings0 = MakeMountainRidgeSettings(RidgeRandom, 0, Seed);
+		const FGaeaRidgeSettings RidgeSettings1 = MakeMountainRidgeSettings(RidgeRandom, 1, Seed + 1);
+		const FGaeaRidgeSettings RidgeSettings2 = MakeMountainRidgeSettings(RidgeRandom, 2, Seed + 3);
+
+		FGaeaScalarField Ridge0;
+		FGaeaScalarField Ridge1;
+		FGaeaScalarField Ridge2;
+		if (!FGaeaRidgeGenerator::Generate(Domain, RidgeSettings0, Ridge0, &Error)
+			|| !FGaeaRidgeGenerator::Generate(Domain, RidgeSettings1, Ridge1, &Error)
+			|| !FGaeaRidgeGenerator::Generate(Domain, RidgeSettings2, Ridge2, &Error))
+		{
+			Error = Error.IsEmpty() ? TEXT("Mountain could not generate its Ridge fields.") : Error;
+			return false;
+		}
 
 		FGaeaScalarField Height = MakeHeightField(Domain);
 		for (int32 Y = 0; Y < Domain.Dimensions.Y; ++Y)
@@ -663,14 +585,14 @@ namespace
 				Height.AtInterior(X, Y) = Ridge0.AtInterior(X, Y) + Ridge1.AtInterior(X, Y) + Ridge2.AtInterior(X, Y);
 			}
 		}
-		NormalizePositiveField(Height);
 		ApplyRadialFootprint(Height, MountainScale, XCenter, YCenter);
 
-		// The exact recovered call is Min(base, FractalWarp(base.Copy(), ...)).
-		// Keep that operation isolated until the remaining obfuscated warp constants
-		// are decoded; do not substitute SlopeWarp or alter the Ridge frequencies.
-		ApplyFractalWarpMin(Height, Seed + 27, bReduceDetails);
-		NormalizePositiveField(Height);
+		// MountainStyle::Old is enum value 2 in the recovered public enum. The
+		// recovered implementation skips this pre-style warp only for Old.
+		if (Style != TEXT("Old"))
+		{
+			ApplyFractalWarpMin(Height, Seed + 27, bReduceDetails);
+		}
 
 		for (float& Value : Height.Values)
 		{
@@ -738,7 +660,7 @@ void RegisterGaeaTerrainLandformNodes()
 	D.Type = GaeaTerrainNodeTypes::Mountain;
 	D.DisplayName = TEXT("Mountain");
 	D.Category = TEXT("Terrain");
-	D.Description = TEXT("Mountain generator following Gaea's recovered three-Ridge, radial-footprint, fractal-warp, style-process architecture.");
+	D.Description = TEXT("Mountain generator built from three shared Ridge fields, radial footprint, style processing, and bulk shaping.");
 	D.Inputs = { TerrainIn() };
 	D.Outputs = {
 		TerrainOut(),
@@ -751,7 +673,6 @@ void RegisterGaeaTerrainLandformNodes()
 		ScalarOut(TEXT("CryosphereEligibility"), TEXT("Cryosphere Eligibility"))
 	};
 
-	// Gaea 2.3.0.1 public Mountain contract recovered from the managed assembly.
 	D.Parameters.Add(Num(TEXT("Scale"), TEXT("Scale"), 0.5, 0.0001, 1.0, TEXT("Mountain")));
 	D.Parameters.Add(Num(TEXT("Height"), TEXT("Height"), 1.25, 0.0001, 3.0, TEXT("Mountain")));
 	D.Parameters.Add(Choice(TEXT("Style"), TEXT("Style"), TEXT("Eroded"), { TEXT("Basic"), TEXT("Eroded"), TEXT("Old"), TEXT("Alpine"), TEXT("Strata") }, TEXT("Mountain")));
