@@ -130,6 +130,7 @@ namespace
 	{
 		float F1 = TNumericLimits<float>::Max();
 		float F2 = TNumericLimits<float>::Max();
+		float CellValue = 0.5f;
 	};
 
 	FRidgeVoronoi SampleVoronoi(float X, float Y, int32 Seed)
@@ -150,6 +151,7 @@ namespace
 				{
 					Result.F2 = Result.F1;
 					Result.F1 = Distance;
+					Result.CellValue = RidgeHash01(CellX, CellY, Seed, 0x71u);
 				}
 				else if (Distance < Result.F2)
 				{
@@ -160,17 +162,27 @@ namespace
 		return Result;
 	}
 
-	float TerraceGuide(float Value, int32 X, int32 Y, int32 Seed)
+	float VoronoiP(const FRidgeVoronoi& Cell)
 	{
-		constexpr int32 TerraceCount = 29;
-		constexpr float Uniformity = 0.6f;
-		constexpr float Steepness = 0.2f;
-		const float Noise = RidgeHash01(X, Y, Seed, 0x413u) - 0.5f;
-		const float Phase = Noise * (1.0f - Uniformity) / static_cast<float>(TerraceCount);
+		// Ridge is driven by broad P-form cells, not F2-F1 cell boundaries.
+		// Keeping the cell-to-cell amplitude variation restrained preserves broad
+		// mountain masses while still preventing a regular field of identical domes.
+		const float Peak = FMath::Clamp(1.0f - Cell.F1 * 1.12f, 0.0f, 1.0f);
+		const float Shoulder = FMath::Pow(Peak, 1.18f);
+		const float CellAmplitude = FMath::Lerp(0.86f, 1.08f, Cell.CellValue);
+		return FMath::Clamp(Shoulder * CellAmplitude, 0.0f, 1.0f);
+	}
+
+	float TerraceGuide(float Value, float Variation)
+	{
+		constexpr int32 TerraceCount = 19;
+		constexpr float Uniformity = 0.64f;
+		constexpr float Steepness = 0.22f;
+		const float Phase = Variation * (1.0f - Uniformity) / static_cast<float>(TerraceCount);
 		const float Scaled = FMath::Clamp(Value + Phase, 0.0f, 1.0f) * static_cast<float>(TerraceCount);
 		const float Base = FMath::FloorToFloat(Scaled);
 		const float Fraction = FMath::Frac(Scaled);
-		const float Sharpness = FMath::Lerp(1.0f, 10.0f, Steepness);
+		const float Sharpness = FMath::Lerp(1.0f, 8.0f, Steepness);
 		return FMath::Clamp((Base + FMath::Pow(Fraction, Sharpness)) / static_cast<float>(TerraceCount), 0.0f, 1.0f);
 	}
 
@@ -188,6 +200,15 @@ namespace
 			FMath::Lerp(Field.AtInterior(X0, Y0), Field.AtInterior(X1, Y0), TX),
 			FMath::Lerp(Field.AtInterior(X0, Y1), Field.AtInterior(X1, Y1), TX),
 			TY);
+	}
+
+	void NormalizePositive(FGaeaScalarField& Field)
+	{
+		float MaxValue = 0.0f;
+		for (const float Value : Field.Values) MaxValue = FMath::Max(MaxValue, Value);
+		if (MaxValue <= UE_SMALL_NUMBER) return;
+		const float InvMax = 1.0f / MaxValue;
+		for (float& Value : Field.Values) Value = FMath::Max(Value, 0.0f) * InvMax;
 	}
 
 	bool EvaluateRidgeNode(
@@ -213,10 +234,7 @@ namespace
 		Settings.ScaleY = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("ScaleY"), 1.0)), 0.0001f, 100.0f);
 
 		FGaeaScalarField Height;
-		if (!FGaeaRidgeGenerator::Generate(Domain, Settings, Height, &Error))
-		{
-			return false;
-		}
+		if (!FGaeaRidgeGenerator::Generate(Domain, Settings, Height, &Error)) return false;
 
 		FGaeaTerrainDataset Dataset;
 		if (!Dataset.SetScalarField(MoveTemp(Height)))
@@ -249,7 +267,6 @@ bool FGaeaRidgeGenerator::Generate(
 	};
 
 	if (!Domain.IsValid()) return Fail(TEXT("Ridge requires a valid evaluation domain."));
-
 	const int32 Width = Domain.Dimensions.X;
 	const int32 Height = Domain.Dimensions.Y;
 	if (Width < 2 || Height < 2) return Fail(TEXT("Ridge requires at least a 2x2 domain."));
@@ -258,6 +275,7 @@ bool FGaeaRidgeGenerator::Generate(
 	const float Definition = FMath::Clamp(Settings.Definition, 0.0f, 1.0f);
 	const float ScaleX = FMath::Max(Settings.ScaleX, 0.0001f);
 	const float ScaleY = FMath::Max(Settings.ScaleY, 0.0001f);
+	const float MinDimension = static_cast<float>(FMath::Min(Width, Height));
 
 	FGaeaFieldDescriptor Descriptor;
 	Descriptor.Name = GaeaTerrainFieldNames::Height;
@@ -269,42 +287,48 @@ bool FGaeaRidgeGenerator::Generate(
 	FGaeaScalarField Guide;
 	Guide.Initialize(Domain, Descriptor, 0.0f);
 
-	const float CellFrequency = FMath::Lerp(20.0f, 3.2f, Scale);
+	// Scale governs the size of the structural masses. The old implementation
+	// accidentally used Voronoi cell edges here, which creates a spike/web field.
+	const float CellFrequency = FMath::Lerp(9.0f, 2.75f, Scale);
 	for (int32 Y = 0; Y < Height; ++Y)
 	{
-		const float V = Height > 1 ? static_cast<float>(Y) / static_cast<float>(Height - 1) - 0.5f : 0.0f;
+		const float V = static_cast<float>(Y) / static_cast<float>(Height - 1) - 0.5f;
 		for (int32 X = 0; X < Width; ++X)
 		{
-			const float U = Width > 1 ? static_cast<float>(X) / static_cast<float>(Width - 1) - 0.5f : 0.0f;
+			const float U = static_cast<float>(X) / static_cast<float>(Width - 1) - 0.5f;
 			const FRidgeVoronoi Cell = SampleVoronoi(U * CellFrequency * ScaleX, V * CellFrequency * ScaleY, Settings.Seed);
-			const float Edge = FMath::Max(Cell.F2 - Cell.F1, 0.0f);
-			Structure.AtInterior(X, Y) = FMath::Pow(FMath::Clamp(1.0f - Edge * 2.2f, 0.0f, 1.0f), 1.35f);
+			Structure.AtInterior(X, Y) = VoronoiP(Cell);
 
-			const float ControlNoise = Fbm(U, V, 3.4f, 13, 0.5f, Settings.Seed + 1, 0x251u);
+			const float ControlNoise = Fbm(U, V, 3.0f, 8, 0.52f, Settings.Seed + 1, 0x251u);
 			const float Control01 = FMath::Clamp(ControlNoise * 0.5f + 0.5f, 0.0f, 1.0f);
-			Guide.AtInterior(X, Y) = TerraceGuide(Control01, X, Y, Settings.Seed + 3);
+			const float Variation = Fbm(U, V, 1.6f, 3, 0.5f, Settings.Seed + 3, 0x413u) * 0.5f;
+			Guide.AtInterior(X, Y) = TerraceGuide(Control01, Variation);
 		}
 	}
 
+	// Deform the control field gently before it drives the structural field.
 	FGaeaScalarField WarpedGuide = Guide;
-	const float GuideWarpSamples = FMath::Lerp(3.0f, 22.0f, 1.0f - Definition);
+	const float GuideWarpSamples = MinDimension * FMath::Lerp(0.012f, 0.030f, 1.0f - Definition);
 	for (int32 Y = 0; Y < Height; ++Y)
 	{
-		const float V = Height > 1 ? static_cast<float>(Y) / static_cast<float>(Height - 1) : 0.0f;
+		const float V = static_cast<float>(Y) / static_cast<float>(Height - 1);
 		for (int32 X = 0; X < Width; ++X)
 		{
-			const float U = Width > 1 ? static_cast<float>(X) / static_cast<float>(Width - 1) : 0.0f;
-			const float WX = Fbm(U, V, 5.5f, 5, 0.52f, Settings.Seed + 2, 0x451u);
-			const float WY = Fbm(U, V, 5.5f, 5, 0.52f, Settings.Seed + 2, 0x8a3u);
+			const float U = static_cast<float>(X) / static_cast<float>(Width - 1);
+			const float WX = Fbm(U, V, 4.2f, 4, 0.52f, Settings.Seed + 2, 0x451u);
+			const float WY = Fbm(U, V, 4.2f, 4, 0.52f, Settings.Seed + 2, 0x8a3u);
 			const float Sampled = Bilinear(Guide, X + WX * GuideWarpSamples, Y + WY * GuideWarpSamples);
 			WarpedGuide.AtInterior(X, Y) = FMath::Max(Guide.AtInterior(X, Y), Sampled);
 		}
 	}
 
+	// The guide now advects broad P-form masses into coherent ridges. Keep the
+	// displacement bounded in sample space; the previous 0.5*resolution-class
+	// displacement was the other source of needle-like folds.
 	FGaeaScalarField Directed = Structure;
 	const float DirectionRadians = FMath::DegreesToRadians(45.0f);
 	const FVector2D Axis(FMath::Cos(DirectionRadians), FMath::Sin(DirectionRadians));
-	const float DirectionStrength = Definition * 1.25f * static_cast<float>(FMath::Min(Width, Height));
+	const float DirectionStrength = Definition * MinDimension * 0.075f;
 	for (int32 Y = 0; Y < Height; ++Y)
 	{
 		for (int32 X = 0; X < Width; ++X)
@@ -315,40 +339,38 @@ bool FGaeaRidgeGenerator::Generate(
 		}
 	}
 
+	// A second, lower-amplitude vector warp breaks straightness without destroying
+	// the broad ridge silhouette.
 	FGaeaScalarField FractalWarped = Directed;
-	const float SecondaryWarpSamples = FMath::Lerp(2.0f, 16.0f, Scale);
+	const float SecondaryWarpSamples = MinDimension * FMath::Lerp(0.008f, 0.028f, Scale);
+	const float SecondaryFrequency = FMath::Lerp(5.5f, 2.8f, Scale);
 	for (int32 Y = 0; Y < Height; ++Y)
 	{
-		const float V = Height > 1 ? static_cast<float>(Y) / static_cast<float>(Height - 1) : 0.0f;
+		const float V = static_cast<float>(Y) / static_cast<float>(Height - 1);
 		for (int32 X = 0; X < Width; ++X)
 		{
-			const float U = Width > 1 ? static_cast<float>(X) / static_cast<float>(Width - 1) : 0.0f;
-			const float WX = Fbm(U, V, FMath::Lerp(11.0f, 4.0f, Scale), 5, 0.56f, Settings.Seed + 5, 0x17bdu);
-			const float WY = Fbm(U, V, FMath::Lerp(11.0f, 4.0f, Scale), 5, 0.56f, Settings.Seed + 5, 0x2a51u);
+			const float U = static_cast<float>(X) / static_cast<float>(Width - 1);
+			const float WX = Fbm(U, V, SecondaryFrequency, 4, 0.55f, Settings.Seed + 5, 0x17bdu);
+			const float WY = Fbm(U, V, SecondaryFrequency, 4, 0.55f, Settings.Seed + 5, 0x2a51u);
 			FractalWarped.AtInterior(X, Y) = Bilinear(Directed, X + WX * SecondaryWarpSamples, Y + WY * SecondaryWarpSamples);
 		}
 	}
 
 	OutHeight.Initialize(Domain, Descriptor, 0.0f);
-	float MaxValue = 0.0f;
 	for (int32 Y = 0; Y < Height; ++Y)
 	{
 		for (int32 X = 0; X < Width; ++X)
 		{
 			const float Combined = FMath::Min(Directed.AtInterior(X, Y), FractalWarped.AtInterior(X, Y));
-			const float Shaped = FMath::Pow(FMath::Clamp(Combined, 0.0f, 1.0f), FMath::Lerp(1.55f, 0.82f, Definition));
-			OutHeight.AtInterior(X, Y) = Shaped;
-			MaxValue = FMath::Max(MaxValue, Shaped);
+			const float DefinitionCurve = FMath::Lerp(1.28f, 0.86f, Definition);
+			OutHeight.AtInterior(X, Y) = FMath::Pow(FMath::Clamp(Combined, 0.0f, 1.0f), DefinitionCurve);
 		}
 	}
 
-	if (MaxValue > UE_SMALL_NUMBER)
+	NormalizePositive(OutHeight);
+	for (float& Value : OutHeight.Values)
 	{
-		const float InvMax = 1.0f / MaxValue;
-		for (float& Value : OutHeight.Values)
-		{
-			Value = FMath::Clamp(Value * InvMax * Settings.Height, 0.0f, FMath::Max(Settings.Height, 0.0f));
-		}
+		Value = FMath::Clamp(Value * Settings.Height, 0.0f, FMath::Max(Settings.Height, 0.0f));
 	}
 
 	if (OutError) OutError->Reset();
@@ -361,7 +383,7 @@ void RegisterGaeaRidgeNode()
 	D.Type = GaeaTerrainNodeTypes::Ridge;
 	D.DisplayName = TEXT("Ridge");
 	D.Category = TEXT("Terrain");
-	D.Description = TEXT("Generates long branching terrain ridges from a cellular structural field, terraced guide deformation, and multi-scale warping.");
+	D.Description = TEXT("Generates broad branching terrain ridges from cellular mass structure, a terraced control field, directional deformation, and multi-scale warp.");
 	D.Outputs.Add(RidgeTerrainOut());
 	D.Parameters = {
 		RidgeNumber(TEXT("Scale"), TEXT("Scale"), 0.75, 0.0001, 1.0, TEXT("Ridge")),
