@@ -43,6 +43,7 @@
 #include "GaeaReferenceFidelityExtendedNodes.h"
 #include "GaeaReferenceFidelityProcessNodes.h"
 #include "GaeaReferenceFidelityTransposeNode.h"
+#include "GaeaRidgeNode.h"
 #include "GaeaShaperNode.h"
 #include "GaeaSharpenNode.h"
 #include "GaeaSimulateEvolutionNodes.h"
@@ -107,6 +108,7 @@ public:
 		RegisterGaeaTileInputNode();
 		RegisterGaeaVoronoiNode();
 		RegisterGaeaWaveShineNode();
+		RegisterGaeaRidgeNode();
 		RegisterGaeaErosionNode();
 		RegisterGaeaThermalErosionNode();
 		RegisterGaeaSimulateFoundationNodes();
@@ -203,6 +205,7 @@ public:
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::TileInput, TEXT("TileInput"), TEXT("Primitive"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Voronoi, TEXT("Voronoi"), TEXT("Primitive"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::WaveShine, TEXT("WaveShine"), TEXT("Primitive"));
+		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Ridge, TEXT("Ridge"), TEXT("Terrain"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::HydraulicErosion, TEXT("Erosion"), TEXT("Simulate"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::ThermalErosion, TEXT("Thermal"), TEXT("Simulate"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Lake, TEXT("Lake"), TEXT("Simulate"));
@@ -283,6 +286,11 @@ public:
 		RegisterGaeaReferenceFidelityExtendedNodes();
 		RegisterGaeaReferenceFidelityTransposeNode();
 		RegisterGaeaReferenceFidelityProcessNodes();
+
+		// Ridge is an authored terrain primitive/landform in its own right. Reapply
+		// its registration after the audited families so no compatibility pass can
+		// replace the shared Ridge evaluator used by compound landforms.
+		RegisterGaeaRidgeNode();
 	}
 };
 
