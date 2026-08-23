@@ -27,11 +27,11 @@ namespace
 		return Hash;
 	}
 
-	bool ConnectionLess(const FGaeaTerrainConnection* A, const FGaeaTerrainConnection* B)
+	bool ConnectionLess(const FGaeaTerrainConnection& A, const FGaeaTerrainConnection& B)
 	{
-		if (A->ToInput != B->ToInput) return A->ToInput.LexicalLess(B->ToInput);
-		if (A->FromNode != B->FromNode) return A->FromNode < B->FromNode;
-		return A->FromOutput.LexicalLess(B->FromOutput);
+		if (A.ToInput != B.ToInput) return A.ToInput.LexicalLess(B.ToInput);
+		if (A.FromNode != B.FromNode) return A.FromNode < B.FromNode;
+		return A.FromOutput.LexicalLess(B.FromOutput);
 	}
 }
 
