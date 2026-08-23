@@ -36,6 +36,9 @@ namespace GaeaTerrainNodeTypes
 	const FName Rivers(TEXT("Rivers"));
 	const FName Lake(TEXT("Lake"));
 	const FName Sea(TEXT("Sea"));
+	const FName Snow(TEXT("Snow"));
+	const FName Snowfield(TEXT("Snowfield"));
+	const FName Glacier(TEXT("Glacier"));
 	const FName Sediments(TEXT("Sediments"));
 	const FName Debris(TEXT("Debris"));
 	const FName Scree(TEXT("Scree"));
