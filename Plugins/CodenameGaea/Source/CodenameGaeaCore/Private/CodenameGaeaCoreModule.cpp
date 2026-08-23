@@ -16,6 +16,7 @@
 #include "GaeaDistanceNode.h"
 #include "GaeaDotNoiseNode.h"
 #include "GaeaDriftNoiseNode.h"
+#include "GaeaEcologyNodes.h"
 #include "GaeaErosionNode.h"
 #include "GaeaFileNodeDecoder.h"
 #include "GaeaFlipNode.h"
@@ -107,6 +108,7 @@ public:
 		RegisterGaeaSnowfieldNode();
 		RegisterGaeaGlacierNode();
 		RegisterGaeaNetworkProcessNodes();
+		RegisterGaeaEcologyNodes();
 		RegisterGaeaCurvatureNode();
 		RegisterGaeaHeightNode();
 		RegisterGaeaAngleNode();
@@ -196,6 +198,8 @@ public:
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Glacier, TEXT("Glacier"), TEXT("Simulate"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Anastomosis, TEXT("Anastomosis"), TEXT("Simulate"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Lichtenberg, TEXT("Lichtenberg"), TEXT("Simulate"));
+		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Trees, TEXT("Trees"), TEXT("Simulate"));
+		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Shrubs, TEXT("Shrubs"), TEXT("Simulate"));
 
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Adjust, TEXT("Adjust"), TEXT("Modify"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Aperture, TEXT("Aperture"), TEXT("Modify"));
