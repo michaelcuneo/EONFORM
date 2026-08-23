@@ -423,10 +423,11 @@ namespace GaeaSimulateEvolution
 		FGaeaTerrainDataset Dataset = Input->TerrainDataset;
 		FGaeaTerrainDerivedDataSettings Derived;
 		if (!FGaeaTerrainDerivedData::EnsureHydraulicInputs(Dataset, Input->HeightScale, Context.PhysicalMetrics, Derived, &Error)) return false;
+		if (!FGaeaTerrainDerivedData::EnsureFlowAnalysis(Dataset, Input->HeightScale, Context.PhysicalMetrics, &Error)) return false;
 		const FGaeaScalarField* Source = Dataset.FindScalarField(GaeaTerrainFieldNames::Height);
 		const FGaeaScalarField* Flow = Dataset.FindScalarField(GaeaTerrainFieldNames::FlowAccumulation);
 		const FGaeaScalarField* Deposits = Dataset.FindScalarField(GaeaTerrainFieldNames::Deposition);
-		if (!Source || !Flow) { Error = TEXT("Crumble could not resolve terrain analysis fields."); return false; }
+		if (!Source || !Flow) { Error = TEXT("Crumble could not resolve terrain flow-analysis fields."); return false; }
 
 		const int32 Duration = FMath::Clamp(static_cast<int32>(Node.GetInteger(TEXT("Duration"), 8)), 1, 128);
 		const float Strength = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Strength"), 0.45)), 0.0f, 1.0f);
