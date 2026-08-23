@@ -162,6 +162,7 @@ bool FGaeaTerrainLandformOps::BuildMountain(
 	const float SpurWeight = bOld ? 0.20f : (bAlpine ? 0.62f : 0.43f);
 	const float WarpStrength = bOld ? 0.055f : (bAlpine ? 0.105f : 0.085f);
 	const float FineDetailStrength = Settings.bReduceDetails ? 0.0f : (bOld ? 0.012f : 0.035f);
+	float MaxStructural = UE_SMALL_NUMBER;
 
 	for (int32 Y = 0; Y < Settings.Resolution; ++Y)
 	{
@@ -264,18 +265,38 @@ bool FGaeaTerrainLandformOps::BuildMountain(
 				Structural = FMath::Lerp(Structural, Quantized, 0.28f);
 			}
 
-			const float MountainHeight = FMath::Clamp(Structural * Settings.Height, 0.0f, 1.0f);
+			MaxStructural = FMath::Max(MaxStructural, Structural);
 			const float RidgeSemantic = FMath::Clamp(Envelope * (VoronoiRidge * 0.62f + SpurRidges * 0.38f), 0.0f, 1.0f);
 			const float MidSlope = Smooth01(Envelope * 1.65f) * (1.0f - Smooth01((Envelope - 0.70f) * 3.0f));
 
-			Height.AtInterior(X, Y) = MountainHeight;
+			// Keep the unrestricted structural value until the whole massif has been
+			// evaluated. Per-sample saturation here creates flat mesa-like summits.
+			Height.AtInterior(X, Y) = Structural;
 			Mass.AtInterior(X, Y) = Envelope;
-			Uplift.AtInterior(X, Y) = FMath::Clamp(Structural, 0.0f, 1.0f);
+			Uplift.AtInterior(X, Y) = Structural;
 			Ridges.AtInterior(X, Y) = RidgeSemantic;
 			Drainage.AtInterior(X, Y) = FMath::Clamp(MidSlope * 0.55f + RidgeSemantic * 0.45f, 0.0f, 1.0f);
 			Erosion.AtInterior(X, Y) = FMath::Clamp(MidSlope * 0.58f + RidgeSemantic * 0.42f, 0.0f, 1.0f);
-			Rock.AtInterior(X, Y) = FMath::Clamp(MountainHeight * 0.42f + RidgeSemantic * 0.58f, 0.0f, 1.0f);
-			Cryosphere.AtInterior(X, Y) = Smooth01((MountainHeight - 0.52f) / 0.38f) * FMath::Lerp(0.72f, 1.0f, RidgeSemantic);
+			Rock.AtInterior(X, Y) = RidgeSemantic;
+			Cryosphere.AtInterior(X, Y) = 0.0f;
+		}
+	}
+
+	// Height is a target peak, not a multiplier on an arbitrary random maximum.
+	// Normalize the complete structural field so at least one summit reaches the
+	// requested Height without flattening an entire saturated cap.
+	const float PeakScale = MaxStructural > UE_SMALL_NUMBER ? Settings.Height / MaxStructural : 0.0f;
+	for (int32 Y = 0; Y < Settings.Resolution; ++Y)
+	{
+		for (int32 X = 0; X < Settings.Resolution; ++X)
+		{
+			const float MountainHeight = FMath::Clamp(Height.AtInterior(X, Y) * PeakScale, 0.0f, Settings.Height);
+			const float RelativeHeight = Settings.Height > UE_SMALL_NUMBER ? MountainHeight / Settings.Height : 0.0f;
+			Height.AtInterior(X, Y) = MountainHeight;
+			Uplift.AtInterior(X, Y) = RelativeHeight;
+			const float RidgeSemantic = Ridges.AtInterior(X, Y);
+			Rock.AtInterior(X, Y) = FMath::Clamp(RelativeHeight * 0.42f + RidgeSemantic * 0.58f, 0.0f, 1.0f);
+			Cryosphere.AtInterior(X, Y) = Smooth01((RelativeHeight - 0.52f) / 0.38f) * FMath::Lerp(0.72f, 1.0f, RidgeSemantic);
 		}
 	}
 
