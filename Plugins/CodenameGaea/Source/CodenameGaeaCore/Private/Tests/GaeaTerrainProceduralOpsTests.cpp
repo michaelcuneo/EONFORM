@@ -21,6 +21,29 @@ namespace
 		F.Initialize(Domain, D, Initial);
 		return F;
 	}
+
+	double NeighborVariation(const FGaeaScalarField& F)
+	{
+		double Sum = 0.0;
+		int64 Count = 0;
+		for (int32 Y = 0; Y < F.Domain.Dimensions.Y; ++Y)
+		{
+			for (int32 X = 0; X < F.Domain.Dimensions.X; ++X)
+			{
+				if (X + 1 < F.Domain.Dimensions.X)
+				{
+					Sum += FMath::Abs(static_cast<double>(F.AtInterior(X + 1, Y) - F.AtInterior(X, Y)));
+					++Count;
+				}
+				if (Y + 1 < F.Domain.Dimensions.Y)
+				{
+					Sum += FMath::Abs(static_cast<double>(F.AtInterior(X, Y + 1) - F.AtInterior(X, Y)));
+					++Count;
+				}
+			}
+		}
+		return Count > 0 ? Sum / static_cast<double>(Count) : 0.0;
+	}
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -93,6 +116,75 @@ bool FGaeaRadialSmoothstepTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Radial center remains one"), FMath::IsNearlyEqual(Result.AtInterior(50, 50), 1.0f, 1.e-6f));
 	TestTrue(TEXT("Radial radius reaches zero"), FMath::IsNearlyEqual(Result.AtInterior(90, 50), 0.0f, 1.e-6f));
 	TestTrue(TEXT("Radial falloff uses smoothstep profile"), FMath::IsNearlyEqual(Result.AtInterior(60, 50), 0.84375f, 1.e-5f));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FGaeaPerlinScaleDirectionTest,
+	"CodenameGaea.Core.ProceduralOps.PerlinScaleDirection",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FGaeaPerlinScaleDirectionTest::RunTest(const FString& Parameters)
+{
+	const FGaeaGridDomain Domain = TestDomain(129, 129);
+	GaeaTerrainProceduralOps::FPerlinSettings FineSettings;
+	FineSettings.Scale = 0.10f;
+	FineSettings.Octaves = 4;
+	FineSettings.Gain = 0.5f;
+	FineSettings.Seed = 4451;
+	FineSettings.WarpType = TEXT("None");
+
+	GaeaTerrainProceduralOps::FPerlinSettings BroadSettings = FineSettings;
+	BroadSettings.Scale = 0.90f;
+
+	FGaeaScalarField Fine;
+	FGaeaScalarField Broad;
+	FString Error;
+	TestTrue(TEXT("Fine-scale Perlin evaluates"), GaeaTerrainProceduralOps::GeneratePerlin(Domain, FineSettings, Fine, &Error));
+	TestTrue(TEXT("Broad-scale Perlin evaluates"), GaeaTerrainProceduralOps::GeneratePerlin(Domain, BroadSettings, Broad, &Error));
+	TestTrue(TEXT("RawNoise Perlin Scale increases perceptual feature size"), NeighborVariation(Fine) > NeighborVariation(Broad));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FGaeaVoronoiPDistance2AddTest,
+	"CodenameGaea.Core.ProceduralOps.VoronoiPDistance2Add",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FGaeaVoronoiPDistance2AddTest::RunTest(const FString& Parameters)
+{
+	const FGaeaGridDomain Domain = TestDomain(97, 97);
+	GaeaTerrainProceduralOps::FVoronoiSettings PSettings;
+	PSettings.Scale = 0.55f;
+	PSettings.Form = TEXT("P");
+	PSettings.Function = TEXT("Euclidean");
+	PSettings.WarpType = TEXT("None");
+	PSettings.Seed = 4451;
+	PSettings.Jitter = 0.45f;
+
+	GaeaTerrainProceduralOps::FVoronoiSettings RSettings = PSettings;
+	RSettings.Form = TEXT("R");
+
+	FGaeaScalarField P;
+	FGaeaScalarField R;
+	FString Error;
+	TestTrue(TEXT("Voronoi P evaluates"), GaeaTerrainProceduralOps::GenerateVoronoi(Domain, PSettings, P, &Error));
+	TestTrue(TEXT("Voronoi R evaluates"), GaeaTerrainProceduralOps::GenerateVoronoi(Domain, RSettings, R, &Error));
+
+	double MeanP = 0.0;
+	double MeanR = 0.0;
+	for (int32 Y = 0; Y < Domain.Dimensions.Y; ++Y)
+	{
+		for (int32 X = 0; X < Domain.Dimensions.X; ++X)
+		{
+			MeanP += P.AtInterior(X, Y);
+			MeanR += R.AtInterior(X, Y);
+		}
+	}
+	const double Count = static_cast<double>(Domain.GetInteriorSampleCount());
+	MeanP /= Count;
+	MeanR /= Count;
+	TestTrue(TEXT("Voronoi P is the Distance2Add family, not the Distance field"), MeanP > MeanR);
 	return true;
 }
 
