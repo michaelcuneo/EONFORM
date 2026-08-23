@@ -257,6 +257,26 @@ namespace GaeaColorize
 		return nullptr;
 	}
 
+	FGaeaScalarField MakeColorChannel(const FGaeaColorField& Color, FName Name, int32 Channel)
+	{
+		FGaeaFieldDescriptor Descriptor;
+		Descriptor.Name = Name;
+		Descriptor.Unit = EGaeaFieldUnit::Normalized;
+		Descriptor.Interpolation = EGaeaInterpolation::Bilinear;
+
+		FGaeaScalarField Field;
+		Field.Initialize(Color.Domain, Descriptor, 0.0f);
+		for (int32 Y = 0; Y < Color.Domain.Dimensions.Y; ++Y)
+		{
+			for (int32 X = 0; X < Color.Domain.Dimensions.X; ++X)
+			{
+				const FLinearColor C = Color.AtInterior(X, Y);
+				Field.AtInterior(X, Y) = FMath::Clamp(Channel == 0 ? C.R : (Channel == 1 ? C.G : C.B), 0.0f, 1.0f);
+			}
+		}
+		return Field;
+	}
+
 	float ApplyBias(float T, float Bias)
 	{
 		T = FMath::Clamp(T, 0.0f, 1.0f);
@@ -379,13 +399,35 @@ namespace GaeaColorize
 			Error = TEXT("SatMap produced an invalid Color field.");
 			return false;
 		}
-		Out.Outputs.Add(TEXT("Out"), FGaeaTerrainValue::MakeColor(MoveTemp(Color)));
 
+		// SatMap is an authoring/inspection layer. When it receives Terrain, keep
+		// the terrain intact and attach the sampled RGB as height-derived render
+		// fields so preview and output materialization can display it directly.
 		if (Input->Type == EGaeaTerrainValueType::Terrain)
 		{
-			Out.Outputs.Add(TEXT("Terrain"), *Input);
+			FGaeaTerrainDataset Dataset = Input->TerrainDataset;
+			FGaeaScalarField R = MakeColorChannel(Color, GaeaTerrainFieldNames::BaseColorR, 0);
+			FGaeaScalarField G = MakeColorChannel(Color, GaeaTerrainFieldNames::BaseColorG, 1);
+			FGaeaScalarField B = MakeColorChannel(Color, GaeaTerrainFieldNames::BaseColorB, 2);
+			if (!Dataset.SetHeightDerivedScalarField(MoveTemp(R))
+				|| !Dataset.SetHeightDerivedScalarField(MoveTemp(G))
+				|| !Dataset.SetHeightDerivedScalarField(MoveTemp(B)))
+			{
+				Error = TEXT("SatMap could not attach its preview color to Terrain.");
+				return false;
+			}
+
+			FGaeaTerrainValue DecoratedTerrain = FGaeaTerrainValue::MakeTerrain(MoveTemp(Dataset), Input->HeightScale);
+			if (!DecoratedTerrain.IsValid())
+			{
+				Error = TEXT("SatMap produced invalid decorated Terrain.");
+				return false;
+			}
+			Out.Outputs.Add(TEXT("Terrain"), MoveTemp(DecoratedTerrain));
 		}
 
+		// Retain the explicit Color output for inspection and utility workflows.
+		Out.Outputs.Add(TEXT("Out"), FGaeaTerrainValue::MakeColor(MoveTemp(Color)));
 		Error.Reset();
 		return true;
 	}
@@ -398,7 +440,7 @@ void RegisterGaeaColorizeNodes()
 	D.Type = GaeaTerrainNodeTypes::SatMap;
 	D.DisplayName = TEXT("SatMap");
 	D.Category = TEXT("Colorize");
-	D.Description = TEXT("Maps terrain or scalar values through a sampled EONFORM color lookup table.");
+	D.Description = TEXT("Maps terrain or scalar values through a sampled EONFORM color lookup table and decorates Terrain for visual inspection.");
 	D.Inputs.Add(Port(TEXT("Input"), TEXT("Input"), TEXT("Terrain")));
 	D.Outputs.Add(Port(TEXT("Out"), TEXT("Out"), TEXT("Color")));
 	D.Outputs.Add(Port(TEXT("Terrain"), TEXT("Terrain"), TEXT("Terrain")));
