@@ -70,6 +70,52 @@ namespace GaeaTerrainProceduralOps
 			return Weight > UE_SMALL_NUMBER ? Result / Weight : 0.0f;
 		}
 
+		struct FCellularPair
+		{
+			float F1 = TNumericLimits<float>::Max();
+			float F2 = TNumericLimits<float>::Max();
+		};
+
+		FCellularPair CellularPair(float X, float Y, float Jitter, int32 Seed)
+		{
+			const int32 BX = FMath::FloorToInt(X);
+			const int32 BY = FMath::FloorToInt(Y);
+			FCellularPair Pair;
+			for (int32 CY = BY - 2; CY <= BY + 2; ++CY)
+			{
+				for (int32 CX = BX - 2; CX <= BX + 2; ++CX)
+				{
+					const float Angle = WarpHash01(CX, CY, Seed, 0x39u) * 2.0f * PI;
+					const float Radius = Jitter * (0.72f + WarpHash01(CY, CX, Seed, 0x93u) * 0.28f);
+					const float DX = X - (static_cast<float>(CX) + FMath::Cos(Angle) * Radius);
+					const float DY = Y - (static_cast<float>(CY) + FMath::Sin(Angle) * Radius);
+					const float D = DX * DX + DY * DY;
+					if (D < Pair.F1)
+					{
+						Pair.F2 = Pair.F1;
+						Pair.F1 = D;
+					}
+					else if (D < Pair.F2)
+					{
+						Pair.F2 = D;
+					}
+				}
+			}
+			return Pair;
+		}
+
+		float VoronoiWarpNoise(float X, float Y, FName NoiseType, float Jitter, int32 Seed)
+		{
+			const FCellularPair Pair = CellularPair(X, Y, Jitter, Seed);
+			if (NoiseType == TEXT("Voronoi R")) return Pair.F1;
+			if (NoiseType == TEXT("Voronoi A")) return Pair.F2;
+			if (NoiseType == TEXT("Voronoi P")) return Pair.F1 + Pair.F2;
+			if (NoiseType == TEXT("Voronoi S")) return Pair.F1 * Pair.F2;
+			if (NoiseType == TEXT("Voronoi M")) return Pair.F1 / FMath::Max(Pair.F2, UE_SMALL_NUMBER);
+			if (NoiseType == TEXT("Voronoi D")) return Perlin(X, Y, Seed, 0x4d31u);
+			return Pair.F1;
+		}
+
 		float MirrorCoord(float V, int32 MaxIndex)
 		{
 			if (MaxIndex <= 0) return 0.0f;
@@ -115,10 +161,16 @@ namespace GaeaTerrainProceduralOps
 			float& OutX,
 			float& OutY)
 		{
-			// PerlinFBM is the most important path for Mountain/Ridge. Keep the
-			// observed frequency/roughness/octave semantics exact at this level.
-			OutX = Fbm(X * Frequency, Y * Frequency, Settings.Octaves, Settings.Roughness, Seed, 0x211u);
-			OutY = Fbm(X * Frequency, Y * Frequency, Settings.Octaves, Settings.Roughness, Seed + 1, 0x917u);
+			if (Settings.NoiseType == TEXT("Perlin FBM") || Settings.NoiseType == TEXT("PerlinFBM"))
+			{
+				OutX = Fbm(X * Frequency, Y * Frequency, Settings.Octaves, Settings.Roughness, Seed, 0x211u);
+				OutY = Fbm(X * Frequency, Y * Frequency, Settings.Octaves, Settings.Roughness, Seed + 1, 0x917u);
+			}
+			else
+			{
+				OutX = VoronoiWarpNoise(X * Frequency, Y * Frequency, Settings.NoiseType, Settings.Jitter, Seed);
+				OutY = VoronoiWarpNoise(X * Frequency, Y * Frequency, Settings.NoiseType, Settings.Jitter, Seed + 1);
+			}
 
 			if (Settings.bNormalized)
 			{
@@ -157,8 +209,6 @@ namespace GaeaTerrainProceduralOps
 		const float DirectionRadians = FMath::DegreesToRadians(Settings.ModulationDirectionDegrees);
 		const FVector2D ModAxis(-FMath::Cos(DirectionRadians), FMath::Sin(DirectionRadians));
 
-		// Virtual mode composes a coordinate field, then samples the original map
-		// once. This is the mode used by default by the supplied FractalWarp.
 		if (Settings.Mode != TEXT("Bitmap") && Settings.Mode != TEXT("Vector Field Integral"))
 		{
 			TArray<FVector2D> Coordinates;
@@ -211,8 +261,6 @@ namespace GaeaTerrainProceduralOps
 		}
 		else
 		{
-			// Real/Integral are applied incrementally. This keeps the same displacement
-			// equation and avoids the old arbitrary 0.05 multiplier.
 			FGaeaScalarField Current = Source;
 			for (int32 Iter = 0; Iter < Iterations; ++Iter)
 			{
