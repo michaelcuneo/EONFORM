@@ -56,6 +56,29 @@ namespace
 		return P;
 	}
 
+	FGaeaTerrainParameterDescriptor Boolean(FName Name, const TCHAR* Label, bool Default, const TCHAR* Group)
+	{
+		FGaeaTerrainParameterDescriptor P;
+		P.Name = Name;
+		P.DisplayName = Label;
+		P.Group = Group;
+		P.Type = EGaeaTerrainParameterType::Boolean;
+		P.DefaultBoolean = Default;
+		return P;
+	}
+
+	FGaeaTerrainParameterDescriptor Name(FName NameValue, const TCHAR* Label, FName Default, std::initializer_list<FName> Options, const TCHAR* Group)
+	{
+		FGaeaTerrainParameterDescriptor P;
+		P.Name = NameValue;
+		P.DisplayName = Label;
+		P.Group = Group;
+		P.Type = EGaeaTerrainParameterType::Name;
+		P.DefaultName = Default;
+		for (const FName Option : Options) P.NameOptions.Add(Option);
+		return P;
+	}
+
 	bool EvaluateMountain(
 		const FGaeaTerrainNode& Node,
 		const FGaeaTerrainNodeInputs&,
@@ -64,19 +87,19 @@ namespace
 		FString& Error)
 	{
 		FGaeaMountainLandformSettings Settings;
-		Settings.Resolution = static_cast<int32>(Node.GetInteger(TEXT("Resolution"), 513));
-		Settings.WorldSize = static_cast<float>(Node.GetNumber(TEXT("WorldSize"), 100000.0));
-		Settings.HeightScale = static_cast<float>(Node.GetNumber(TEXT("HeightScale"), 8000.0));
-		Settings.Radius = static_cast<float>(Node.GetNumber(TEXT("Radius"), 0.72));
-		Settings.Elongation = static_cast<float>(Node.GetNumber(TEXT("Elongation"), 0.52));
-		Settings.OrientationDegrees = static_cast<float>(Node.GetNumber(TEXT("Orientation"), 20.0));
-		Settings.PeakSharpness = static_cast<float>(Node.GetNumber(TEXT("PeakSharpness"), 0.58));
-		Settings.RidgeStrength = static_cast<float>(Node.GetNumber(TEXT("RidgeStrength"), 0.72));
-		Settings.RidgeFrequency = static_cast<float>(Node.GetNumber(TEXT("RidgeFrequency"), 4.0));
-		Settings.Roughness = static_cast<float>(Node.GetNumber(TEXT("Roughness"), 0.34));
-		Settings.Asymmetry = static_cast<float>(Node.GetNumber(TEXT("Asymmetry"), 0.18));
-		Settings.BaseElevation = static_cast<float>(Node.GetNumber(TEXT("BaseElevation"), 0.02));
+		Settings.Resolution = 513;
+		Settings.WorldSize = 100000.0f;
+		Settings.HeightScale = Context.PhysicalMetrics.HasElevationScale()
+			? static_cast<float>(Context.PhysicalMetrics.ElevationScaleMeters * 100.0)
+			: 8000.0f;
+		Settings.Scale = static_cast<float>(Node.GetNumber(TEXT("Scale"), 1.0));
+		Settings.Height = static_cast<float>(Node.GetNumber(TEXT("Height"), 0.92));
+		Settings.Style = Node.GetName(TEXT("Style"), TEXT("Basic"));
+		Settings.Bulk = Node.GetName(TEXT("Bulk"), TEXT("Medium"));
+		Settings.bReduceDetails = Node.GetBool(TEXT("ReduceDetails"), false);
 		Settings.Seed = static_cast<int32>(Node.GetInteger(TEXT("Seed"), 1337));
+		Settings.OffsetX = static_cast<float>(Node.GetNumber(TEXT("X"), 0.0));
+		Settings.OffsetY = static_cast<float>(Node.GetNumber(TEXT("Y"), 0.0));
 
 		FGaeaMountainLandformResult Result;
 		if (!FGaeaTerrainLandformOps::BuildMountain(Settings, Context.PhysicalMetrics, Result, &Error))
@@ -118,7 +141,7 @@ void RegisterGaeaTerrainLandformNodes()
 	D.Type = GaeaTerrainNodeTypes::Mountain;
 	D.DisplayName = TEXT("Mountain");
 	D.Category = TEXT("Terrain");
-	D.Description = TEXT("Builds a structured mountain massif from uplift, ridge organization, asymmetry and macro relief. Publishes process-readiness fields without forcing hydrology.");
+	D.Description = TEXT("Gaea-style Mountain primitive built from a modulated Voronoi pattern and distortions, ready for further modification and erosion.");
 	D.Outputs.Add(TerrainOut());
 	D.Outputs.Add(ScalarOut(TEXT("Mass"), TEXT("Mass")));
 	D.Outputs.Add(ScalarOut(TEXT("Uplift"), TEXT("Uplift")));
@@ -128,19 +151,15 @@ void RegisterGaeaTerrainLandformNodes()
 	D.Outputs.Add(ScalarOut(TEXT("RockExposure"), TEXT("Rock Exposure")));
 	D.Outputs.Add(ScalarOut(TEXT("CryosphereEligibility"), TEXT("Cryosphere Eligibility")));
 
-	D.Parameters.Add(Integer(TEXT("Resolution"), TEXT("Resolution"), 513, 17, 4097, TEXT("Domain")));
-	D.Parameters.Add(Number(TEXT("WorldSize"), TEXT("Fallback World Size"), 100000.0, 100.0, 10000000.0, TEXT("Domain")));
-	D.Parameters.Add(Number(TEXT("HeightScale"), TEXT("Height Scale"), 8000.0, 1.0, 1000000.0, TEXT("Domain")));
-	D.Parameters.Add(Number(TEXT("Radius"), TEXT("Mass Radius"), 0.72, 0.05, 1.5, TEXT("Mass")));
-	D.Parameters.Add(Number(TEXT("Elongation"), TEXT("Elongation"), 0.52, 0.05, 1.0, TEXT("Mass")));
-	D.Parameters.Add(Number(TEXT("Orientation"), TEXT("Orientation"), 20.0, -360.0, 360.0, TEXT("Mass")));
-	D.Parameters.Add(Number(TEXT("PeakSharpness"), TEXT("Peak Sharpness"), 0.58, 0.0, 1.0, TEXT("Structure")));
-	D.Parameters.Add(Number(TEXT("RidgeStrength"), TEXT("Ridge Strength"), 0.72, 0.0, 1.0, TEXT("Structure")));
-	D.Parameters.Add(Number(TEXT("RidgeFrequency"), TEXT("Ridge Frequency"), 4.0, 0.25, 16.0, TEXT("Structure")));
-	D.Parameters.Add(Number(TEXT("Roughness"), TEXT("Roughness"), 0.34, 0.0, 1.0, TEXT("Structure")));
-	D.Parameters.Add(Number(TEXT("Asymmetry"), TEXT("Asymmetry"), 0.18, -1.0, 1.0, TEXT("Structure")));
-	D.Parameters.Add(Number(TEXT("BaseElevation"), TEXT("Base Elevation"), 0.02, -1.0, 1.0, TEXT("Mass")));
-	D.Parameters.Add(Integer(TEXT("Seed"), TEXT("Seed"), 1337, -2147483647, 2147483647, TEXT("Structure")));
+	// Public controls intentionally follow Gaea's documented Mountain contract.
+	D.Parameters.Add(Number(TEXT("Scale"), TEXT("Scale"), 1.0, 0.1, 2.0, TEXT("Mountain")));
+	D.Parameters.Add(Number(TEXT("Height"), TEXT("Height"), 0.92, 0.0, 1.0, TEXT("Mountain")));
+	D.Parameters.Add(Name(TEXT("Style"), TEXT("Style"), TEXT("Basic"), { TEXT("Basic"), TEXT("Eroded"), TEXT("Old"), TEXT("Alpine"), TEXT("Strata") }, TEXT("Mountain")));
+	D.Parameters.Add(Name(TEXT("Bulk"), TEXT("Bulk"), TEXT("Medium"), { TEXT("Low"), TEXT("Medium"), TEXT("High") }, TEXT("Mountain")));
+	D.Parameters.Add(Boolean(TEXT("ReduceDetails"), TEXT("Reduce Details"), false, TEXT("Mountain")));
+	D.Parameters.Add(Integer(TEXT("Seed"), TEXT("Seed"), 1337, -2147483647, 2147483647, TEXT("Mountain")));
+	D.Parameters.Add(Number(TEXT("X"), TEXT("X"), 0.0, -1.5, 1.5, TEXT("Position")));
+	D.Parameters.Add(Number(TEXT("Y"), TEXT("Y"), 0.0, -1.5, 1.5, TEXT("Position")));
 
 	FGaeaTerrainNodeDescriptorRegistry::Register(D);
 	FGaeaTerrainNodeRegistry::Register(D.Type, EvaluateMountain);
