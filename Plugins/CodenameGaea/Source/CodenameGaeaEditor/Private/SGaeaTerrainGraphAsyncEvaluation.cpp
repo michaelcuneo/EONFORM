@@ -37,7 +37,8 @@ namespace
 			OutContext.HeightScale = SourceSnapshot.Metadata.HeightScale;
 		}
 
-		// File decoding itself is safe to do off-thread, but module loading is not.
+		// Load File-node dependencies while still on the game thread. File decoding
+		// itself may then execute inside the background evaluator.
 		const bool bUsesFileNode = Recipe.Nodes.ContainsByPredicate([](const FGaeaTerrainNode& Node)
 		{
 			return Node.Type == GaeaTerrainNodeTypes::File;
@@ -61,9 +62,6 @@ void SGaeaTerrainGraphPanel::RequestFinalEvaluationAsync()
 	++GraphEvaluationGeneration;
 	bFinalEvaluationPending = true;
 
-	// The graph has changed, so any previously published final snapshot is stale.
-	// Remove it immediately and explicitly mark analysis pending. Generate Terrain
-	// can now queue behind this state instead of accidentally consuming old data.
 	FGaeaTerrainDatasetRegistry::Remove(FinalTerrainSource);
 	FGaeaTerrainOutputEditorState::Get().BeginAnalysis();
 
@@ -154,7 +152,7 @@ void SGaeaTerrainGraphPanel::StartNextAsyncEvaluation()
 	if (bEvaluateFinal)
 	{
 		bFinalEvaluationPending = false;
-		StatusText = FText::FromString(TEXT("Analysing terrain in background..."));
+		StatusText = FText::FromString(TEXT("Evaluating terrain in background..."));
 	}
 	else
 	{
@@ -174,23 +172,35 @@ void SGaeaTerrainGraphPanel::StartNextAsyncEvaluation()
 		 CapturedInspectionGeneration]() mutable
 		{
 			FGaeaTerrainEvaluationResult Result = FGaeaTerrainEvaluator::Evaluate(Recipe, Context);
-			FString EvaluationError;
 			if (!Result.bSuccess)
 			{
-				EvaluationError = Result.Error;
+				const FString Failure = Result.Error;
+				AsyncTask(ENamedThreads::GameThread,
+					[WeakPanel, bEvaluateFinal, CapturedGraphGeneration, CapturedInspectionGeneration, Failure]()
+					{
+						const TSharedPtr<SGaeaTerrainGraphPanel> Panel = WeakPanel.Pin();
+						if (!Panel.IsValid()) return;
+						Panel->bAutoPreviewEvaluating = false;
+						const bool bStale = bEvaluateFinal
+							? CapturedGraphGeneration != Panel->GraphEvaluationGeneration
+							: CapturedInspectionGeneration != Panel->InspectionEvaluationGeneration;
+						if (!bStale)
+						{
+							if (bEvaluateFinal) FGaeaTerrainOutputEditorState::Get().FailAnalysis(Failure);
+							Panel->StatusText = FText::FromString(FString::Printf(
+								TEXT("%s failed: %s"),
+								bEvaluateFinal ? TEXT("Terrain evaluation") : TEXT("Node inspection"),
+								*Failure));
+						}
+						Panel->StartNextAsyncEvaluation();
+					});
+				return;
 			}
-			else
-			{
-				FString HydrologyError;
-				if (!FGaeaTerrainDerivedData::EnsureHydrology(
-					Result.Dataset,
-					Result.HeightScale,
-					Context.PhysicalMetrics,
-					&HydrologyError))
-				{
-					EvaluationError = FString::Printf(TEXT("Hydrology analysis failed: %s"), *HydrologyError);
-				}
-			}
+
+			FGaeaTerrainDataset BaseDataset = Result.Dataset;
+			const float HeightScale = Result.HeightScale;
+			const uint32 RecipeHash = Result.RecipeHash;
+			const int32 BaseFieldCount = BaseDataset.NumScalarFields();
 
 			AsyncTask(ENamedThreads::GameThread,
 				[WeakPanel,
@@ -198,50 +208,36 @@ void SGaeaTerrainGraphPanel::StartNextAsyncEvaluation()
 				 InspectionNodeId,
 				 CapturedGraphGeneration,
 				 CapturedInspectionGeneration,
+				 Context = MoveTemp(Context),
 				 Result = MoveTemp(Result),
-				 EvaluationError = MoveTemp(EvaluationError)]() mutable
+				 BaseDataset = MoveTemp(BaseDataset),
+				 HeightScale,
+				 RecipeHash,
+				 BaseFieldCount]() mutable
 				{
 					const TSharedPtr<SGaeaTerrainGraphPanel> Panel = WeakPanel.Pin();
 					if (!Panel.IsValid()) return;
-
-					Panel->bAutoPreviewEvaluating = false;
 
 					const bool bStale = bEvaluateFinal
 						? CapturedGraphGeneration != Panel->GraphEvaluationGeneration
 						: CapturedInspectionGeneration != Panel->InspectionEvaluationGeneration;
 					if (bStale)
 					{
-						Panel->StartNextAsyncEvaluation();
-						return;
-					}
-
-					if (!EvaluationError.IsEmpty() || !Result.bSuccess)
-					{
-						const FString Failure = EvaluationError.IsEmpty() ? Result.Error : EvaluationError;
-						if (bEvaluateFinal)
-						{
-							FGaeaTerrainOutputEditorState::Get().FailAnalysis(Failure);
-						}
-						Panel->StatusText = FText::FromString(FString::Printf(
-							TEXT("%s failed: %s"),
-							bEvaluateFinal ? TEXT("Terrain analysis") : TEXT("Node inspection"),
-							*Failure));
+						Panel->bAutoPreviewEvaluating = false;
 						Panel->StartNextAsyncEvaluation();
 						return;
 					}
 
 					FGaeaTerrainDatasetMetadata Metadata;
-					Metadata.HeightScale = Result.HeightScale;
-					const int32 FieldCount = Result.Dataset.NumScalarFields();
-					const uint32 RecipeHash = Result.RecipeHash;
-
+					Metadata.HeightScale = HeightScale;
 					const FName SourceId = bEvaluateFinal ? FinalTerrainSource : InspectionTerrainSource;
-					const uint64 Revision = FGaeaTerrainDatasetRegistry::Publish(
+					const uint64 BaseRevision = FGaeaTerrainDatasetRegistry::Publish(
 						SourceId,
-						MoveTemp(Result.Dataset),
+						MoveTemp(BaseDataset),
 						Metadata);
-					if (Revision == 0)
+					if (BaseRevision == 0)
 					{
+						Panel->bAutoPreviewEvaluating = false;
 						if (bEvaluateFinal)
 						{
 							FGaeaTerrainOutputEditorState::Get().FailAnalysis(TEXT("Publishing the evaluated terrain snapshot failed."));
@@ -251,27 +247,100 @@ void SGaeaTerrainGraphPanel::StartNextAsyncEvaluation()
 						return;
 					}
 
-					if (bEvaluateFinal)
+					if (!bEvaluateFinal)
 					{
-						FGaeaTerrainOutputEditorState::Get().CompleteAnalysis(Revision);
-						Panel->StatusText = FText::FromString(FString::Printf(
-							TEXT("Analysis %08X -> revision %llu (%d fields, height scale %.1f)."),
-							RecipeHash,
-							static_cast<unsigned long long>(Revision),
-							FieldCount,
-							Metadata.HeightScale));
-					}
-					else
-					{
+						Panel->bAutoPreviewEvaluating = false;
 						Panel->StatusText = FText::FromString(FString::Printf(
 							TEXT("Inspected node %s -> revision %llu (%d fields)."),
 							*InspectionNodeId.ToString(EGuidFormats::Short),
-							static_cast<unsigned long long>(Revision),
-							FieldCount));
+							static_cast<unsigned long long>(BaseRevision),
+							BaseFieldCount));
+						Panel->OnEvaluated.ExecuteIfBound();
+						Panel->StartNextAsyncEvaluation();
+						return;
 					}
 
+					// The authored terrain is usable immediately. Preview and Generate Terrain
+					// must never wait for hydrology/derived analysis to finish.
+					FGaeaTerrainOutputEditorState::Get().PublishTerrain(BaseRevision);
+					Panel->StatusText = FText::FromString(FString::Printf(
+						TEXT("Terrain %08X -> revision %llu (%d fields). Deriving hydrology in background..."),
+						RecipeHash,
+						static_cast<unsigned long long>(BaseRevision),
+						BaseFieldCount));
 					Panel->OnEvaluated.ExecuteIfBound();
-					Panel->StartNextAsyncEvaluation();
+
+					// Continue derived analysis on a worker. The base terrain remains published
+					// and generation-safe throughout this stage.
+					Async(EAsyncExecution::ThreadPool,
+						[WeakPanel,
+						 Context = MoveTemp(Context),
+						 Dataset = MoveTemp(Result.Dataset),
+						 HeightScale,
+						 RecipeHash,
+						 CapturedGraphGeneration]() mutable
+						{
+							FString HydrologyError;
+							const bool bHydrologyReady = FGaeaTerrainDerivedData::EnsureHydrology(
+								Dataset,
+								HeightScale,
+								Context.PhysicalMetrics,
+								&HydrologyError);
+
+							AsyncTask(ENamedThreads::GameThread,
+								[WeakPanel,
+								 Dataset = MoveTemp(Dataset),
+								 HeightScale,
+								 RecipeHash,
+								 CapturedGraphGeneration,
+								 bHydrologyReady,
+								 HydrologyError = MoveTemp(HydrologyError)]() mutable
+								{
+									const TSharedPtr<SGaeaTerrainGraphPanel> Panel = WeakPanel.Pin();
+									if (!Panel.IsValid()) return;
+									Panel->bAutoPreviewEvaluating = false;
+
+									if (CapturedGraphGeneration != Panel->GraphEvaluationGeneration)
+									{
+										Panel->StartNextAsyncEvaluation();
+										return;
+									}
+
+									if (!bHydrologyReady)
+									{
+										FGaeaTerrainOutputEditorState::Get().FailDerivedAnalysis(HydrologyError);
+										Panel->StatusText = FText::FromString(FString::Printf(
+											TEXT("Terrain is ready, but hydrology analysis failed: %s"),
+											*HydrologyError));
+										Panel->StartNextAsyncEvaluation();
+										return;
+									}
+
+									FGaeaTerrainDatasetMetadata Metadata;
+									Metadata.HeightScale = HeightScale;
+									const int32 FieldCount = Dataset.NumScalarFields();
+									const uint64 AnalysisRevision = FGaeaTerrainDatasetRegistry::Publish(
+										FinalTerrainSource,
+										MoveTemp(Dataset),
+										Metadata);
+									if (AnalysisRevision == 0)
+									{
+										FGaeaTerrainOutputEditorState::Get().FailDerivedAnalysis(TEXT("Publishing hydrology analysis failed."));
+										Panel->StatusText = FText::FromString(TEXT("Terrain is ready, but publishing hydrology analysis failed."));
+										Panel->StartNextAsyncEvaluation();
+										return;
+									}
+
+									FGaeaTerrainOutputEditorState::Get().CompleteAnalysis(AnalysisRevision);
+									Panel->StatusText = FText::FromString(FString::Printf(
+										TEXT("Analysis %08X -> revision %llu (%d fields, hydrology ready)."),
+										RecipeHash,
+										static_cast<unsigned long long>(AnalysisRevision),
+										FieldCount));
+									Panel->OnEvaluated.ExecuteIfBound();
+									Panel->StartNextAsyncEvaluation();
+								});
+						});
 				});
 		});
 }
