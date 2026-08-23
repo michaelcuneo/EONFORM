@@ -46,6 +46,7 @@
 #include "GaeaSineNode.h"
 #include "GaeaSlopeNode.h"
 #include "GaeaSoftClipNode.h"
+#include "GaeaSurfaceAnalysisNodes.h"
 #include "GaeaSurfaceNodes.h"
 #include "GaeaTerraceNode.h"
 #include "GaeaTerrainNodeDescriptor.h"
@@ -119,6 +120,7 @@ public:
 		RegisterGaeaSlopeNode();
 		RegisterGaeaFlowMapNodes();
 		RegisterGaeaTerrainSemanticNodes();
+		RegisterGaeaSurfaceAnalysisNodes();
 		RegisterGaeaCombineNode();
 		RegisterGaeaClampNode();
 
@@ -257,6 +259,11 @@ public:
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Slope, TEXT("Slope"), TEXT("Derive"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::FlowMap, TEXT("FlowMap"), TEXT("Derive"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::FlowMapClassic, TEXT("FlowMapClassic"), TEXT("Derive"));
+		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Peaks, TEXT("Peaks"), TEXT("Derive"));
+		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::RockMap, TEXT("RockMap"), TEXT("Derive"));
+		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Soil, TEXT("Soil"), TEXT("Derive"));
+		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Normals, TEXT("Normals"), TEXT("Derive"));
+		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Occlusion, TEXT("Occlusion"), TEXT("Derive"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Combine, TEXT("Combine"), TEXT("Utility"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::ZeroBorders, TEXT("Edge"), TEXT("Utility"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Invert, TEXT("Invert"), TEXT("Legacy"), true);
