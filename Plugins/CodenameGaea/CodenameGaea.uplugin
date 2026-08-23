@@ -2,7 +2,7 @@
   "FileVersion": 3,
   "Version": 1,
   "VersionName": "0.1.0",
-  "FriendlyName": "Codename Gaea",
+  "FriendlyName": "EONFORM",
   "Description": "Procedural terrain generation and world data framework.",
   "Category": "World Creation",
   "CreatedBy": "Michael Cuneo",
