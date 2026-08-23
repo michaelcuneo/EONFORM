@@ -2,6 +2,7 @@
 
 #include "DesktopPlatformModule.h"
 #include "GaeaEditorGraph.h"
+#include "GaeaTerrainOutputEditorState.h"
 #include "GaeaTerrainRecipe.h"
 #include "IDesktopPlatform.h"
 #include "SGraphPin.h"
@@ -99,9 +100,22 @@ void SGaeaTerrainGraphNode::UpdateGraphNode()
 			.BorderBackgroundColor(FLinearColor(0.05f, 0.05f, 0.06f, 1.0f))
 			.Padding(FMargin(8.0f, 4.0f))
 			[
-				SNew(STextBlock)
-				.Text(GraphNode ? GraphNode->GetNodeTitle(ENodeTitleType::FullTitle) : FText::GetEmpty())
-				.ColorAndOpacity(FLinearColor(0.95f, 0.95f, 0.95f, 1.0f))
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot()
+				.FillWidth(1.0f)
+				[
+					SNew(STextBlock)
+					.Text(GraphNode ? GraphNode->GetNodeTitle(ENodeTitleType::FullTitle) : FText::GetEmpty())
+					.ColorAndOpacity(FLinearColor(0.95f, 0.95f, 0.95f, 1.0f))
+				]
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.Padding(8.0f, 0.0f, 0.0f, 0.0f)
+				[
+					SNew(STextBlock)
+					.Text(this, &SGaeaTerrainGraphNode::GetSolveStatusText)
+					.ColorAndOpacity(this, &SGaeaTerrainGraphNode::GetSolveStatusColor)
+				]
 			]
 		];
 
@@ -126,9 +140,15 @@ void SGaeaTerrainGraphNode::UpdateGraphNode()
 	[
 		SNew(SBorder)
 		.BorderImage(FAppStyle::GetBrush("Graph.Node.Body"))
-		.Padding(0.0f)
+		.BorderBackgroundColor(this, &SGaeaTerrainGraphNode::GetSolveGlowColor)
+		.Padding(FMargin(3.0f))
 		[
-			Body
+			SNew(SBorder)
+			.BorderImage(FAppStyle::GetBrush("Graph.Node.Body"))
+			.Padding(0.0f)
+			[
+				Body
+			]
 		]
 	];
 
@@ -150,6 +170,51 @@ TSharedPtr<SGraphPin> SGaeaTerrainGraphNode::CreatePinWidget(UEdGraphPin* Pin) c
 
 	PinWidget->EnableDragAndDrop(true);
 	return PinWidget;
+}
+
+void SGaeaTerrainGraphNode::Tick(const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime)
+{
+	SGraphNode::Tick(AllottedGeometry, InCurrentTime, InDeltaTime);
+	if (FGaeaTerrainOutputEditorState::Get().IsAnalysisPending())
+	{
+		Invalidate(EInvalidateWidgetReason::Paint);
+	}
+}
+
+FSlateColor SGaeaTerrainGraphNode::GetSolveGlowColor() const
+{
+	const FGaeaTerrainOutputEditorState& State = FGaeaTerrainOutputEditorState::Get();
+	if (!State.IsAnalysisPending())
+	{
+		return FLinearColor(0.035f, 0.035f, 0.04f, 1.0f);
+	}
+
+	const double T = FPlatformTime::Seconds();
+	const float Pulse = 0.5f + 0.5f * FMath::Sin(static_cast<float>(T * 5.0));
+	if (State.IsAnalysisAvailable())
+	{
+		return FLinearColor(0.08f + 0.08f * Pulse, 0.18f + 0.18f * Pulse, 0.28f + 0.28f * Pulse, 1.0f);
+	}
+
+	return FLinearColor(0.10f + 0.12f * Pulse, 0.32f + 0.30f * Pulse, 0.52f + 0.36f * Pulse, 1.0f);
+}
+
+FSlateColor SGaeaTerrainGraphNode::GetSolveStatusColor() const
+{
+	const FGaeaTerrainOutputEditorState& State = FGaeaTerrainOutputEditorState::Get();
+	if (!State.IsAnalysisPending()) return FLinearColor::Transparent;
+	return State.IsAnalysisAvailable()
+		? FLinearColor(0.50f, 0.78f, 1.0f, 1.0f)
+		: FLinearColor(0.70f, 0.90f, 1.0f, 1.0f);
+}
+
+FText SGaeaTerrainGraphNode::GetSolveStatusText() const
+{
+	const FGaeaTerrainOutputEditorState& State = FGaeaTerrainOutputEditorState::Get();
+	if (!State.IsAnalysisPending()) return FText::GetEmpty();
+	return State.IsAnalysisAvailable()
+		? FText::FromString(TEXT("ANALYZING..."))
+		: FText::FromString(TEXT("SOLVING..."));
 }
 
 TSharedPtr<SGraphNode> FGaeaTerrainGraphNodeFactory::CreateNode(UEdGraphNode* InNode) const
