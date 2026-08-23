@@ -110,6 +110,7 @@ namespace
 	bool PrepareHydrology(
 		const FGaeaTerrainValue& Input,
 		const FGaeaTerrainEvaluationContext& Context,
+		bool bRequireStreamOrder,
 		FGaeaTerrainDataset& OutDataset,
 		const FGaeaScalarField*& OutDirection,
 		const FGaeaScalarField*& OutAccumulation,
@@ -119,15 +120,19 @@ namespace
 		FString& Error)
 	{
 		OutDataset = Input.TerrainDataset;
-		if (!FGaeaTerrainDerivedData::EnsureHydrology(OutDataset, Input.HeightScale, Context.PhysicalMetrics, &Error)) return false;
+		const bool bReady = bRequireStreamOrder
+			? FGaeaTerrainDerivedData::EnsureHydrology(OutDataset, Input.HeightScale, Context.PhysicalMetrics, &Error)
+			: FGaeaTerrainDerivedData::EnsureHydrologyNetwork(OutDataset, Input.HeightScale, Context.PhysicalMetrics, &Error);
+		if (!bReady) return false;
+
 		OutDirection = OutDataset.FindScalarField(GaeaTerrainFieldNames::FlowDirection);
 		OutAccumulation = OutDataset.FindScalarField(GaeaTerrainFieldNames::FlowAccumulation);
 		OutCatchment = OutDataset.FindScalarField(GaeaTerrainFieldNames::CatchmentAreaKm2);
 		OutDistance = OutDataset.FindScalarField(GaeaTerrainFieldNames::DistanceToOutletKm);
-		OutStreamOrder = OutDataset.FindScalarField(GaeaTerrainFieldNames::StreamOrder);
-		if (!OutDirection || !OutAccumulation || !OutCatchment || !OutDistance || !OutStreamOrder)
+		OutStreamOrder = bRequireStreamOrder ? OutDataset.FindScalarField(GaeaTerrainFieldNames::StreamOrder) : nullptr;
+		if (!OutDirection || !OutAccumulation || !OutCatchment || !OutDistance || (bRequireStreamOrder && !OutStreamOrder))
 		{
-			Error = TEXT("FlowMap could not resolve the terrain hydrology fields.");
+			Error = TEXT("FlowMap could not resolve the requested terrain hydrology fields.");
 			return false;
 		}
 		return true;
@@ -154,7 +159,7 @@ namespace
 		const FGaeaScalarField* Catchment = nullptr;
 		const FGaeaScalarField* Distance = nullptr;
 		const FGaeaScalarField* StreamOrder = nullptr;
-		if (!PrepareHydrology(*Input, Context, Dataset, Direction, Accumulation, Catchment, Distance, StreamOrder, Error)) return false;
+		if (!PrepareHydrology(*Input, Context, false, Dataset, Direction, Accumulation, Catchment, Distance, StreamOrder, Error)) return false;
 
 		const float FlowLength = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("FlowLength"), 0.65)), 0.0f, 1.0f);
 		const float FlowVolume = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("FlowVolume"), 0.55)), 0.0f, 1.0f);
@@ -284,7 +289,7 @@ namespace
 		const FGaeaScalarField* Catchment = nullptr;
 		const FGaeaScalarField* Distance = nullptr;
 		const FGaeaScalarField* StreamOrder = nullptr;
-		if (!PrepareHydrology(*Input, Context, Dataset, Direction, Accumulation, Catchment, Distance, StreamOrder, Error)) return false;
+		if (!PrepareHydrology(*Input, Context, true, Dataset, Direction, Accumulation, Catchment, Distance, StreamOrder, Error)) return false;
 
 		const float Rainfall = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Rainfall"), 0.62)), 0.0f, 1.0f);
 		const float Primary = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Primary"), 1.0)), 0.0f, 2.0f);
