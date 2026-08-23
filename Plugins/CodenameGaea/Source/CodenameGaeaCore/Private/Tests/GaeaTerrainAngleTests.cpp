@@ -17,10 +17,10 @@ bool FGaeaTerrainAngleRoutingTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Angle descriptor exists"),
 		FGaeaTerrainNodeDescriptorRegistry::Get(GaeaTerrainNodeTypes::Angle, Descriptor));
 	TestEqual(TEXT("Angle display name"), Descriptor.DisplayName, FString(TEXT("Angle")));
-	TestEqual(TEXT("Angle category"), Descriptor.Category, FString(TEXT("Data")));
+	TestEqual(TEXT("Angle category"), Descriptor.Category, FString(TEXT("Derive")));
 	TestEqual(TEXT("Angle input count"), Descriptor.Inputs.Num(), 1);
 	TestEqual(TEXT("Angle output count"), Descriptor.Outputs.Num(), 1);
-	TestEqual(TEXT("Angle parameter count"), Descriptor.Parameters.Num(), 4);
+	TestEqual(TEXT("Angle parameter count"), Descriptor.Parameters.Num(), 3);
 	if (Descriptor.Outputs.Num() == 1)
 	{
 		TestEqual(TEXT("Angle output name"), Descriptor.Outputs[0].Name, FName(TEXT("Mask")));
@@ -42,15 +42,18 @@ bool FGaeaTerrainAngleRoutingTest::RunTest(const FString& Parameters)
 	Angle.Id = FGuid(802, 2, 2, 2);
 	Angle.Type = GaeaTerrainNodeTypes::Angle;
 	Angle.NumericParameters.Add(TEXT("Azimuth"), 90.0);
-	Angle.NumericParameters.Add(TEXT("Min"), 0.0);
-	Angle.NumericParameters.Add(TEXT("Max"), 60.0);
+	Angle.NumericParameters.Add(TEXT("RangeMin"), 0.0);
+	Angle.NumericParameters.Add(TEXT("RangeMax"), 60.0);
 	Angle.NumericParameters.Add(TEXT("Falloff"), 10.0);
 
 	FGaeaTerrainNode Erosion;
 	Erosion.Id = FGuid(803, 3, 3, 3);
 	Erosion.Type = GaeaTerrainNodeTypes::HydraulicErosion;
-	Erosion.IntegerParameters.Add(TEXT("Iterations"), 2);
-	Erosion.NumericParameters.Add(TEXT("Strength"), 0.5);
+	Erosion.IntegerParameters.Add(TEXT("Duration"), 8);
+	Erosion.NumericParameters.Add(TEXT("Strength"), 1.25);
+	Erosion.NumericParameters.Add(TEXT("Volume"), 1.5);
+	Erosion.NameParameters.Add(TEXT("AreaEffect"), TEXT("Erosion Strength"));
+	Erosion.NumericParameters.Add(TEXT("Bias"), 0.0);
 
 	Recipe.Nodes = { Source, Angle, Erosion };
 
@@ -68,12 +71,12 @@ bool FGaeaTerrainAngleRoutingTest::RunTest(const FString& Parameters)
 	SourceToErosion.ToInput = TEXT("Terrain");
 	Recipe.Connections.Add(SourceToErosion);
 
-	FGaeaTerrainConnection AngleToMask;
-	AngleToMask.FromNode = Angle.Id;
-	AngleToMask.FromOutput = TEXT("Mask");
-	AngleToMask.ToNode = Erosion.Id;
-	AngleToMask.ToInput = TEXT("Mask");
-	Recipe.Connections.Add(AngleToMask);
+	FGaeaTerrainConnection AngleToArea;
+	AngleToArea.FromNode = Angle.Id;
+	AngleToArea.FromOutput = TEXT("Mask");
+	AngleToArea.ToNode = Erosion.Id;
+	AngleToArea.ToInput = TEXT("Area");
+	Recipe.Connections.Add(AngleToArea);
 
 	Recipe.OutputNode = Erosion.Id;
 
