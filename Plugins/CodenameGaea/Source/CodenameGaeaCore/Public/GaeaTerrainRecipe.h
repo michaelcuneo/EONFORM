@@ -39,6 +39,9 @@ namespace GaeaTerrainNodeTypes
 	CODENAMEGAEACORE_API extern const FName Rivers;
 	CODENAMEGAEACORE_API extern const FName Lake;
 	CODENAMEGAEACORE_API extern const FName Sea;
+	CODENAMEGAEACORE_API extern const FName Snow;
+	CODENAMEGAEACORE_API extern const FName Snowfield;
+	CODENAMEGAEACORE_API extern const FName Glacier;
 	CODENAMEGAEACORE_API extern const FName Sediments;
 	CODENAMEGAEACORE_API extern const FName Debris;
 	CODENAMEGAEACORE_API extern const FName Scree;
