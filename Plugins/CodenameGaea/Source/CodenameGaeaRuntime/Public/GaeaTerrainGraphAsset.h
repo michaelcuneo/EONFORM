@@ -29,15 +29,15 @@ struct CODENAMEGAEARUNTIME_API FGaeaTerrainGraphOutputSettings
 
 	/** Final physical world width. EONFORM uses Unreal centimetres internally. */
 	UPROPERTY(EditAnywhere, Category="Terrain Output", meta=(ClampMin="0.001", Units="km"))
-	double WorldWidthKilometers = 1.0;
+	double WorldWidthKilometers = 10.0;
 
 	/** Final physical world depth. */
 	UPROPERTY(EditAnywhere, Category="Terrain Output", meta=(ClampMin="0.001", Units="km"))
-	double WorldDepthKilometers = 1.0;
+	double WorldDepthKilometers = 10.0;
 
 	/** Physical height represented by a normalized Height value of 1.0. Sea level remains world Z = 0. */
 	UPROPERTY(EditAnywhere, Category="Terrain Output", meta=(ClampMin="0.001", Units="m"))
-	double ElevationScaleMeters = 80.0;
+	double ElevationScaleMeters = 3000.0;
 
 	/** Zero means use the evaluated Height field's native resolution. */
 	UPROPERTY(EditAnywhere, Category="Terrain Output", meta=(ClampMin="0"))
