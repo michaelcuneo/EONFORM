@@ -344,9 +344,22 @@ namespace GaeaReferenceFidelity
 
 	float To01(float V) { return FMath::Clamp(V * 0.5f + 0.5f, 0.0f, 1.0f); }
 	float From01(float V) { return FMath::Clamp(V, 0.0f, 1.0f) * 2.0f - 1.0f; }
+	float From01Unclamped(float V) { return V * 2.0f - 1.0f; }
+
+	FName CanonicalCombineMode(FName Mode)
+	{
+		if (Mode == TEXT("Divide 2")) return TEXT("Divide2");
+		if (Mode == TEXT("Soft Light")) return TEXT("SoftLight");
+		if (Mode == TEXT("Hard Light")) return TEXT("HardLight");
+		if (Mode == TEXT("Pin Light")) return TEXT("PinLight");
+		if (Mode == TEXT("Grain Merge")) return TEXT("GrainMerge");
+		if (Mode == TEXT("Grain Extract")) return TEXT("GrainExtract");
+		return Mode;
+	}
 
 	float BlendMode(float A, float B, FName Mode)
 	{
+		Mode = CanonicalCombineMode(Mode);
 		if (Mode == TEXT("Blend")) return B;
 		if (Mode == TEXT("Add")) return A + B;
 		if (Mode == TEXT("Screen")) return 1.0f - (1.0f - A) * (1.0f - B);
@@ -354,7 +367,7 @@ namespace GaeaReferenceFidelity
 		if (Mode == TEXT("Difference")) return FMath::Abs(A - B);
 		if (Mode == TEXT("Multiply")) return A * B;
 		if (Mode == TEXT("Divide")) return FMath::Abs(B) > UE_SMALL_NUMBER ? A / B : A;
-		if (Mode == TEXT("Divide 2")) return FMath::Abs(A) > UE_SMALL_NUMBER ? B / A : B;
+		if (Mode == TEXT("Divide2")) return FMath::Abs(A) > UE_SMALL_NUMBER ? B / A : B;
 		if (Mode == TEXT("Max")) return FMath::Max(A, B);
 		if (Mode == TEXT("Min")) return FMath::Min(A, B);
 		if (Mode == TEXT("Hypotenuse")) return FMath::Sqrt(A * A + B * B);
@@ -363,11 +376,11 @@ namespace GaeaReferenceFidelity
 		if (Mode == TEXT("Exclusion")) return A + B - 2.0f * A * B;
 		if (Mode == TEXT("Dodge")) return B >= 1.0f ? 1.0f : A / FMath::Max(1.0f - B, UE_SMALL_NUMBER);
 		if (Mode == TEXT("Burn")) return B <= 0.0f ? 0.0f : 1.0f - (1.0f - A) / FMath::Max(B, UE_SMALL_NUMBER);
-		if (Mode == TEXT("Soft Light")) return (1.0f - 2.0f * B) * A * A + 2.0f * B * A;
-		if (Mode == TEXT("Hard Light")) return B < 0.5f ? 2.0f * A * B : 1.0f - 2.0f * (1.0f - A) * (1.0f - B);
-		if (Mode == TEXT("Pin Light")) return B < 0.5f ? FMath::Min(A, 2.0f * B) : FMath::Max(A, 2.0f * B - 1.0f);
-		if (Mode == TEXT("Grain Merge")) return A + B - 0.5f;
-		if (Mode == TEXT("Grain Extract")) return A - B + 0.5f;
+		if (Mode == TEXT("SoftLight")) return (1.0f - 2.0f * B) * A * A + 2.0f * B * A;
+		if (Mode == TEXT("HardLight")) return B < 0.5f ? 2.0f * A * B : 1.0f - 2.0f * (1.0f - A) * (1.0f - B);
+		if (Mode == TEXT("PinLight")) return B < 0.5f ? FMath::Min(A, 2.0f * B) : FMath::Max(A, 2.0f * B - 1.0f);
+		if (Mode == TEXT("GrainMerge")) return A + B - 0.5f;
+		if (Mode == TEXT("GrainExtract")) return A - B + 0.5f;
 		if (Mode == TEXT("Reflect")) return B >= 1.0f ? 1.0f : A * A / FMath::Max(1.0f - B, UE_SMALL_NUMBER);
 		if (Mode == TEXT("Glow")) return A >= 1.0f ? 1.0f : B * B / FMath::Max(1.0f - A, UE_SMALL_NUMBER);
 		if (Mode == TEXT("Phoenix")) return A - B + FMath::Max(A, B);
@@ -413,6 +426,9 @@ namespace GaeaReferenceFidelity
 			return false;
 		}
 
+		const bool bSwapInputs = Node.GetBool(TEXT("SwapInputs"), false);
+		if (bSwapInputs) Swap(AValue, BValue);
+
 		const FGaeaScalarField* A = AsScalar(AValue);
 		const FGaeaScalarField* B = AsScalar(BValue);
 		if (!A || !B || A->Domain != B->Domain)
@@ -428,37 +444,64 @@ namespace GaeaReferenceFidelity
 		}
 
 		const float Ratio = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Ratio"), 0.5)), 0.0f, 1.0f);
-		const FName Mode = Node.GetName(TEXT("Mode"), TEXT("Blend"));
+		const FName Mode = CanonicalCombineMode(Node.GetName(TEXT("Mode"), TEXT("Blend")));
 		const FName OutputMode = Node.GetName(TEXT("Output"), TEXT("Clamp"));
 		const FName Enhance = Node.GetName(TEXT("Enhance"), TEXT("None"));
 		const bool bTerrain = AValue->Type == EGaeaTerrainValueType::Terrain;
-		const bool bRawTerrainMultiply = bTerrain && Mode == TEXT("Multiply");
+		const bool bRawTerrainMultiply = bTerrain && Mode == TEXT("Multiply") && Enhance == TEXT("None");
 		FGaeaScalarField Result = *A;
-		TArray<float> Result01;
-		Result01.SetNumUninitialized(Result.Values.Num());
 
+		TArray<float> A01;
+		TArray<float> B01;
+		A01.SetNumUninitialized(Result.Values.Num());
+		B01.SetNumUninitialized(Result.Values.Num());
 		for (int32 Y = 0; Y < A->Domain.Dimensions.Y; ++Y)
 		{
 			for (int32 X = 0; X < A->Domain.Dimensions.X; ++X)
 			{
+				const int32 I = Result.Domain.GetStorageIndex(X, Y);
+				A01[I] = bTerrain ? To01(A->AtInterior(X, Y)) : FMath::Clamp(A->AtInterior(X, Y), 0.0f, 1.0f);
+				B01[I] = bTerrain ? To01(B->AtInterior(X, Y)) : FMath::Clamp(B->AtInterior(X, Y), 0.0f, 1.0f);
+			}
+		}
+		// Gaea's "Enhance Input" modifies each input before the selected blend
+		// operation. Applying it to the merged result changes the meaning of Ratio,
+		// masks and every non-linear blend mode.
+		if (Enhance == TEXT("Autolevel"))
+		{
+			Autolevel(A01);
+			Autolevel(B01);
+		}
+		else if (Enhance == TEXT("Equalize"))
+		{
+			Equalize(A01);
+			Equalize(B01);
+		}
+
+		TArray<float> Result01;
+		Result01.SetNumUninitialized(Result.Values.Num());
+		for (int32 Y = 0; Y < A->Domain.Dimensions.Y; ++Y)
+		{
+			for (int32 X = 0; X < A->Domain.Dimensions.X; ++X)
+			{
+				const int32 I = Result.Domain.GetStorageIndex(X, Y);
 				const float ARaw = A->AtInterior(X, Y);
 				const float BRaw = B->AtInterior(X, Y);
-				const float AV = bTerrain ? To01(ARaw) : FMath::Clamp(ARaw, 0.0f, 1.0f);
-				const float BV = bTerrain ? To01(BRaw) : FMath::Clamp(BRaw, 0.0f, 1.0f);
+				const float AV = A01[I];
+				const float BV = B01[I];
 				float V;
 				if (bRawTerrainMultiply)
 				{
-					// Terrain multiplication is geometric composition, not an image-space
-					// blend. Multiply the authored terrain values directly so literal zero
-					// remains an absorbing value (0 * x == 0), then return to the normal
-					// Combine processing domain for enhancement/output handling.
+					// EONFORM terrains are signed around sea level. Keep literal zero as an
+					// absorbing value for geometric terrain multiplication while retaining
+					// the Gaea Ratio and mask routing contract.
 					float Raw = FMath::Lerp(ARaw, ARaw * BRaw, Ratio);
 					if (Mask)
 					{
 						const float M = FMath::Clamp(Mask->AtInterior(X, Y), 0.0f, 1.0f);
 						Raw = FMath::Lerp(BRaw, ARaw, M);
 					}
-					V = To01(Raw);
+					V = Raw * 0.5f + 0.5f;
 				}
 				else
 				{
@@ -470,13 +513,9 @@ namespace GaeaReferenceFidelity
 						V = FMath::Lerp(BV, AV, M);
 					}
 				}
-				const int32 StorageIndex = Result.Domain.GetStorageIndex(X, Y);
-				Result01[StorageIndex] = V;
+				Result01[I] = V;
 			}
 		}
-
-		if (Enhance == TEXT("Autolevel")) Autolevel(Result01);
-		else if (Enhance == TEXT("Equalize")) Equalize(Result01);
 
 		for (int32 Y = 0; Y < Result.Domain.Dimensions.Y; ++Y)
 		{
@@ -486,7 +525,9 @@ namespace GaeaReferenceFidelity
 				float V = Result01[I];
 				if (OutputMode == TEXT("Clamp")) V = FMath::Clamp(V, 0.0f, 1.0f);
 				else if (OutputMode == TEXT("Extend")) V = 0.5f + 0.5f * FMath::Tanh((V - 0.5f) * 2.0f);
-				Result.AtInterior(X, Y) = bTerrain ? From01(V) : V;
+				Result.AtInterior(X, Y) = bTerrain
+					? (OutputMode == TEXT("None") ? From01Unclamped(V) : From01(V))
+					: (OutputMode == TEXT("Clamp") ? FMath::Clamp(V, 0.0f, 1.0f) : V);
 			}
 		}
 
@@ -557,15 +598,16 @@ namespace GaeaReferenceFidelity
 		D.Type = GaeaTerrainNodeTypes::Combine;
 		D.DisplayName = TEXT("Combine");
 		D.Category = TEXT("Utility");
-		D.Description = TEXT("Combines two data sources using Gaea blend modes, range processing, enhancement and documented mask routing semantics.");
+		D.Description = TEXT("Combines two data sources using Gaea blend modes, input enhancement, output range control, swap and documented mask routing semantics.");
 		D.Inputs.Add(Port(TEXT("Input1"), TEXT("Input1"), TEXT("Any")));
 		D.Inputs.Add(Port(TEXT("Input2"), TEXT("Input2"), TEXT("Any")));
 		D.Inputs.Add(Port(TEXT("Mask"), TEXT("Mask"), TEXT("ScalarField")));
 		D.Outputs.Add(Port(TEXT("Out"), TEXT("Out"), TEXT("Any")));
 		D.Parameters.Add(Number(TEXT("Ratio"), TEXT("Ratio"), 0.5, 0.0, 1.0));
-		D.Parameters.Add(Choice(TEXT("Mode"), TEXT("Mode"), TEXT("Blend"), { TEXT("Blend"), TEXT("Add"), TEXT("Screen"), TEXT("Subtract"), TEXT("Difference"), TEXT("Multiply"), TEXT("Divide"), TEXT("Divide 2"), TEXT("Max"), TEXT("Min"), TEXT("Hypotenuse"), TEXT("Overlay"), TEXT("Power"), TEXT("Exclusion"), TEXT("Dodge"), TEXT("Burn"), TEXT("Soft Light"), TEXT("Hard Light"), TEXT("Pin Light"), TEXT("Grain Merge"), TEXT("Grain Extract"), TEXT("Reflect"), TEXT("Glow"), TEXT("Phoenix") }));
+		D.Parameters.Add(Choice(TEXT("Mode"), TEXT("Mode"), TEXT("Blend"), { TEXT("Blend"), TEXT("Add"), TEXT("Screen"), TEXT("Subtract"), TEXT("Difference"), TEXT("Multiply"), TEXT("Divide"), TEXT("Divide2"), TEXT("Max"), TEXT("Min"), TEXT("Hypotenuse"), TEXT("Overlay"), TEXT("Power"), TEXT("Exclusion"), TEXT("Dodge"), TEXT("Burn"), TEXT("SoftLight"), TEXT("HardLight"), TEXT("PinLight"), TEXT("GrainMerge"), TEXT("GrainExtract"), TEXT("Reflect"), TEXT("Glow"), TEXT("Phoenix") }));
 		D.Parameters.Add(Choice(TEXT("Output"), TEXT("Output"), TEXT("Clamp"), { TEXT("None"), TEXT("Clamp"), TEXT("Extend") }));
-		D.Parameters.Add(Choice(TEXT("Enhance"), TEXT("Enhance"), TEXT("None"), { TEXT("None"), TEXT("Autolevel"), TEXT("Equalize") }));
+		D.Parameters.Add(Choice(TEXT("Enhance"), TEXT("Enhance Input"), TEXT("None"), { TEXT("None"), TEXT("Autolevel"), TEXT("Equalize") }));
+		D.Parameters.Add(Boolean(TEXT("SwapInputs"), TEXT("Swap Inputs"), false));
 		FGaeaTerrainNodeDescriptorRegistry::Register(D);
 		FGaeaTerrainNodeRegistry::Register(D.Type, EvaluateCombine);
 	}
