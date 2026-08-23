@@ -24,6 +24,12 @@ public:
 	virtual FReply OnPreviewKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent) override;
 	virtual void Tick(const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime) override;
 
+	/** Game-thread-only activity bridge used by async completion callbacks. */
+	void SetEditorGraphActivity(EGaeaEditorGraphActivity Activity)
+	{
+		if (EditorGraph.IsValid()) EditorGraph->SetActivity(Activity);
+	}
+
 private:
 	void BuildDefaultRecipeAndGraph();
 	void BuildEditorGraphFromRecipe(const FGaeaTerrainRecipe& Recipe, const UGaeaTerrainGraphAsset* Asset = nullptr);
