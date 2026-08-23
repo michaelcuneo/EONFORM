@@ -47,7 +47,7 @@ namespace GaeaSnowfieldNode
 		P.Name = Name;
 		P.DisplayName = Label;
 		P.Type = EGaeaTerrainParameterType::Boolean;
-		P.DefaultBool = Default;
+		P.DefaultBoolean = Default;
 		P.Group = Group;
 		return P;
 	}
@@ -90,8 +90,6 @@ namespace GaeaSnowfieldNode
 			return false;
 		}
 
-		// Preserve incoming cryosphere fields because EnsureContext may regenerate
-		// height-derived analysis after a Snow node has changed Height.
 		const FGaeaScalarField SnowInput = *IncomingSnow;
 		const FGaeaScalarField DepthInput = *IncomingDepth;
 		const FGaeaScalarField TemperatureInput = *Temperature;
