@@ -12,6 +12,17 @@ namespace GaeaTerrainFieldNames
 	CODENAMEGAEACORE_API extern const FName Mountain;
 	CODENAMEGAEACORE_API extern const FName Foothill;
 	CODENAMEGAEACORE_API extern const FName Plains;
+
+	// High-level Terrain landform semantics. These describe generated structure
+	// and process readiness; they do not imply that hydrology has been solved.
+	CODENAMEGAEACORE_API extern const FName MountainMass;
+	CODENAMEGAEACORE_API extern const FName Uplift;
+	CODENAMEGAEACORE_API extern const FName RidgeNetwork;
+	CODENAMEGAEACORE_API extern const FName DrainageReadiness;
+	CODENAMEGAEACORE_API extern const FName ErosionEligibility;
+	CODENAMEGAEACORE_API extern const FName RockExposure;
+	CODENAMEGAEACORE_API extern const FName CryosphereEligibility;
+
 	CODENAMEGAEACORE_API extern const FName Thermal;
 	CODENAMEGAEACORE_API extern const FName Rainfall;
 	CODENAMEGAEACORE_API extern const FName HydraulicErosion;
