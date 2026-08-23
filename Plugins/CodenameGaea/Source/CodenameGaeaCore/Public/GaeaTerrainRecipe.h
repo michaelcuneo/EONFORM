@@ -127,6 +127,11 @@ namespace GaeaTerrainNodeTypes
 	CODENAMEGAEACORE_API extern const FName Height;
 	CODENAMEGAEACORE_API extern const FName FlowMap;
 	CODENAMEGAEACORE_API extern const FName FlowMapClassic;
+	CODENAMEGAEACORE_API extern const FName Peaks;
+	CODENAMEGAEACORE_API extern const FName RockMap;
+	CODENAMEGAEACORE_API extern const FName Soil;
+	CODENAMEGAEACORE_API extern const FName Normals;
+	CODENAMEGAEACORE_API extern const FName Occlusion;
 }
 
 USTRUCT(BlueprintType)
