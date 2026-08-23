@@ -103,6 +103,8 @@ public:
 		RegisterGaeaLakeNode();
 		RegisterGaeaSeaNode();
 		RegisterGaeaCryosphereNodes();
+		RegisterGaeaSnowfieldNode();
+		RegisterGaeaGlacierNode();
 		RegisterGaeaCurvatureNode();
 		RegisterGaeaHeightNode();
 		RegisterGaeaAngleNode();
@@ -187,7 +189,9 @@ public:
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::ThermalErosion, TEXT("Thermal"), TEXT("Simulate"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Lake, TEXT("Lake"), TEXT("Simulate"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Sea, TEXT("Sea"), TEXT("Simulate"));
-		ApplyCurrentGaeaPublicMetadata(FName(TEXT("Snow")), TEXT("Snow"), TEXT("Simulate"));
+		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Snow, TEXT("Snow"), TEXT("Simulate"));
+		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Snowfield, TEXT("Snowfield"), TEXT("Simulate"));
+		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Glacier, TEXT("Glacier"), TEXT("Simulate"));
 
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Adjust, TEXT("Adjust"), TEXT("Modify"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Aperture, TEXT("Aperture"), TEXT("Modify"));
