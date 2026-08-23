@@ -12,8 +12,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FGaeaTerrainNodeDescriptorRegistryTest::RunTest(const FString& Parameters)
 {
 	FGaeaTerrainNodeDescriptor Source;
-	TestTrue(
-		TEXT("SourceDataset descriptor exists"),
+	TestTrue(TEXT("SourceDataset descriptor exists"),
 		FGaeaTerrainNodeDescriptorRegistry::Get(GaeaTerrainNodeTypes::SourceDataset, Source));
 	TestEqual(TEXT("Source has no inputs"), Source.Inputs.Num(), 0);
 	TestEqual(TEXT("Source has one output"), Source.Outputs.Num(), 1);
@@ -22,148 +21,87 @@ bool FGaeaTerrainNodeDescriptorRegistryTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("Source output name"), Source.Outputs[0].Name, FName(TEXT("Terrain")));
 		TestEqual(TEXT("Source output type"), Source.Outputs[0].DataType, FName(TEXT("Terrain")));
 	}
+	TestTrue(TEXT("SourceDataset is hidden from graph authoring"), Source.bHiddenInGraph);
 
 	FGaeaTerrainNodeDescriptor Perlin;
-	TestTrue(
-		TEXT("PerlinNoise descriptor exists"),
+	TestTrue(TEXT("Perlin descriptor exists"),
 		FGaeaTerrainNodeDescriptorRegistry::Get(GaeaTerrainNodeTypes::PerlinNoise, Perlin));
-	TestEqual(TEXT("Perlin Noise has no inputs"), Perlin.Inputs.Num(), 0);
-	TestEqual(TEXT("Perlin Noise has one output"), Perlin.Outputs.Num(), 1);
-	TestEqual(TEXT("Perlin Noise parameter count"), Perlin.Parameters.Num(), 8);
-	TestEqual(TEXT("Perlin Noise display name"), Perlin.DisplayName, FString(TEXT("Perlin Noise")));
+	TestEqual(TEXT("Perlin display name"), Perlin.DisplayName, FString(TEXT("Perlin")));
+	TestEqual(TEXT("Perlin category"), Perlin.Category, FString(TEXT("Primitive")));
+	TestEqual(TEXT("Perlin has no inputs"), Perlin.Inputs.Num(), 0);
+	TestEqual(TEXT("Perlin has one output"), Perlin.Outputs.Num(), 1);
+	TestEqual(TEXT("Perlin current parameter count"), Perlin.Parameters.Num(), 14);
 
 	FGaeaTerrainNodeDescriptor Erosion;
-	TestTrue(
-		TEXT("HydraulicErosion descriptor exists"),
+	TestTrue(TEXT("Erosion descriptor exists"),
 		FGaeaTerrainNodeDescriptorRegistry::Get(GaeaTerrainNodeTypes::HydraulicErosion, Erosion));
-	TestEqual(TEXT("Erosion has three inputs"), Erosion.Inputs.Num(), 3);
+	TestEqual(TEXT("Erosion category"), Erosion.Category, FString(TEXT("Simulate")));
+	TestEqual(TEXT("Erosion has current two inputs"), Erosion.Inputs.Num(), 2);
 	TestEqual(TEXT("Erosion has four outputs"), Erosion.Outputs.Num(), 4);
-	TestEqual(TEXT("Erosion parameter count"), Erosion.Parameters.Num(), 14);
-
-	if (Erosion.Inputs.Num() == 3)
+	TestEqual(TEXT("Erosion current parameter count"), Erosion.Parameters.Num(), 20);
+	if (Erosion.Inputs.Num() == 2)
 	{
-		TestEqual(TEXT("Erosion primary input name"), Erosion.Inputs[0].Name, FName(TEXT("Terrain")));
-		TestEqual(TEXT("Erosion primary input display"), Erosion.Inputs[0].DisplayName, FString(TEXT("Input")));
-		TestEqual(TEXT("Erosion area input name"), Erosion.Inputs[1].Name, FName(TEXT("Mask")));
-		TestEqual(TEXT("Erosion area input display"), Erosion.Inputs[1].DisplayName, FString(TEXT("Area Mask")));
-		TestEqual(TEXT("Erosion sediment input name"), Erosion.Inputs[2].Name, FName(TEXT("Sediment")));
-		TestEqual(TEXT("Erosion sediment input type"), Erosion.Inputs[2].DataType, FName(TEXT("ScalarField")));
+		TestEqual(TEXT("Erosion terrain input"), Erosion.Inputs[0].Name, FName(TEXT("Terrain")));
+		TestEqual(TEXT("Erosion Area input"), Erosion.Inputs[1].Name, FName(TEXT("Area")));
+		TestEqual(TEXT("Erosion Area input type"), Erosion.Inputs[1].DataType, FName(TEXT("ScalarField")));
 	}
 	if (Erosion.Outputs.Num() == 4)
 	{
-		TestEqual(TEXT("Erosion terrain output name"), Erosion.Outputs[0].Name, FName(TEXT("Terrain")));
-		TestEqual(TEXT("Erosion terrain output display"), Erosion.Outputs[0].DisplayName, FString(TEXT("Out")));
+		TestEqual(TEXT("Erosion terrain output"), Erosion.Outputs[0].Name, FName(TEXT("Out")));
 		TestEqual(TEXT("Erosion wear output"), Erosion.Outputs[1].Name, FName(TEXT("Wear")));
 		TestEqual(TEXT("Erosion deposits output"), Erosion.Outputs[2].Name, FName(TEXT("Deposits")));
 		TestEqual(TEXT("Erosion flow output"), Erosion.Outputs[3].Name, FName(TEXT("Flow")));
-		TestEqual(TEXT("Erosion flow output type"), Erosion.Outputs[3].DataType, FName(TEXT("ScalarField")));
 	}
-
 	const FGaeaTerrainParameterDescriptor* Duration = Erosion.Parameters.FindByPredicate(
-		[](const FGaeaTerrainParameterDescriptor& Parameter)
-		{
-			return Parameter.Name == FName(TEXT("Iterations"));
-		});
-	TestNotNull(TEXT("Duration parameter exists"), Duration);
-	if (Duration)
+		[](const FGaeaTerrainParameterDescriptor& P) { return P.Name == FName(TEXT("Duration")); });
+	TestNotNull(TEXT("Erosion Duration parameter exists"), Duration);
+	const FGaeaTerrainParameterDescriptor* AreaEffect = Erosion.Parameters.FindByPredicate(
+		[](const FGaeaTerrainParameterDescriptor& P) { return P.Name == FName(TEXT("AreaEffect")); });
+	TestNotNull(TEXT("Erosion Area Effect parameter exists"), AreaEffect);
+	if (AreaEffect)
 	{
-		TestEqual(TEXT("Duration group"), Duration->Group, FString(TEXT("Erosion")));
-		TestEqual(TEXT("Duration display name"), Duration->DisplayName, FString(TEXT("Duration")));
-		TestEqual(TEXT("Duration type"), Duration->Type, EGaeaTerrainParameterType::Integer);
+		TestTrue(TEXT("Area Effect includes Erosion Strength"), AreaEffect->NameOptions.Contains(TEXT("Erosion Strength")));
+		TestTrue(TEXT("Area Effect includes Rock Softness"), AreaEffect->NameOptions.Contains(TEXT("Rock Softness")));
+		TestTrue(TEXT("Area Effect includes Precipitation Amount"), AreaEffect->NameOptions.Contains(TEXT("Precipitation Amount")));
+		TestTrue(TEXT("Area Effect includes None"), AreaEffect->NameOptions.Contains(TEXT("None")));
 	}
-
-	const FGaeaTerrainParameterDescriptor* Selective = Erosion.Parameters.FindByPredicate(
-		[](const FGaeaTerrainParameterDescriptor& Parameter)
-		{
-			return Parameter.Name == FName(TEXT("SelectiveProcessing"));
-		});
-	TestNotNull(TEXT("Selective Processing parameter exists"), Selective);
-	if (Selective)
-	{
-		TestEqual(TEXT("Selective Processing type"), Selective->Type, EGaeaTerrainParameterType::Name);
-		TestEqual(TEXT("Selective Processing default"), Selective->DefaultName, FName(TEXT("None")));
-		TestEqual(TEXT("Selective Processing option count"), Selective->NameOptions.Num(), 4);
-		if (Selective->NameOptions.Num() == 4)
-		{
-			TestEqual(TEXT("Selective option None"), Selective->NameOptions[0], FName(TEXT("None")));
-			TestEqual(TEXT("Selective option Erosion Strength"), Selective->NameOptions[1], FName(TEXT("ErosionStrength")));
-			TestEqual(TEXT("Selective option Rock Softness"), Selective->NameOptions[2], FName(TEXT("RockSoftness")));
-			TestEqual(TEXT("Selective option Precipitation"), Selective->NameOptions[3], FName(TEXT("Precipitation")));
-		}
-	}
-
-	TestNotNull(TEXT("Downcutting parameter exists"), Erosion.Parameters.FindByPredicate([](const FGaeaTerrainParameterDescriptor& P) { return P.Name == FName(TEXT("Downcutting")); }));
-	TestNotNull(TEXT("Inhibition parameter exists"), Erosion.Parameters.FindByPredicate([](const FGaeaTerrainParameterDescriptor& P) { return P.Name == FName(TEXT("Inhibition")); }));
-	TestNotNull(TEXT("Base Level parameter exists"), Erosion.Parameters.FindByPredicate([](const FGaeaTerrainParameterDescriptor& P) { return P.Name == FName(TEXT("BaseLevel")); }));
-	TestNotNull(TEXT("Feature Scale parameter exists"), Erosion.Parameters.FindByPredicate([](const FGaeaTerrainParameterDescriptor& P) { return P.Name == FName(TEXT("FeatureScale")); }));
-	TestNotNull(TEXT("Debris parameter exists"), Erosion.Parameters.FindByPredicate([](const FGaeaTerrainParameterDescriptor& P) { return P.Name == FName(TEXT("Debris")); }));
-	TestNotNull(TEXT("Volume parameter exists"), Erosion.Parameters.FindByPredicate([](const FGaeaTerrainParameterDescriptor& P) { return P.Name == FName(TEXT("Volume")); }));
-	TestNotNull(TEXT("Sediment Removal parameter exists"), Erosion.Parameters.FindByPredicate([](const FGaeaTerrainParameterDescriptor& P) { return P.Name == FName(TEXT("SedimentRemoval")); }));
-	TestNotNull(TEXT("Seed parameter exists"), Erosion.Parameters.FindByPredicate([](const FGaeaTerrainParameterDescriptor& P) { return P.Name == FName(TEXT("Seed")); }));
-	TestNotNull(TEXT("Aggressive Mode parameter exists"), Erosion.Parameters.FindByPredicate([](const FGaeaTerrainParameterDescriptor& P) { return P.Name == FName(TEXT("AggressiveMode")); }));
-	TestNotNull(TEXT("Deterministic parameter exists"), Erosion.Parameters.FindByPredicate([](const FGaeaTerrainParameterDescriptor& P) { return P.Name == FName(TEXT("Deterministic")); }));
+	TestNotNull(TEXT("Erosion Real Scale exists"), Erosion.Parameters.FindByPredicate([](const FGaeaTerrainParameterDescriptor& P) { return P.Name == FName(TEXT("RealScale")); }));
+	TestNotNull(TEXT("Erosion Terrain Scale exists"), Erosion.Parameters.FindByPredicate([](const FGaeaTerrainParameterDescriptor& P) { return P.Name == FName(TEXT("TerrainScale")); }));
+	TestNotNull(TEXT("Erosion Verticality exists"), Erosion.Parameters.FindByPredicate([](const FGaeaTerrainParameterDescriptor& P) { return P.Name == FName(TEXT("Verticality")); }));
+	TestNotNull(TEXT("Erosion Bias Type exists"), Erosion.Parameters.FindByPredicate([](const FGaeaTerrainParameterDescriptor& P) { return P.Name == FName(TEXT("BiasType")); }));
+	TestNotNull(TEXT("Erosion Bias exists"), Erosion.Parameters.FindByPredicate([](const FGaeaTerrainParameterDescriptor& P) { return P.Name == FName(TEXT("Bias")); }));
+	TestNotNull(TEXT("Erosion Reverse exists"), Erosion.Parameters.FindByPredicate([](const FGaeaTerrainParameterDescriptor& P) { return P.Name == FName(TEXT("Reverse")); }));
 
 	FGaeaTerrainNodeDescriptor Curvature;
-	TestTrue(
-		TEXT("Curvature descriptor exists"),
+	TestTrue(TEXT("Curvature descriptor exists"),
 		FGaeaTerrainNodeDescriptorRegistry::Get(GaeaTerrainNodeTypes::Curvature, Curvature));
-	TestEqual(TEXT("Curvature display name"), Curvature.DisplayName, FString(TEXT("Curvature")));
-	TestEqual(TEXT("Curvature category"), Curvature.Category, FString(TEXT("Data")));
-	TestEqual(TEXT("Curvature has one input"), Curvature.Inputs.Num(), 1);
-	TestEqual(TEXT("Curvature has one output"), Curvature.Outputs.Num(), 1);
-	TestEqual(TEXT("Curvature parameter count"), Curvature.Parameters.Num(), 5);
+	TestEqual(TEXT("Curvature category"), Curvature.Category, FString(TEXT("Derive")));
+	TestEqual(TEXT("Curvature parameter count"), Curvature.Parameters.Num(), 3);
+	TestEqual(TEXT("Curvature input count"), Curvature.Inputs.Num(), 1);
+	TestEqual(TEXT("Curvature output count"), Curvature.Outputs.Num(), 1);
 	if (Curvature.Outputs.Num() == 1)
 	{
 		TestEqual(TEXT("Curvature output name"), Curvature.Outputs[0].Name, FName(TEXT("Mask")));
 		TestEqual(TEXT("Curvature output type"), Curvature.Outputs[0].DataType, FName(TEXT("ScalarField")));
 	}
-	const FGaeaTerrainParameterDescriptor* CurvatureType = Curvature.Parameters.FindByPredicate(
-		[](const FGaeaTerrainParameterDescriptor& Parameter)
-		{
-			return Parameter.Name == FName(TEXT("CurvatureType"));
-		});
-	TestNotNull(TEXT("Curvature Type parameter exists"), CurvatureType);
-	if (CurvatureType)
-	{
-		TestEqual(TEXT("Curvature Type is a name parameter"), CurvatureType->Type, EGaeaTerrainParameterType::Name);
-		TestEqual(TEXT("Curvature Type default"), CurvatureType->DefaultName, FName(TEXT("Average")));
-		TestEqual(TEXT("Curvature Type option count"), CurvatureType->NameOptions.Num(), 3);
-	}
-	const FGaeaTerrainParameterDescriptor* CurvatureInvert = Curvature.Parameters.FindByPredicate(
-		[](const FGaeaTerrainParameterDescriptor& Parameter)
-		{
-			return Parameter.Name == FName(TEXT("Invert"));
-		});
-	TestNotNull(TEXT("Curvature Invert parameter exists"), CurvatureInvert);
-	if (CurvatureInvert)
-	{
-		TestEqual(TEXT("Curvature Invert is boolean"), CurvatureInvert->Type, EGaeaTerrainParameterType::Boolean);
-	}
+	TestNotNull(TEXT("Curvature Range exists"), Curvature.Parameters.FindByPredicate([](const FGaeaTerrainParameterDescriptor& P) { return P.Name == FName(TEXT("Range")); }));
+	TestNotNull(TEXT("Curvature Type exists"), Curvature.Parameters.FindByPredicate([](const FGaeaTerrainParameterDescriptor& P) { return P.Name == FName(TEXT("Type")); }));
+	TestNotNull(TEXT("Curvature Falloff exists"), Curvature.Parameters.FindByPredicate([](const FGaeaTerrainParameterDescriptor& P) { return P.Name == FName(TEXT("Falloff")); }));
 
 	FGaeaTerrainNodeDescriptor Height;
-	TestTrue(
-		TEXT("Height descriptor exists"),
+	TestTrue(TEXT("Height descriptor exists"),
 		FGaeaTerrainNodeDescriptorRegistry::Get(GaeaTerrainNodeTypes::Height, Height));
-	TestEqual(TEXT("Height display name"), Height.DisplayName, FString(TEXT("Height")));
-	TestEqual(TEXT("Height category"), Height.Category, FString(TEXT("Data")));
-	TestEqual(TEXT("Height has one input"), Height.Inputs.Num(), 1);
-	TestEqual(TEXT("Height has one output"), Height.Outputs.Num(), 1);
-	TestEqual(TEXT("Height parameter count"), Height.Parameters.Num(), 4);
+	TestEqual(TEXT("Height category"), Height.Category, FString(TEXT("Derive")));
+	TestEqual(TEXT("Height parameter count"), Height.Parameters.Num(), 2);
+	TestEqual(TEXT("Height input count"), Height.Inputs.Num(), 1);
+	TestEqual(TEXT("Height output count"), Height.Outputs.Num(), 1);
 	if (Height.Outputs.Num() == 1)
 	{
 		TestEqual(TEXT("Height output name"), Height.Outputs[0].Name, FName(TEXT("Mask")));
 		TestEqual(TEXT("Height output type"), Height.Outputs[0].DataType, FName(TEXT("ScalarField")));
 	}
-	const FGaeaTerrainParameterDescriptor* HeightNormalized = Height.Parameters.FindByPredicate(
-		[](const FGaeaTerrainParameterDescriptor& Parameter)
-		{
-			return Parameter.Name == FName(TEXT("Normalized"));
-		});
-	TestNotNull(TEXT("Height Normalized parameter exists"), HeightNormalized);
-	if (HeightNormalized)
-	{
-		TestEqual(TEXT("Height Normalized is boolean"), HeightNormalized->Type, EGaeaTerrainParameterType::Boolean);
-	}
+	TestNotNull(TEXT("Height Range exists"), Height.Parameters.FindByPredicate([](const FGaeaTerrainParameterDescriptor& P) { return P.Name == FName(TEXT("Range")); }));
+	TestNotNull(TEXT("Height Falloff exists"), Height.Parameters.FindByPredicate([](const FGaeaTerrainParameterDescriptor& P) { return P.Name == FName(TEXT("Falloff")); }));
 
 	FGaeaTerrainNodeDescriptor Context;
 	TestTrue(TEXT("TerrainContext descriptor exists"),
@@ -182,7 +120,7 @@ bool FGaeaTerrainNodeDescriptorRegistryTest::RunTest(const FString& Parameters)
 
 	TArray<FGaeaTerrainNodeDescriptor> AllDescriptors;
 	FGaeaTerrainNodeDescriptorRegistry::GetAll(AllDescriptors);
-	TestTrue(TEXT("Built-in descriptor list includes at least three nodes"), AllDescriptors.Num() >= 3);
+	TestTrue(TEXT("Descriptor registry contains public and internal nodes"), AllDescriptors.Num() >= 10);
 	return true;
 }
 
