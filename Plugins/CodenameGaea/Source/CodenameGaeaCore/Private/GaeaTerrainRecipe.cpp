@@ -129,6 +129,9 @@ namespace GaeaTerrainNodeTypes
 	const FName Soil(TEXT("Soil"));
 	const FName Normals(TEXT("Normals"));
 	const FName Occlusion(TEXT("Occlusion"));
+	const FName TextureBase(TEXT("TextureBase"));
+	const FName Texturizer(TEXT("Texturizer"));
+	const FName ColorThreshold(TEXT("ColorThreshold"));
 }
 
 namespace
@@ -173,6 +176,12 @@ bool FGaeaTerrainNode::GetBool(FName Name, bool DefaultValue) const
 FName FGaeaTerrainNode::GetName(FName Name, FName DefaultValue) const
 {
 	if (const FName* Value = NameParameters.Find(Name)) return *Value;
+	return DefaultValue;
+}
+
+FLinearColor FGaeaTerrainNode::GetColor(FName Name, const FLinearColor& DefaultValue) const
+{
+	if (const FLinearColor* Value = ColorParameters.Find(Name)) return *Value;
 	return DefaultValue;
 }
 
@@ -245,6 +254,7 @@ uint32 FGaeaTerrainRecipe::GetDeterministicHash() const
 		HashNamedMap(Hash, Node->IntegerParameters);
 		HashNamedMap(Hash, Node->BoolParameters);
 		HashNamedMap(Hash, Node->NameParameters);
+		HashNamedMap(Hash, Node->ColorParameters);
 	}
 	TArray<const FGaeaTerrainConnection*> SortedConnections;
 	for (const FGaeaTerrainConnection& Connection : Connections) SortedConnections.Add(&Connection);
