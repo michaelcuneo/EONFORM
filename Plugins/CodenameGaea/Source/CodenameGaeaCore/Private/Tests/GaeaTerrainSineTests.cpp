@@ -28,7 +28,7 @@ bool FGaeaTerrainSineDescriptorTest::RunTest(const FString& Parameters)
 	FGaeaTerrainNodeDescriptor Descriptor;
 	TestTrue(TEXT("Sine descriptor exists"), FGaeaTerrainNodeDescriptorRegistry::Get(GaeaTerrainNodeTypes::Sine, Descriptor));
 	TestEqual(TEXT("Sine display name"), Descriptor.DisplayName, FString(TEXT("Sine")));
-	TestEqual(TEXT("Sine category"), Descriptor.Category, FString(TEXT("Adjustments")));
+	TestEqual(TEXT("Sine category"), Descriptor.Category, FString(TEXT("Legacy")));
 	TestEqual(TEXT("Sine input count"), Descriptor.Inputs.Num(), 1);
 	TestEqual(TEXT("Sine output count"), Descriptor.Outputs.Num(), 1);
 	TestEqual(TEXT("Sine parameter count"), Descriptor.Parameters.Num(), 1);
