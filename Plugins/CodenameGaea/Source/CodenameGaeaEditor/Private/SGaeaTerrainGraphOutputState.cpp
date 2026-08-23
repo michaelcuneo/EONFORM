@@ -32,6 +32,11 @@ void SGaeaTerrainGraphPanel::SyncOutputSettingsState()
 		FGaeaTerrainDatasetRegistry::Remove(TEXT("CodenameGaeaInspection"));
 		OutputState.InvalidateAnalysis();
 
+		// Never let cached node outputs cross graph assets. Replacing the shared
+		// cache rather than mutating it also leaves any obsolete worker with a safe,
+		// private cache instance until that worker naturally exits.
+		IncrementalEvaluationCache = MakeShared<FGaeaTerrainEvaluationCache, ESPMode::ThreadSafe>();
+
 		bAutoPreviewInitialized = false;
 		AutoPreviewPollAccumulator = 0.0f;
 		LastAutoPreviewHash = 0;
