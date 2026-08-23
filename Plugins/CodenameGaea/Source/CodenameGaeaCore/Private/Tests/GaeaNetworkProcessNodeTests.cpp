@@ -124,6 +124,15 @@ bool FGaeaNetworkProcessChainTest::RunTest(const FString& Parameters)
 	TestNotNull(TEXT("Lichtenberg branch order is published"), BranchOrder);
 	if (!Anastomosis || !Reconnection || !Lichtenberg || !BranchOrder) return false;
 
+	// Anastomosis consumes physical catchment, so the chain should stop at the
+	// flow-analysis tier. Lichtenberg itself consumes only terrain context and
+	// must not silently upgrade the dataset to the full hydrology network.
+	TestNotNull(TEXT("Anastomosis derives FlowDirection on demand"), Result.Dataset.FindScalarField(GaeaTerrainFieldNames::FlowDirection));
+	TestNotNull(TEXT("Anastomosis derives FlowAccumulation on demand"), Result.Dataset.FindScalarField(GaeaTerrainFieldNames::FlowAccumulation));
+	TestNotNull(TEXT("Anastomosis derives CatchmentAreaKm2 on demand"), Result.Dataset.FindScalarField(GaeaTerrainFieldNames::CatchmentAreaKm2));
+	TestNull(TEXT("Network process chain does not derive DistanceToOutletKm"), Result.Dataset.FindScalarField(GaeaTerrainFieldNames::DistanceToOutletKm));
+	TestNull(TEXT("Network process chain does not derive StreamOrder"), Result.Dataset.FindScalarField(GaeaTerrainFieldNames::StreamOrder));
+
 	float MaxAnastomosis = 0.0f;
 	float MaxReconnection = 0.0f;
 	float MaxLichtenberg = 0.0f;
