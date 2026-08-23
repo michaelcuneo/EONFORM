@@ -2,13 +2,18 @@
 
 #include "Components/SceneComponent.h"
 #include "DynamicMesh/DynamicMesh3.h"
+#include "Engine/Engine.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/Actor.h"
 #include "GaeaMeshTerrainBridgeActor.h"
+#include "GaeaTerrainFieldNames.h"
+#include "Materials/MaterialInterface.h"
 #include "MeshPartition.h"
 #include "MeshPartitionDefinition.h"
+#include "MeshPartitionEditorComponent.h"
 #include "Modifiers/MeshPartitionMeshProvider.h"
+#include "UObject/UnrealType.h"
 
 using UE::Geometry::FDynamicMesh3;
 using UE::MeshPartition::AMeshPartition;
@@ -20,6 +25,46 @@ namespace
 	const FName EonformBaseRegionTag(TEXT("EONFORM.MeshTerrain.BaseRegion"));
 	const FName EonformMeshTerrainFolder(TEXT("EONFORM/Mesh Terrain"));
 	const FName EonformBaseRegionsFolder(TEXT("EONFORM/Mesh Terrain/Base Regions"));
+
+	bool HasSatMapColor(const FGaeaTerrainDataset& Dataset)
+	{
+		const FGaeaScalarField* R = Dataset.FindScalarField(GaeaTerrainFieldNames::BaseColorR);
+		const FGaeaScalarField* G = Dataset.FindScalarField(GaeaTerrainFieldNames::BaseColorG);
+		const FGaeaScalarField* B = Dataset.FindScalarField(GaeaTerrainFieldNames::BaseColorB);
+		return R && G && B && R->IsValid() && G->IsValid() && B->IsValid();
+	}
+
+	UMaterialInterface* ResolveSatMapDebugMaterial()
+	{
+		if (!GEngine) return nullptr;
+		if (GEngine->VertexColorMaterial) return GEngine->VertexColorMaterial;
+		return GEngine->VertexColorViewModeMaterial_ColorOnly;
+	}
+
+	void ApplySatMapEditorMaterialOverride(AMeshPartition* Partition, UMaterialInterface* Material)
+	{
+		if (!Partition) return;
+		UMeshPartitionEditorComponent* EditorComponent = Partition->FindComponentByClass<UMeshPartitionEditorComponent>();
+		if (!EditorComponent)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("EONFORM: Mesh Partition has no UMeshPartitionEditorComponent; SatMap editor material override was not applied."));
+			return;
+		}
+
+		FObjectPropertyBase* OverrideProperty = FindFProperty<FObjectPropertyBase>(
+			UMeshPartitionEditorComponent::StaticClass(),
+			FName(TEXT("EditorMaterialOverride")));
+		if (!OverrideProperty)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("EONFORM: UE 5.8 Mesh Partition editor material override property was not found."));
+			return;
+		}
+
+		EditorComponent->Modify();
+		OverrideProperty->SetObjectPropertyValue_InContainer(EditorComponent, Material);
+		EditorComponent->UpdateMaterial();
+		EditorComponent->MarkRenderStateDirty();
+	}
 
 	void ClearProviderMesh(UMeshProviderModifier* Provider)
 	{
@@ -143,6 +188,8 @@ FGaeaMeshTerrainBuildResult FGaeaMeshTerrainOutput::Build(
 
 	const FIntPoint Sections = Layout.Sections;
 	const int32 RequiredRegionCount = static_cast<int32>(Layout.SectionCount);
+	const bool bHasSatMapColor = HasSatMapColor(Dataset);
+	UMaterialInterface* SatMapDebugMaterial = bHasSatMapColor ? ResolveSatMapDebugMaterial() : nullptr;
 
 	AMeshPartition* Partition = Cast<AMeshPartition>(Settings.TargetMeshPartition.Get());
 	if (!Partition)
@@ -185,6 +232,7 @@ FGaeaMeshTerrainBuildResult FGaeaMeshTerrainOutput::Build(
 
 	Partition->Modify();
 	Partition->SetMeshPartitionDefinition(Definition);
+	ApplySatMapEditorMaterialOverride(Partition, SatMapDebugMaterial);
 #if WITH_EDITOR
 	Partition->SetFolderPath(EonformMeshTerrainFolder);
 #endif
@@ -272,6 +320,10 @@ FGaeaMeshTerrainBuildResult FGaeaMeshTerrainOutput::Build(
 			}
 			MeshProvider->Modify();
 			MeshProvider->BP_SetAffectedMegaMesh(Partition);
+			if (SatMapDebugMaterial)
+			{
+				MeshProvider->SetMaterial(0, SatMapDebugMaterial);
+			}
 			MeshProvider->SetMesh(MoveTemp(SectionMesh), true);
 			Result.VertexCount += RegionVertexCount;
 			Result.TriangleCount += RegionTriangleCount;
@@ -290,14 +342,19 @@ FGaeaMeshTerrainBuildResult FGaeaMeshTerrainOutput::Build(
 		ExtraActor->Destroy();
 	}
 
+	// SetMesh can create/rebuild preview sections asynchronously. Refresh the
+	// editor override once more after all base modifiers have been updated.
+	ApplySatMapEditorMaterialOverride(Partition, SatMapDebugMaterial);
+
 	Result.bSuccess = true;
 	Result.TerrainActor = Partition;
 	Result.Message = FString::Printf(
-		TEXT("Built EONFORM Mesh Terrain: %d base regions (%dx%d), %d vertices, %d triangles at %dx%d samples; max region %dx%d / %lld triangles (XY x%.3f/x%.3f, Z x%.3f)."),
+		TEXT("Built EONFORM Mesh Terrain: %d base regions (%dx%d), %d vertices, %d triangles at %dx%d samples; max region %dx%d / %lld triangles (XY x%.3f/x%.3f, Z x%.3f)%s."),
 		Result.SectionCount, Sections.X, Sections.Y, Result.VertexCount, Result.TriangleCount, Resolution.X, Resolution.Y,
 		Layout.MaxSectionResolution.X, Layout.MaxSectionResolution.Y, static_cast<long long>(Layout.MaxSectionTriangleCount),
 		MeshOptions.HorizontalScale * MeshOptions.HorizontalScaleXY.X,
 		MeshOptions.HorizontalScale * MeshOptions.HorizontalScaleXY.Y,
-		MeshOptions.VerticalScale);
+		MeshOptions.VerticalScale,
+		bHasSatMapColor ? TEXT(" with SatMap editor color") : TEXT(""));
 	return Result;
 }
