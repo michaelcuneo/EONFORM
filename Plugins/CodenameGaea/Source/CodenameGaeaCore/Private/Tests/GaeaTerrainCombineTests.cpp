@@ -87,9 +87,11 @@ bool FGaeaTerrainCombineMasksTest::RunTest(const FString& Parameters)
 	FGaeaTerrainNode Erosion;
 	Erosion.Id = FGuid(905, 5, 5, 5);
 	Erosion.Type = GaeaTerrainNodeTypes::HydraulicErosion;
-	Erosion.IntegerParameters.Add(TEXT("Iterations"), 2);
-	Erosion.NumericParameters.Add(TEXT("Strength"), 0.5);
-	Erosion.NameParameters.Add(TEXT("SelectiveProcessing"), TEXT("ErosionStrength"));
+	Erosion.IntegerParameters.Add(TEXT("Duration"), 8);
+	Erosion.NumericParameters.Add(TEXT("Strength"), 1.5);
+	Erosion.NumericParameters.Add(TEXT("Volume"), 1.5);
+	Erosion.NameParameters.Add(TEXT("AreaEffect"), TEXT("Erosion Strength"));
+	Erosion.NumericParameters.Add(TEXT("Bias"), 0.0);
 
 	Recipe.Nodes = { Source, Slope, Height, Combine, Erosion };
 
@@ -108,7 +110,7 @@ bool FGaeaTerrainCombineMasksTest::RunTest(const FString& Parameters)
 	Connect(Slope, TEXT("Mask"), Combine, TEXT("Input1"));
 	Connect(Height, TEXT("Mask"), Combine, TEXT("Input2"));
 	Connect(Source, TEXT("Terrain"), Erosion, TEXT("Terrain"));
-	Connect(Combine, TEXT("Out"), Erosion, TEXT("Mask"));
+	Connect(Combine, TEXT("Out"), Erosion, TEXT("Area"));
 	Recipe.OutputNode = Erosion.Id;
 
 	FGaeaTerrainEvaluationContext Context;
