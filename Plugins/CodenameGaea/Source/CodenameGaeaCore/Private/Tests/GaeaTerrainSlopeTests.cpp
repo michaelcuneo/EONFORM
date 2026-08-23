@@ -22,8 +22,8 @@ namespace
 		FGaeaTerrainNode Slope;
 		Slope.Id = FGuid(0x32000001, 0x32000002, 0x32000003, 0x32000004);
 		Slope.Type = GaeaTerrainNodeTypes::Slope;
-		Slope.NumericParameters.Add(TEXT("Min"), 8.0);
-		Slope.NumericParameters.Add(TEXT("Max"), 28.0);
+		Slope.NumericParameters.Add(TEXT("RangeMin"), 8.0);
+		Slope.NumericParameters.Add(TEXT("RangeMax"), 28.0);
 		Slope.NumericParameters.Add(TEXT("Falloff"), 8.0);
 
 		FGaeaTerrainNode Erosion;
@@ -34,9 +34,6 @@ namespace
 		Erosion.NumericParameters.Add(TEXT("Strength"), 1.5);
 		if (bUseSlopeMask)
 		{
-			// Gaea only uses the Area input when Selective Processing is enabled.
-			// Use Erosion Strength here so the routed slope mask is expected to alter
-			// the downstream terrain rather than being intentionally ignored by None.
 			Erosion.NameParameters.Add(TEXT("SelectiveProcessing"), TEXT("ErosionStrength"));
 		}
 
