@@ -28,6 +28,9 @@ namespace GaeaTerrainFieldNames
 	const FName Wear(TEXT("Wear"));
 	const FName Deposits(TEXT("Deposits"));
 	const FName Flow(TEXT("Flow"));
+	const FName BaseColorR(TEXT("BaseColorR"));
+	const FName BaseColorG(TEXT("BaseColorG"));
+	const FName BaseColorB(TEXT("BaseColorB"));
 	const FName FlowDirection(TEXT("FlowDirection"));
 	const FName FlowAccumulation(TEXT("FlowAccumulation"));
 	const FName CatchmentAreaKm2(TEXT("CatchmentAreaKm2"));
