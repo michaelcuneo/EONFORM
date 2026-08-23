@@ -189,7 +189,7 @@ namespace GaeaSimulateFoundation
 		FString& Error)
 	{
 		Dataset = Input.TerrainDataset;
-		return FGaeaTerrainDerivedData::EnsureHydrology(
+		return FGaeaTerrainDerivedData::EnsureHydrologyNetwork(
 			Dataset,
 			Input.HeightScale,
 			Context.PhysicalMetrics,
