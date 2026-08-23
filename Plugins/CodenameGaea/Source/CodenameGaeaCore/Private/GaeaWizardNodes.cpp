@@ -53,7 +53,7 @@ namespace GaeaWizardNodes
 		P.bHasMinimum = true;
 		P.Minimum = static_cast<double>(Min);
 		P.bHasMaximum = true;
-		P.Maximum = static_cast<double>(Max);
+		P.Maximum = Max;
 		P.Group = Group;
 		return P;
 	}
@@ -172,6 +172,14 @@ namespace GaeaWizardNodes
 		{
 			return false;
 		}
+		if (!FGaeaTerrainDerivedData::EnsureFlowAnalysis(
+			Dataset,
+			Input.HeightScale,
+			Context.PhysicalMetrics,
+			&Error))
+		{
+			return false;
+		}
 
 		const FGaeaScalarField* Height = Dataset.FindScalarField(GaeaTerrainFieldNames::Height);
 		const FGaeaScalarField* Slope = Dataset.FindScalarField(GaeaTerrainFieldNames::SlopeDegrees);
@@ -185,7 +193,7 @@ namespace GaeaWizardNodes
 		const FGaeaScalarField* ThermalMask = Dataset.FindScalarField(GaeaTerrainFieldNames::Thermal);
 		if (!Height || !Slope || !Concavity || !Mountain || !Plains || !Rainfall || !Catchment || !Hardness || !SoilDepth)
 		{
-			Error = TEXT("Wizard could not resolve the EONFORM context, geology, and hydrology fields it requires.");
+			Error = TEXT("Wizard could not resolve the EONFORM context, geology, and flow-analysis fields it requires.");
 			return false;
 		}
 
