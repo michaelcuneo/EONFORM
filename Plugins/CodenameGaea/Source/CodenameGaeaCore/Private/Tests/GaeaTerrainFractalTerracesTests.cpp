@@ -28,10 +28,10 @@ bool FGaeaTerrainFractalTerracesDescriptorTest::RunTest(const FString& Parameter
 	FGaeaTerrainNodeDescriptor Descriptor;
 	TestTrue(TEXT("FractalTerraces descriptor exists"), FGaeaTerrainNodeDescriptorRegistry::Get(GaeaTerrainNodeTypes::FractalTerraces, Descriptor));
 	TestEqual(TEXT("FractalTerraces display name"), Descriptor.DisplayName, FString(TEXT("FractalTerraces")));
-	TestEqual(TEXT("FractalTerraces category"), Descriptor.Category, FString(TEXT("Profile")));
+	TestEqual(TEXT("FractalTerraces category"), Descriptor.Category, FString(TEXT("Surface")));
 	TestEqual(TEXT("FractalTerraces input count"), Descriptor.Inputs.Num(), 1);
 	TestEqual(TEXT("FractalTerraces output count"), Descriptor.Outputs.Num(), 1);
-	TestEqual(TEXT("FractalTerraces parameter count"), Descriptor.Parameters.Num(), 13);
+	TestEqual(TEXT("FractalTerraces parameter count"), Descriptor.Parameters.Num(), 20);
 	if (Descriptor.Inputs.Num() == 1)
 	{
 		TestEqual(TEXT("FractalTerraces input pin"), Descriptor.Inputs[0].Name, FName(TEXT("Terrain")));
