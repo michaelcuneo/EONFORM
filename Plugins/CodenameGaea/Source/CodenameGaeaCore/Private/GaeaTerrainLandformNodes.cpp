@@ -57,7 +57,7 @@ namespace
 		P.bHasMinimum = true;
 		P.Minimum = static_cast<double>(Min);
 		P.bHasMaximum = true;
-		P.Maximum = static_cast<double>(Max);
+		P.Maximum = Max;
 		return P;
 	}
 
@@ -122,7 +122,8 @@ namespace
 			RegisterGaeaReferenceFidelityNodes();
 		}
 		if (!FGaeaTerrainNodeRegistry::IsRegistered(GaeaTerrainNodeTypes::SlopeWarp)
-			|| !FGaeaTerrainNodeRegistry::IsRegistered(GaeaTerrainNodeTypes::Thermal2))
+			|| !FGaeaTerrainNodeRegistry::IsRegistered(GaeaTerrainNodeTypes::Thermal2)
+			|| !FGaeaTerrainNodeRegistry::IsRegistered(GaeaTerrainNodeTypes::Craggy))
 		{
 			RegisterGaeaReferenceFidelityMountainNodes();
 		}
@@ -172,8 +173,6 @@ namespace
 			return false;
 		}
 
-		// Keep the public Height control authoritative while leaving a small safety
-		// margin below normalized saturation when Height is authored at 1.0.
 		const float TargetHeight = FMath::Clamp(RequestedHeight, 0.0f, 0.985f);
 		const float Scale = TargetHeight / MaxHeight;
 		FGaeaScalarField Height = *Source;
@@ -231,10 +230,12 @@ namespace
 			{
 				const float Height01 = FMath::Clamp(Height->AtInterior(X, Y) / Denominator, 0.0f, 1.0f);
 				const float M = Smooth01(Height01);
+				const float RidgeMass = Smooth01(FMath::Clamp((Height01 - 0.08f) / 0.72f, 0.0f, 1.0f));
 				const float S = FMath::Clamp(Slope->AtInterior(X, Y) / 70.0f, 0.0f, 1.0f);
 				const float C = FMath::Clamp(Concavity->AtInterior(X, Y) * 0.5f + 0.5f, 0.0f, 1.0f);
 				const float V = FMath::Clamp(Convexity->AtInterior(X, Y) * 0.5f + 0.5f, 0.0f, 1.0f);
-				const float R = M * FMath::Clamp(V * 0.58f + S * 0.42f, 0.0f, 1.0f);
+				const float RidgeShape = FMath::Clamp(0.28f + V * 0.36f + S * 0.24f + Height01 * 0.12f, 0.0f, 1.0f);
+				const float R = FMath::Clamp(RidgeMass * RidgeShape, 0.0f, 1.0f);
 
 				Mass.AtInterior(X, Y) = M;
 				Uplift.AtInterior(X, Y) = Height01 * M;
@@ -276,15 +277,16 @@ namespace
 
 		const float BulkFactor = Bulk == TEXT("Low") ? 0.82f : Bulk == TEXT("High") ? 1.18f : 1.0f;
 		const float SupportScale = FMath::Clamp(MountainScale * BulkFactor * 1.06f, 0.16f, 2.0f);
-		const float PeakScale = FMath::Clamp(0.24f / FMath::Max(MountainScale * BulkFactor, 0.15f), 0.08f, 0.72f);
-		const float RidgeScale = FMath::Clamp(PeakScale * 0.82f, 0.06f, 0.60f);
+		const float PeakScale = FMath::Clamp(0.34f / FMath::Max(MountainScale * BulkFactor, 0.15f), 0.10f, 0.88f);
+		const float RidgeScale = FMath::Clamp(PeakScale * 1.28f, 0.10f, 1.0f);
+		const float SummitModulation = Style == TEXT("Alpine") ? 0.40f : Style == TEXT("Eroded") ? 0.44f : Style == TEXT("Old") ? 0.26f : 0.34f;
 		const double MacroErosionMeters = FMath::Clamp(ReferenceWorldMeters * (Style == TEXT("Alpine") ? 0.026 : Style == TEXT("Eroded") ? 0.038 : 0.034), 450.0, 6000.0);
 		const double FineErosionMeters = FMath::Clamp(MacroErosionMeters * (Style == TEXT("Alpine") ? 0.28 : 0.36), 140.0, 1800.0);
 		const double ThermalFeatureMeters = FMath::Clamp(ReferenceWorldMeters * (Style == TEXT("Old") ? 0.007 : Style == TEXT("Alpine") ? 0.0035 : 0.005), 35.0, 650.0);
 
 		FGaeaTerrainRecipe Recipe;
-		Recipe.Nodes.Reserve(11);
-		Recipe.Connections.Reserve(13);
+		Recipe.Nodes.Reserve(13);
+		Recipe.Connections.Reserve(15);
 		uint32 Ordinal = 1;
 
 		FGaeaTerrainNode& Support = AddNode(Recipe, GaeaTerrainNodeTypes::RadialGradient, Seed, Ordinal++);
@@ -321,21 +323,21 @@ namespace
 
 		FGaeaTerrainNode& Base = AddNode(Recipe, GaeaTerrainNodeTypes::Combine, Seed, Ordinal++);
 		Base.NameParameters.Add(TEXT("Mode"), TEXT("Multiply"));
-		Base.NumericParameters.Add(TEXT("Ratio"), 1.0);
+		Base.NumericParameters.Add(TEXT("Ratio"), SummitModulation);
 		Base.NameParameters.Add(TEXT("Output"), TEXT("Clamp"));
 		Link(Recipe, Support, TEXT("Out"), Base, TEXT("Input1"));
 		Link(Recipe, Peaks, TEXT("Out"), Base, TEXT("Input2"));
 
 		FGaeaTerrainNode& Shaper = AddNode(Recipe, GaeaTerrainNodeTypes::Shaper, Seed, Ordinal++);
-		Shaper.NumericParameters.Add(TEXT("Shape"), Style == TEXT("Old") ? 0.018 : Style == TEXT("Alpine") ? 0.075 : 0.050);
-		Shaper.NumericParameters.Add(TEXT("LocalEffect"), Style == TEXT("Alpine") ? 0.18 : 0.10);
+		Shaper.NumericParameters.Add(TEXT("Shape"), Style == TEXT("Old") ? 0.018 : Style == TEXT("Alpine") ? 0.085 : 0.055);
+		Shaper.NumericParameters.Add(TEXT("LocalEffect"), Style == TEXT("Alpine") ? 0.20 : 0.11);
 		Shaper.NumericParameters.Add(TEXT("LocalArea"), 0.52);
 		Shaper.BoolParameters.Add(TEXT("MaintainFineDetails"), true);
-		Shaper.NumericParameters.Add(TEXT("DetailSize"), bReduceDetails ? 0.55 : 0.30);
+		Shaper.NumericParameters.Add(TEXT("DetailSize"), bReduceDetails ? 0.55 : 0.27);
 		Link(Recipe, Base, TEXT("Out"), Shaper, TEXT("Terrain"));
 
 		FGaeaTerrainNode& SlopeWarp = AddNode(Recipe, GaeaTerrainNodeTypes::SlopeWarp, Seed, Ordinal++);
-		SlopeWarp.NumericParameters.Add(TEXT("Intensity"), Style == TEXT("Alpine") ? 0.34 : Style == TEXT("Old") ? 0.17 : 0.25);
+		SlopeWarp.NumericParameters.Add(TEXT("Intensity"), Style == TEXT("Alpine") ? 0.36 : Style == TEXT("Old") ? 0.17 : 0.27);
 		SlopeWarp.IntegerParameters.Add(TEXT("Iterations"), bReduceDetails ? 1 : 2);
 		SlopeWarp.NumericParameters.Add(TEXT("Direction"), Style == TEXT("Strata") ? 18.0 : 0.0);
 		SlopeWarp.BoolParameters.Add(TEXT("Normalized"), true);
@@ -390,14 +392,30 @@ namespace
 		Thermal.NumericParameters.Add(TEXT("FeatureScale"), ThermalFeatureMeters);
 		Link(Recipe, *LastProcess, TEXT("Out"), Thermal, TEXT("Terrain"));
 
-		// Re-apply the authored mountain support only after all process simulation.
-		// This is a geometric multiply of the processed terrain, not a blend of the
-		// pristine source back over erosion, so Wear/Flow/Deposits remain truthful.
+		FGaeaTerrainNode* LastSurface = &Thermal;
+		if (!bReduceDetails)
+		{
+			FGaeaTerrainNode& MidCrag = AddNode(Recipe, GaeaTerrainNodeTypes::Craggy, Seed, Ordinal++);
+			MidCrag.NumericParameters.Add(TEXT("Size"), Style == TEXT("Alpine") ? 0.46 : 0.56);
+			MidCrag.NumericParameters.Add(TEXT("Depth"), Style == TEXT("Alpine") ? 0.13 : 0.09);
+			MidCrag.NumericParameters.Add(TEXT("Shape"), Style == TEXT("Old") ? 0.38 : 0.54);
+			MidCrag.IntegerParameters.Add(TEXT("Seed"), static_cast<int64>(Seed) + 719);
+			Link(Recipe, Thermal, TEXT("Out"), MidCrag, TEXT("Terrain"));
+
+			FGaeaTerrainNode& FineCrag = AddNode(Recipe, GaeaTerrainNodeTypes::Craggy, Seed, Ordinal++);
+			FineCrag.NumericParameters.Add(TEXT("Size"), Style == TEXT("Alpine") ? 0.10 : 0.16);
+			FineCrag.NumericParameters.Add(TEXT("Depth"), Style == TEXT("Alpine") ? 0.075 : 0.055);
+			FineCrag.NumericParameters.Add(TEXT("Shape"), Style == TEXT("Alpine") ? 0.74 : 0.66);
+			FineCrag.IntegerParameters.Add(TEXT("Seed"), static_cast<int64>(Seed) + 887);
+			Link(Recipe, MidCrag, TEXT("Out"), FineCrag, TEXT("Terrain"));
+			LastSurface = &FineCrag;
+		}
+
 		FGaeaTerrainNode& Supported = AddNode(Recipe, GaeaTerrainNodeTypes::Combine, Seed, Ordinal++);
 		Supported.NameParameters.Add(TEXT("Mode"), TEXT("Multiply"));
 		Supported.NumericParameters.Add(TEXT("Ratio"), 1.0);
 		Supported.NameParameters.Add(TEXT("Output"), TEXT("Clamp"));
-		Link(Recipe, Thermal, TEXT("Out"), Supported, TEXT("Input1"));
+		Link(Recipe, *LastSurface, TEXT("Out"), Supported, TEXT("Input1"));
 		Link(Recipe, Support, TEXT("Out"), Supported, TEXT("Input2"));
 		Recipe.OutputNode = Supported.Id;
 
@@ -449,7 +467,7 @@ void RegisterGaeaTerrainLandformNodes()
 	D.Type = GaeaTerrainNodeTypes::Mountain;
 	D.DisplayName = TEXT("Mountain");
 	D.Category = TEXT("Terrain");
-	D.Description = TEXT("Process-authored mountain landform built from audited primitives, ridge warping, hydraulic incision and thermal weathering.");
+	D.Description = TEXT("Process-authored single mountain massif with subordinate ridges, hydraulic incision, thermal weathering and multi-scale rocky detail.");
 	D.Outputs = {
 		TerrainOut(),
 		ScalarOut(TEXT("Mass"), TEXT("Mass")),
