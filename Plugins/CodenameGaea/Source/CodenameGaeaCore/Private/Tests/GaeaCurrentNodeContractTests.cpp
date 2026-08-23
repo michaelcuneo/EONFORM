@@ -89,7 +89,7 @@ bool FGaeaCurrentNodeContractTest::RunTest(const FString& Parameters)
 	CheckNode(*this, GaeaTerrainNodeTypes::Transform, TEXT("Transform"), TEXT("Modify"), 11);
 	CheckNode(*this, GaeaTerrainNodeTypes::Transpose, TEXT("Transpose"), TEXT("Modify"), 6);
 	CheckNode(*this, GaeaTerrainNodeTypes::VariableBlur, TEXT("VariableBlur"), TEXT("Modify"), 2);
-	CheckNode(*this, GaeaTerrainNodeTypes::Warp, TEXT("Warp"), TEXT("Modify"), 3);
+	CheckNode(*this, GaeaTerrainNodeTypes::Warp, TEXT("Warp"), TEXT("Modify"), 14);
 	CheckNode(*this, GaeaTerrainNodeTypes::Whorl, TEXT("Whorl"), TEXT("Modify"), 4);
 
 	CheckNode(*this, GaeaTerrainNodeTypes::FractalTerraces, TEXT("FractalTerraces"), TEXT("Surface"), 20);
