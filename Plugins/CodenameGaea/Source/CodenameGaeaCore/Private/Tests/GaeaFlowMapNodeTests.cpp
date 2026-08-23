@@ -198,7 +198,7 @@ bool FGaeaFlowMapDeriveTest::RunTest(const FString& Parameters)
 			Difference += FMath::Abs(ModernFlow->AtInterior(X, Y) - ClassicFlow->AtInterior(X, Y));
 		}
 	}
-	Test.TestTrue(TEXT("Modern and classic flow derivations remain behaviorally distinct"), Difference > 0.1f);
+	TestTrue(TEXT("Modern and classic flow derivations remain behaviorally distinct"), Difference > 0.1f);
 
 	TestNotNull(TEXT("Modern direction semantic exists"), Modern.Dataset.FindScalarField(TEXT("FlowMapDirection")));
 	TestNotNull(TEXT("Modern accumulation semantic exists"), Modern.Dataset.FindScalarField(TEXT("FlowMapAccumulation")));
