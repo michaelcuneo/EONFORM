@@ -16,10 +16,10 @@ bool FGaeaTerrainClampDescriptorTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Clamp descriptor exists"),
 		FGaeaTerrainNodeDescriptorRegistry::Get(GaeaTerrainNodeTypes::Clamp, Clamp));
 	TestEqual(TEXT("Clamp display name"), Clamp.DisplayName, FString(TEXT("Clamp")));
-	TestEqual(TEXT("Clamp category"), Clamp.Category, FString(TEXT("Adjustments")));
+	TestEqual(TEXT("Clamp category"), Clamp.Category, FString(TEXT("Modify")));
 	TestEqual(TEXT("Clamp has one input"), Clamp.Inputs.Num(), 1);
 	TestEqual(TEXT("Clamp has one output"), Clamp.Outputs.Num(), 1);
-	TestEqual(TEXT("Clamp has four parameters"), Clamp.Parameters.Num(), 4);
+	TestEqual(TEXT("Clamp has three parameters"), Clamp.Parameters.Num(), 3);
 	if (Clamp.Inputs.Num() == 1)
 	{
 		TestEqual(TEXT("Clamp input name"), Clamp.Inputs[0].Name, FName(TEXT("Terrain")));
@@ -31,17 +31,19 @@ bool FGaeaTerrainClampDescriptorTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("Clamp output display"), Clamp.Outputs[0].DisplayName, FString(TEXT("Out")));
 	}
 
-	const FGaeaTerrainParameterDescriptor* Operation = Clamp.Parameters.FindByPredicate(
+	const FGaeaTerrainParameterDescriptor* Mode = Clamp.Parameters.FindByPredicate(
 		[](const FGaeaTerrainParameterDescriptor& Parameter)
 		{
-			return Parameter.Name == FName(TEXT("Operation"));
+			return Parameter.Name == FName(TEXT("Mode"));
 		});
-	TestNotNull(TEXT("Clamp Operation parameter exists"), Operation);
-	if (Operation)
+	TestNotNull(TEXT("Clamp Mode parameter exists"), Mode);
+	if (Mode)
 	{
-		TestEqual(TEXT("Clamp Operation default"), Operation->DefaultName, FName(TEXT("Clamp")));
-		TestEqual(TEXT("Clamp Operation option count"), Operation->NameOptions.Num(), 3);
+		TestEqual(TEXT("Clamp Mode default"), Mode->DefaultName, FName(TEXT("Standard")));
+		TestEqual(TEXT("Clamp Mode option count"), Mode->NameOptions.Num(), 2);
 	}
+	TestNotNull(TEXT("Clamp Value range exists"), Clamp.Parameters.FindByPredicate([](const FGaeaTerrainParameterDescriptor& P) { return P.Name == FName(TEXT("Value")); }));
+	TestNotNull(TEXT("Clamp Drop exists"), Clamp.Parameters.FindByPredicate([](const FGaeaTerrainParameterDescriptor& P) { return P.Name == FName(TEXT("Drop")); }));
 	return true;
 }
 
@@ -66,10 +68,10 @@ bool FGaeaTerrainClampTerminalOutputTest::RunTest(const FString& Parameters)
 	FGaeaTerrainNode Clamp;
 	Clamp.Id = FGuid(1002, 2, 2, 2);
 	Clamp.Type = GaeaTerrainNodeTypes::Clamp;
-	Clamp.NumericParameters.Add(TEXT("Min"), 0.2);
-	Clamp.NumericParameters.Add(TEXT("Max"), 0.8);
-	Clamp.NameParameters.Add(TEXT("Operation"), TEXT("Clip"));
-	Clamp.BoolParameters.Add(TEXT("DropToFloor"), false);
+	Clamp.NumericParameters.Add(TEXT("ValueMin"), 0.2);
+	Clamp.NumericParameters.Add(TEXT("ValueMax"), 0.8);
+	Clamp.NameParameters.Add(TEXT("Mode"), TEXT("Normalized"));
+	Clamp.BoolParameters.Add(TEXT("Drop"), false);
 
 	Recipe.Nodes = { Source, Clamp };
 
