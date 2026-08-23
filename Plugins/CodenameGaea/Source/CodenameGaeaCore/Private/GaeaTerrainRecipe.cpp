@@ -35,6 +35,7 @@ namespace GaeaTerrainNodeTypes
 	const FName HydroFix(TEXT("HydroFix"));
 	const FName Rivers(TEXT("Rivers"));
 	const FName Lake(TEXT("Lake"));
+	const FName Sea(TEXT("Sea"));
 	const FName Sediments(TEXT("Sediments"));
 	const FName Debris(TEXT("Debris"));
 	const FName Scree(TEXT("Scree"));
