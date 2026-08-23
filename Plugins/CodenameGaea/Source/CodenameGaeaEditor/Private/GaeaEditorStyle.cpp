@@ -1,6 +1,8 @@
 #include "GaeaEditorStyle.h"
 
+#include "Brushes/SlateVectorImageBrush.h"
 #include "Interfaces/IPluginManager.h"
+#include "Misc/Paths.h"
 #include "Styling/SlateStyle.h"
 #include "Styling/SlateStyleRegistry.h"
 
@@ -34,7 +36,7 @@ void FGaeaEditorStyle::Initialize()
 	}
 
 	TSharedRef<FSlateStyleSet> Style = MakeShared<FSlateStyleSet>(GetStyleSetName());
-	Style->SetContentRoot(Plugin->GetBaseDir() / TEXT("Resources"));
+	Style->SetContentRoot(FPaths::Combine(Plugin->GetBaseDir(), TEXT("Resources")));
 
 	Style->Set(TEXT("EONFORM.Symbol.16"), MakeEonformVectorBrush(Style, TEXT("Icons/Eonform.White"), FVector2D(16.0f, 16.0f)));
 	Style->Set(TEXT("EONFORM.Symbol.20"), MakeEonformVectorBrush(Style, TEXT("Icons/Eonform.White"), FVector2D(20.0f, 20.0f)));
@@ -45,8 +47,13 @@ void FGaeaEditorStyle::Initialize()
 	Style->Set(TEXT("EONFORM.Open"), MakeEonformVectorBrush(Style, TEXT("Icons/Eonform.White"), FVector2D(20.0f, 20.0f)));
 	Style->Set(TEXT("EONFORM.Tab"), MakeEonformVectorBrush(Style, TEXT("Icons/Eonform.White"), FVector2D(16.0f, 16.0f)));
 
-	// The graph asset uses the EONFORM mark in the Content Browser. Unreal discovers
-	// these names automatically from the UObject class name.
+	// Unreal's reflected class name omits the native U-prefix, so these are the
+	// canonical Content Browser lookup keys for UGaeaTerrainGraphAsset.
+	Style->Set(TEXT("ClassIcon.GaeaTerrainGraphAsset"), MakeEonformVectorBrush(Style, TEXT("Icons/Eonform.White"), FVector2D(16.0f, 16.0f)));
+	Style->Set(TEXT("ClassThumbnail.GaeaTerrainGraphAsset"), MakeEonformVectorBrush(Style, TEXT("Icons/Eonform.White"), FVector2D(64.0f, 64.0f)));
+
+	// Keep prefixed aliases too; they are useful to explicit callers and harmless
+	// if Unreal never asks for them automatically.
 	Style->Set(TEXT("ClassIcon.UGaeaTerrainGraphAsset"), MakeEonformVectorBrush(Style, TEXT("Icons/Eonform.White"), FVector2D(16.0f, 16.0f)));
 	Style->Set(TEXT("ClassThumbnail.UGaeaTerrainGraphAsset"), MakeEonformVectorBrush(Style, TEXT("Icons/Eonform.White"), FVector2D(64.0f, 64.0f)));
 
