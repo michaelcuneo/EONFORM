@@ -49,6 +49,7 @@ bool FGaeaCurrentNodeContractTest::RunTest(const FString& Parameters)
 	CheckNode(*this, GaeaTerrainNodeTypes::WaveShine, TEXT("WaveShine"), TEXT("Primitive"), 15);
 	CheckNode(*this, GaeaTerrainNodeTypes::HydraulicErosion, TEXT("Erosion"), TEXT("Simulate"), 20);
 	CheckNode(*this, GaeaTerrainNodeTypes::ThermalErosion, TEXT("Thermal"), TEXT("Simulate"), 11);
+	CheckNode(*this, GaeaTerrainNodeTypes::Lake, TEXT("Lake"), TEXT("Simulate"), 6);
 
 	CheckNode(*this, GaeaTerrainNodeTypes::Adjust, TEXT("Adjust"), TEXT("Modify"), 11);
 	CheckNode(*this, GaeaTerrainNodeTypes::Aperture, TEXT("Aperture"), TEXT("Modify"), 7);
