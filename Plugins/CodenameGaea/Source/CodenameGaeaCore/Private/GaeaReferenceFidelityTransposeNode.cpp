@@ -2,6 +2,7 @@
 
 #include "GaeaScalarField.h"
 #include "GaeaTerrainEvaluator.h"
+#include "GaeaTerrainFidelityNodes.h"
 #include "GaeaTerrainFieldNames.h"
 #include "GaeaTerrainNodeDescriptor.h"
 #include "GaeaTerrainRecipe.h"
@@ -99,34 +100,21 @@ namespace
 				const float BaseValue = Base->AtInterior(X, Y);
 				const float Reference = Sample(*Ref, static_cast<float>(X), static_cast<float>(Y), bMirror);
 				float Target = BaseValue;
-
 				if (Mode == TEXT("Transpose"))
 				{
-					// Transfer surface character rather than absolute altitude: remove the
-					// reference's local low-frequency body and apply only its substructure.
 					const float Mean = LocalMean(*Ref, X, Y, DetailRadius);
-					const float Detail = Reference - Mean;
-					Target = BaseValue + Detail;
+					Target = BaseValue + (Reference - Mean);
 				}
 				else if (Mode == TEXT("Embed"))
 				{
-					// Embed preserves the receiving silhouette while allowing both positive
-					// and negative reference relief around a local baseline.
 					const float Baseline = bFlatten ? RefMinimum : LocalMean(*Ref, X, Y, DetailRadius);
 					Target = BaseValue + (Reference - Baseline);
 				}
-				else
+				else if (Reference >= Threshold)
 				{
-					// Insert is for sparse shapes such as RockNoise: pixels below Threshold
-					// leave the target untouched; the inserted relief retains its internal
-					// relative heights above the threshold.
-					if (Reference >= Threshold)
-					{
-						const float Baseline = bFlatten ? Threshold : FMath::Max(Threshold, RefMinimum);
-						Target = BaseValue + (Reference - Baseline);
-					}
+					const float Baseline = bFlatten ? Threshold : FMath::Max(Threshold, RefMinimum);
+					Target = BaseValue + (Reference - Baseline);
 				}
-
 				Result.AtInterior(X, Y) = FMath::Lerp(BaseValue, Target, Amount);
 			}
 		}
@@ -161,4 +149,8 @@ void RegisterGaeaReferenceFidelityTransposeNode()
 	};
 	FGaeaTerrainNodeDescriptorRegistry::Register(D);
 	FGaeaTerrainNodeRegistry::Register(D.Type, EvaluateTranspose);
+
+	// This function is already called after the legacy/reference node families.
+	// Register corrected shared terrain primitives here so they are authoritative.
+	RegisterGaeaTerrainFidelityNodes();
 }
