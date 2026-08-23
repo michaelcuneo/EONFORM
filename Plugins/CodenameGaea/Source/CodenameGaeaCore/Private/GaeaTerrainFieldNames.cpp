@@ -34,6 +34,9 @@ namespace GaeaTerrainFieldNames
 	const FName Peaks(TEXT("Peaks"));
 	const FName RockMap(TEXT("RockMap"));
 	const FName Soil(TEXT("Soil"));
+	const FName TextureBase(TEXT("TextureBase"));
+	const FName Texturizer(TEXT("Texturizer"));
+	const FName ColorThreshold(TEXT("ColorThreshold"));
 	const FName NormalX(TEXT("NormalX"));
 	const FName NormalY(TEXT("NormalY"));
 	const FName NormalZ(TEXT("NormalZ"));
