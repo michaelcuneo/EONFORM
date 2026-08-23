@@ -139,8 +139,8 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FGaeaReferenceCombineMaskFidelityTest::RunTest(const FString& Parameters)
 {
 	using namespace GaeaReferenceFidelityTests;
-	RegisterGaeaReferenceFidelityNodes();
 	RegisterGaeaUtilityNodes();
+	RegisterGaeaReferenceFidelityNodes();
 
 	FGaeaTerrainNode A = MakeConstant(FGuid(0xA1, 1, 1, 1), 0.8);
 	FGaeaTerrainNode B = MakeConstant(FGuid(0xB1, 1, 1, 1), -0.8);
