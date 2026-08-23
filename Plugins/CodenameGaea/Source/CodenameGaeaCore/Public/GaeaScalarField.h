@@ -6,6 +6,8 @@
 enum class EGaeaFieldUnit : uint8
 {
 	Unitless,
+	// Compatibility alias for scalar/unitless diagnostic fields.
+	Scalar = Unitless,
 	Normalized,
 	Centimeters,
 	Meters,
