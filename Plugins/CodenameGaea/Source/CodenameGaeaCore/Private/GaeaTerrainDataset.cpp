@@ -10,22 +10,18 @@ namespace
 		// never safe to carry across a Height replacement. Geology/material/process
 		// fields are intentionally NOT listed here because they may be authored by
 		// graph nodes and must not be silently discarded.
-		static const TSet<FName> IntrinsicDerived =
-		{
-			TEXT("Elevation"),
-			TEXT("SlopeDegrees"),
-			TEXT("Concavity"),
-			TEXT("Convexity"),
-			TEXT("Mountain"),
-			TEXT("Foothill"),
-			TEXT("Plains"),
-			TEXT("FlowDirection"),
-			TEXT("FlowAccumulation"),
-			TEXT("CatchmentAreaKm2"),
-			TEXT("DistanceToOutletKm"),
-			TEXT("StreamOrder")
-		};
-		return IntrinsicDerived.Contains(Name);
+		return Name == TEXT("Elevation")
+			|| Name == TEXT("SlopeDegrees")
+			|| Name == TEXT("Concavity")
+			|| Name == TEXT("Convexity")
+			|| Name == TEXT("Mountain")
+			|| Name == TEXT("Foothill")
+			|| Name == TEXT("Plains")
+			|| Name == TEXT("FlowDirection")
+			|| Name == TEXT("FlowAccumulation")
+			|| Name == TEXT("CatchmentAreaKm2")
+			|| Name == TEXT("DistanceToOutletKm")
+			|| Name == TEXT("StreamOrder");
 	}
 }
 
@@ -129,8 +125,7 @@ bool FGaeaTerrainDataset::MarkScalarFieldHeightDerived(FName Name)
 int32 FGaeaTerrainDataset::InvalidateHeightDerivedFields()
 {
 	int32 Removed = 0;
-	TArray<FName> Names;
-	HeightDerivedFields.GenerateKeyArray(Names);
+	const TArray<FName> Names = HeightDerivedFields.Array();
 	for (const FName Name : Names)
 	{
 		Removed += ScalarFields.Remove(Name);
