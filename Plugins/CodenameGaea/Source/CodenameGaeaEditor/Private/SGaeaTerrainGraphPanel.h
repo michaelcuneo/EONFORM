@@ -30,6 +30,12 @@ public:
 		if (EditorGraph.IsValid()) EditorGraph->SetActivity(Activity);
 	}
 
+	/** Internal accessor for editor activity callbacks; graph ownership remains with this panel. */
+	UGaeaEditorGraph* GetEditorGraphForActivity() const
+	{
+		return EditorGraph.Get();
+	}
+
 private:
 	void BuildDefaultRecipeAndGraph();
 	void BuildEditorGraphFromRecipe(const FGaeaTerrainRecipe& Recipe, const UGaeaTerrainGraphAsset* Asset = nullptr);
