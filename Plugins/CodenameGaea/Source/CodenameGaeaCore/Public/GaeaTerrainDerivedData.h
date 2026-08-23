@@ -44,6 +44,43 @@ public:
 		const FGaeaTerrainDerivedDataSettings& Settings = FGaeaTerrainDerivedDataSettings(),
 		FString* OutError = nullptr);
 
+	/** Ensures only the depression-aware D8 drainage direction field. */
+	static bool EnsureDrainage(
+		FGaeaTerrainDataset& InOutDataset,
+		float HeightScale,
+		FString* OutError = nullptr);
+
+	static bool EnsureDrainage(
+		FGaeaTerrainDataset& InOutDataset,
+		float HeightScale,
+		const FGaeaTerrainPhysicalMetrics& PhysicalMetrics,
+		FString* OutError = nullptr);
+
+	/** Ensures FlowDirection, FlowAccumulation and CatchmentAreaKm2. */
+	static bool EnsureFlowAnalysis(
+		FGaeaTerrainDataset& InOutDataset,
+		float HeightScale,
+		FString* OutError = nullptr);
+
+	static bool EnsureFlowAnalysis(
+		FGaeaTerrainDataset& InOutDataset,
+		float HeightScale,
+		const FGaeaTerrainPhysicalMetrics& PhysicalMetrics,
+		FString* OutError = nullptr);
+
+	/** Ensures flow analysis plus DistanceToOutletKm, without StreamOrder. */
+	static bool EnsureHydrologyNetwork(
+		FGaeaTerrainDataset& InOutDataset,
+		float HeightScale,
+		FString* OutError = nullptr);
+
+	static bool EnsureHydrologyNetwork(
+		FGaeaTerrainDataset& InOutDataset,
+		float HeightScale,
+		const FGaeaTerrainPhysicalMetrics& PhysicalMetrics,
+		FString* OutError = nullptr);
+
+	/** Ensures the complete hydrology product set including StreamOrder. */
 	static bool EnsureHydrology(
 		FGaeaTerrainDataset& InOutDataset,
 		float HeightScale,
@@ -55,6 +92,10 @@ public:
 		const FGaeaTerrainPhysicalMetrics& PhysicalMetrics,
 		FString* OutError = nullptr);
 
+	/**
+	 * Ensures the geology and process masks required by the hydraulic erosion
+	 * solver. Drainage is intentionally excluded and remains demand-driven.
+	 */
 	static bool EnsureHydraulicInputs(
 		FGaeaTerrainDataset& InOutDataset,
 		float HeightScale,
@@ -65,6 +106,6 @@ public:
 		FGaeaTerrainDataset& InOutDataset,
 		float HeightScale,
 		const FGaeaTerrainPhysicalMetrics& PhysicalMetrics,
-		const FGaeaTerrainDerivedDataSettings& Settings = FGaeaTerrainDerivedDataSettings(),
+		const FGaeaTerrainDerivedDataSettings& Settings,
 		FString* OutError = nullptr);
 };
