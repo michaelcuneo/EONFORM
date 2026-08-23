@@ -50,8 +50,8 @@ namespace
 		return Parameter;
 	}
 
-	float CombineTo01(float V) { return FMath::Clamp(V * 0.5f + 0.5f, 0.0f, 1.0f); }
-	float CombineFrom01(float V) { return FMath::Clamp(V, 0.0f, 1.0f) * 2.0f - 1.0f; }
+	float CombineTo01(float V) { return FMath::Clamp(V, 0.0f, 1.0f); }
+	float CombineFrom01(float V) { return FMath::Clamp(V, 0.0f, 1.0f); }
 
 	float CombineMode01(float A, float B, FName Mode)
 	{
