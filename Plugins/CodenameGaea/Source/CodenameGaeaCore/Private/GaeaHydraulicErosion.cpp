@@ -109,6 +109,7 @@ namespace
 		TArray<uint8> DonorCount;
 		TArray<int32> Queue;
 		TArray<int32> Order;
+		TArray<float> RoutingHeight;
 		TArray<float> Runoff;
 		TArray<float> Sediment;
 		TArray<float> DeltaHeight;
@@ -119,6 +120,7 @@ namespace
 		DonorCount.SetNumZeroed(NumCells);
 		Queue.Reserve(NumCells);
 		Order.Reserve(NumCells);
+		RoutingHeight.SetNumUninitialized(NumCells);
 		Runoff.SetNumZeroed(NumCells);
 		Sediment.SetNumZeroed(NumCells);
 		DeltaHeight.SetNumZeroed(NumCells);
@@ -149,14 +151,41 @@ namespace
 			Queue.Reset();
 			Order.Reset();
 
-			// Build a strictly downhill D8 receiver graph. Because every receiver is
-			// lower than its donor, this graph is acyclic and can be accumulated in O(N).
+			// Route water over a lightly conditioned copy of the surface. This removes
+			// sample-scale pits without smoothing the terrain that is actually eroded.
+			// The routing surface is recomputed each iteration as channels evolve.
 			for (int32 Y = 0; Y < Height; ++Y)
 			{
 				for (int32 X = 0; X < Width; ++X)
 				{
 					const int32 I = Index(X, Y);
-					const float Current = HeightField.Values[I];
+					if (X == 0 || Y == 0 || X + 1 == Width || Y + 1 == Height)
+					{
+						RoutingHeight[I] = HeightField.Values[I];
+						continue;
+					}
+					float Sum = HeightField.Values[I] * 4.0f;
+					float Weight = 4.0f;
+					for (const FIntPoint& Offset : Neighbors)
+					{
+						const float W = (Offset.X != 0 && Offset.Y != 0) ? 0.55f : 1.0f;
+						Sum += HeightField.Values[Index(X + Offset.X, Y + Offset.Y)] * W;
+						Weight += W;
+					}
+					const float LocalMean = Sum / FMath::Max(Weight, UE_SMALL_NUMBER);
+					RoutingHeight[I] = FMath::Lerp(HeightField.Values[I], LocalMean, 0.42f);
+				}
+			}
+
+			// Build a strictly downhill receiver graph on the conditioned surface.
+			// If a one-cell D8 pit remains, allow a short two-cell escape to a genuinely
+			// lower routing elevation. Receivers always descend, so the graph remains a DAG.
+			for (int32 Y = 0; Y < Height; ++Y)
+			{
+				for (int32 X = 0; X < Width; ++X)
+				{
+					const int32 I = Index(X, Y);
+					const float Current = RoutingHeight[I];
 					float BestGradient = 0.0f;
 					int32 BestReceiver = -1;
 					for (const FIntPoint& Offset : Neighbors)
@@ -165,7 +194,7 @@ namespace
 						const int32 NY = Y + Offset.Y;
 						if (NX < 0 || NX >= Width || NY < 0 || NY >= Height) continue;
 						const int32 NI = Index(NX, NY);
-						const float Drop = Current - HeightField.Values[NI];
+						const float Drop = Current - RoutingHeight[NI];
 						if (Drop <= 1.0e-7f) continue;
 						const float Distance = Offset.X != 0 && Offset.Y != 0 ? UE_SQRT_2 : 1.0f;
 						const float Gradient = Drop / Distance;
@@ -175,6 +204,29 @@ namespace
 							BestReceiver = NI;
 						}
 					}
+
+					if (BestReceiver < 0 && X > 1 && Y > 1 && X + 2 < Width && Y + 2 < Height)
+					{
+						for (int32 DY = -2; DY <= 2; ++DY)
+						{
+							for (int32 DX = -2; DX <= 2; ++DX)
+							{
+								if (DX == 0 && DY == 0) continue;
+								if (FMath::Abs(DX) <= 1 && FMath::Abs(DY) <= 1) continue;
+								const int32 NI = Index(X + DX, Y + DY);
+								const float Drop = Current - RoutingHeight[NI];
+								if (Drop <= 1.0e-7f) continue;
+								const float Distance = FMath::Sqrt(static_cast<float>(DX * DX + DY * DY));
+								const float Gradient = Drop / FMath::Max(Distance, 1.0f);
+								if (Gradient > BestGradient)
+								{
+									BestGradient = Gradient;
+									BestReceiver = NI;
+								}
+							}
+						}
+					}
+
 					Receiver[I] = BestReceiver;
 					if (BestReceiver >= 0 && DonorCount[BestReceiver] < MAX_uint8)
 					{
@@ -188,8 +240,6 @@ namespace
 				}
 			}
 
-			// Sources have no donors. Propagating them downstream yields contributing
-			// runoff while also giving us a source-to-outlet processing order.
 			for (int32 I = 0; I < NumCells; ++I)
 			{
 				if (DonorCount[I] == 0) Queue.Add(I);
@@ -206,8 +256,6 @@ namespace
 				}
 			}
 
-			// The strict-lower receiver rule should make every component acyclic, but
-			// keep isolated pathological samples deterministic rather than dropping them.
 			if (Order.Num() != NumCells)
 			{
 				TBitArray<> Seen(false, NumCells);
@@ -217,6 +265,13 @@ namespace
 
 			for (const int32 I : Order)
 			{
+				const float LocalRain = FMath::Max(Rainfall, 1.0e-6f);
+				const float ContributingCells = FMath::Max(Runoff[I] / LocalRain, 1.0f);
+				// Public Flow is true contributing runoff/area. Keep the compressed
+				// response internal for stream-power stability instead of flattening the
+				// product that downstream graph nodes and tests consume.
+				Flow[I] += ContributingCells;
+
 				const int32 R = Receiver[I];
 				if (R < 0) continue;
 
@@ -224,14 +279,14 @@ namespace
 				const int32 Y = I / Width;
 				const int32 RX = R % Width;
 				const int32 RY = R / Width;
-				const float DistanceCells = (X != RX && Y != RY) ? UE_SQRT_2 : 1.0f;
+				const float DX = static_cast<float>(RX - X);
+				const float DY = static_cast<float>(RY - Y);
+				const float DistanceCells = FMath::Max(FMath::Sqrt(DX * DX + DY * DY), 1.0f);
 				const float Drop = FMath::Max(HeightField.Values[I] - HeightField.Values[R], 0.0f);
 				const float PhysicalSlope = FMath::Max(
 					static_cast<float>(Drop * SlopeScale / DistanceCells / FeatureScale),
 					Settings.MinimumSlope);
 
-				const float LocalRain = FMath::Max(Rainfall, 1.0e-6f);
-				const float ContributingCells = FMath::Max(Runoff[I] / LocalRain, 1.0f);
 				const float FlowResponse = FMath::Clamp(FMath::Pow(FMath::Log2(1.0f + ContributingCells), 0.82f), 0.0f, 7.5f);
 				const float SlopeResponse = FMath::Pow(FMath::Clamp(PhysicalSlope, 0.0f, 4.0f), 0.78f);
 				const float StreamPower = FlowResponse * SlopeResponse;
@@ -264,8 +319,6 @@ namespace
 						Wear[I] += Erode;
 						LocalSediment += Erode;
 
-						// Feature scale widens mature channels slightly instead of turning every
-						// drainage line into a one-cell trench.
 						const float BankShare = FMath::Clamp(0.025f + (FeatureScale - 0.5f) * 0.025f, 0.015f, 0.15f);
 						if (BankShare > 0.0f && X > 0 && X + 1 < Width && Y > 0 && Y + 1 < Height)
 						{
@@ -293,7 +346,6 @@ namespace
 
 				Sediment[I] = 0.0f;
 				Sediment[R] += LocalSediment * (1.0f - SedimentRemoval);
-				Flow[I] += FlowResponse;
 			}
 
 			for (int32 I = 0; I < NumCells; ++I)
