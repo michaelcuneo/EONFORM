@@ -151,10 +151,16 @@ void UGaeaEditorGraphNode::AllocateDefaultPins()
 	}
 	for (const FGaeaTerrainPortDescriptor& Output : Descriptor.Outputs)
 	{
-		// Only terrain Out pins use the editor's historical "Terrain" alias.
-		// Scalar/Color/Any Out pins must retain their real identity or an exact
-		// terrain passthrough on the same node can shadow them during evaluation.
-		const bool bTerrainOutAlias = Output.Name == TEXT("Out") && Output.DataType == TEXT("Terrain");
+		// Terrain and dynamic Any outputs preserve the editor's historical
+		// physical "Terrain" pin identity. Any may resolve to terrain at runtime
+		// (File, Constant, Blur, utility routing nodes), so changing that identity
+		// would break existing authored graphs and connection contracts.
+		//
+		// Explicit ScalarField/Color outputs keep their real "Out" identity. This
+		// is required for nodes such as DataExtractor, which intentionally exposes
+		// both scalar Out and an exact Terrain passthrough on the same node.
+		const bool bTerrainOutAlias = Output.Name == TEXT("Out")
+			&& (Output.DataType == TEXT("Terrain") || Output.DataType == TEXT("Any"));
 		const FName EditorPinName = bTerrainOutAlias ? TerrainPinName : Output.Name;
 		UEdGraphPin* Pin = CreatePin(EGPD_Output, PinCategoryForDataType(Output.DataType), EditorPinName, PinParams);
 		if (Pin) Pin->PinFriendlyName = FriendlyPinName(Output, EGPD_Output);
