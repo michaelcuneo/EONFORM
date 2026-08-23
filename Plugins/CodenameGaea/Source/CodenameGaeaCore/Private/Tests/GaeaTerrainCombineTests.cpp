@@ -16,41 +16,35 @@ bool FGaeaTerrainCombineDescriptorTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Combine descriptor exists"),
 		FGaeaTerrainNodeDescriptorRegistry::Get(GaeaTerrainNodeTypes::Combine, Combine));
 	TestEqual(TEXT("Combine display name"), Combine.DisplayName, FString(TEXT("Combine")));
-	TestEqual(TEXT("Combine category"), Combine.Category, FString(TEXT("Adjustments")));
+	TestEqual(TEXT("Combine category"), Combine.Category, FString(TEXT("Utility")));
 	TestEqual(TEXT("Combine has three inputs"), Combine.Inputs.Num(), 3);
-	TestEqual(TEXT("Combine has two outputs"), Combine.Outputs.Num(), 2);
-	TestEqual(TEXT("Combine parameter count"), Combine.Parameters.Num(), 8);
+	TestEqual(TEXT("Combine has one output"), Combine.Outputs.Num(), 1);
+	TestEqual(TEXT("Combine parameter count"), Combine.Parameters.Num(), 4);
 	if (Combine.Inputs.Num() == 3)
 	{
-		TestEqual(TEXT("Combine Primary input"), Combine.Inputs[0].Name, FName(TEXT("Primary")));
-		TestEqual(TEXT("Combine Secondary input"), Combine.Inputs[1].Name, FName(TEXT("Secondary")));
+		TestEqual(TEXT("Combine Input1 input"), Combine.Inputs[0].Name, FName(TEXT("Input1")));
+		TestEqual(TEXT("Combine Input2 input"), Combine.Inputs[1].Name, FName(TEXT("Input2")));
 		TestEqual(TEXT("Combine Mask input"), Combine.Inputs[2].Name, FName(TEXT("Mask")));
-		TestEqual(TEXT("Combine Primary is polymorphic"), Combine.Inputs[0].DataType, FName(TEXT("Any")));
+		TestEqual(TEXT("Combine Input1 is polymorphic"), Combine.Inputs[0].DataType, FName(TEXT("Any")));
 		TestEqual(TEXT("Combine Mask is scalar"), Combine.Inputs[2].DataType, FName(TEXT("ScalarField")));
 	}
-	if (Combine.Outputs.Num() == 2)
+	if (Combine.Outputs.Num() == 1)
 	{
 		TestEqual(TEXT("Combine output"), Combine.Outputs[0].Name, FName(TEXT("Out")));
 		TestEqual(TEXT("Combine output is polymorphic"), Combine.Outputs[0].DataType, FName(TEXT("Any")));
-		TestEqual(TEXT("Combine separation output"), Combine.Outputs[1].Name, FName(TEXT("Separation")));
-		TestEqual(TEXT("Combine separation output is scalar"), Combine.Outputs[1].DataType, FName(TEXT("ScalarField")));
 	}
-	const FGaeaTerrainParameterDescriptor* Method = Combine.Parameters.FindByPredicate(
-		[](const FGaeaTerrainParameterDescriptor& Parameter) { return Parameter.Name == FName(TEXT("Method")); });
-	TestNotNull(TEXT("Combine Method parameter exists"), Method);
-	if (Method)
+	const FGaeaTerrainParameterDescriptor* Mode = Combine.Parameters.FindByPredicate(
+		[](const FGaeaTerrainParameterDescriptor& Parameter) { return Parameter.Name == FName(TEXT("Mode")); });
+	TestNotNull(TEXT("Combine Mode parameter exists"), Mode);
+	if (Mode)
 	{
-		TestEqual(TEXT("Combine method count"), Method->NameOptions.Num(), 13);
-		TestTrue(TEXT("Combine has Insert method"), Method->NameOptions.Contains(TEXT("Insert")));
-		TestTrue(TEXT("Combine has Embed method"), Method->NameOptions.Contains(TEXT("Embed")));
+		TestTrue(TEXT("Combine has Blend mode"), Mode->NameOptions.Contains(TEXT("Blend")));
+		TestTrue(TEXT("Combine has Multiply mode"), Mode->NameOptions.Contains(TEXT("Multiply")));
+		TestTrue(TEXT("Combine has Add mode"), Mode->NameOptions.Contains(TEXT("Add")));
 	}
 	TestNotNull(TEXT("Combine Ratio exists"), Combine.Parameters.FindByPredicate([](const FGaeaTerrainParameterDescriptor& P) { return P.Name == FName(TEXT("Ratio")); }));
-	TestNotNull(TEXT("Combine Swap Inputs exists"), Combine.Parameters.FindByPredicate([](const FGaeaTerrainParameterDescriptor& P) { return P.Name == FName(TEXT("SwapInputs")); }));
-	TestNotNull(TEXT("Combine Separation Mask exists"), Combine.Parameters.FindByPredicate([](const FGaeaTerrainParameterDescriptor& P) { return P.Name == FName(TEXT("SeparationMask")); }));
-	TestNotNull(TEXT("Combine Clamp Output exists"), Combine.Parameters.FindByPredicate([](const FGaeaTerrainParameterDescriptor& P) { return P.Name == FName(TEXT("ClampOutput")); }));
-	TestNotNull(TEXT("Combine Abs exists"), Combine.Parameters.FindByPredicate([](const FGaeaTerrainParameterDescriptor& P) { return P.Name == FName(TEXT("Abs")); }));
-	TestNotNull(TEXT("Combine Threshold exists"), Combine.Parameters.FindByPredicate([](const FGaeaTerrainParameterDescriptor& P) { return P.Name == FName(TEXT("Threshold")); }));
-	TestNotNull(TEXT("Combine Flatten exists"), Combine.Parameters.FindByPredicate([](const FGaeaTerrainParameterDescriptor& P) { return P.Name == FName(TEXT("Flatten")); }));
+	TestNotNull(TEXT("Combine Output exists"), Combine.Parameters.FindByPredicate([](const FGaeaTerrainParameterDescriptor& P) { return P.Name == FName(TEXT("Output")); }));
+	TestNotNull(TEXT("Combine Enhance exists"), Combine.Parameters.FindByPredicate([](const FGaeaTerrainParameterDescriptor& P) { return P.Name == FName(TEXT("Enhance")); }));
 	return true;
 }
 
@@ -75,28 +69,27 @@ bool FGaeaTerrainCombineMasksTest::RunTest(const FString& Parameters)
 	FGaeaTerrainNode Slope;
 	Slope.Id = FGuid(902, 2, 2, 2);
 	Slope.Type = GaeaTerrainNodeTypes::Slope;
-	Slope.NumericParameters.Add(TEXT("Min"), 5.0);
-	Slope.NumericParameters.Add(TEXT("Max"), 70.0);
+	Slope.NumericParameters.Add(TEXT("RangeMin"), 5.0);
+	Slope.NumericParameters.Add(TEXT("RangeMax"), 70.0);
 
 	FGaeaTerrainNode Height;
 	Height.Id = FGuid(903, 3, 3, 3);
 	Height.Type = GaeaTerrainNodeTypes::Height;
 	Height.NumericParameters.Add(TEXT("Min"), 0.35);
 	Height.NumericParameters.Add(TEXT("Max"), 1.0);
-	Height.BoolParameters.Add(TEXT("Normalized"), true);
 
 	FGaeaTerrainNode Combine;
 	Combine.Id = FGuid(904, 4, 4, 4);
 	Combine.Type = GaeaTerrainNodeTypes::Combine;
-	Combine.NameParameters.Add(TEXT("Method"), TEXT("Multiply"));
+	Combine.NameParameters.Add(TEXT("Mode"), TEXT("Multiply"));
 	Combine.NumericParameters.Add(TEXT("Ratio"), 1.0);
-	Combine.BoolParameters.Add(TEXT("SeparationMask"), true);
 
 	FGaeaTerrainNode Erosion;
 	Erosion.Id = FGuid(905, 5, 5, 5);
 	Erosion.Type = GaeaTerrainNodeTypes::HydraulicErosion;
 	Erosion.IntegerParameters.Add(TEXT("Iterations"), 2);
 	Erosion.NumericParameters.Add(TEXT("Strength"), 0.5);
+	Erosion.NameParameters.Add(TEXT("SelectiveProcessing"), TEXT("ErosionStrength"));
 
 	Recipe.Nodes = { Source, Slope, Height, Combine, Erosion };
 
@@ -112,8 +105,8 @@ bool FGaeaTerrainCombineMasksTest::RunTest(const FString& Parameters)
 
 	Connect(Source, TEXT("Terrain"), Slope, TEXT("Terrain"));
 	Connect(Source, TEXT("Terrain"), Height, TEXT("Terrain"));
-	Connect(Slope, TEXT("Mask"), Combine, TEXT("Primary"));
-	Connect(Height, TEXT("Mask"), Combine, TEXT("Secondary"));
+	Connect(Slope, TEXT("Mask"), Combine, TEXT("Input1"));
+	Connect(Height, TEXT("Mask"), Combine, TEXT("Input2"));
 	Connect(Source, TEXT("Terrain"), Erosion, TEXT("Terrain"));
 	Connect(Combine, TEXT("Out"), Erosion, TEXT("Mask"));
 	Recipe.OutputNode = Erosion.Id;
@@ -155,7 +148,7 @@ bool FGaeaTerrainCombineTerrainsTest::RunTest(const FString& Parameters)
 	FGaeaTerrainNode Combine;
 	Combine.Id = FGuid(913, 3, 3, 3);
 	Combine.Type = GaeaTerrainNodeTypes::Combine;
-	Combine.NameParameters.Add(TEXT("Method"), TEXT("Blend"));
+	Combine.NameParameters.Add(TEXT("Mode"), TEXT("Blend"));
 	Combine.NumericParameters.Add(TEXT("Ratio"), 0.5);
 
 	FGaeaTerrainNode Thermal;
@@ -175,8 +168,8 @@ bool FGaeaTerrainCombineTerrainsTest::RunTest(const FString& Parameters)
 		Recipe.Connections.Add(Connection);
 	};
 
-	Connect(Primary, TEXT("Terrain"), Combine, TEXT("Primary"));
-	Connect(Secondary, TEXT("Terrain"), Combine, TEXT("Secondary"));
+	Connect(Primary, TEXT("Terrain"), Combine, TEXT("Input1"));
+	Connect(Secondary, TEXT("Terrain"), Combine, TEXT("Input2"));
 	Connect(Combine, TEXT("Out"), Thermal, TEXT("Terrain"));
 	Recipe.OutputNode = Thermal.Id;
 
