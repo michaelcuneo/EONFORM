@@ -44,6 +44,8 @@ namespace GaeaTerrainNodeTypes
 	CODENAMEGAEACORE_API extern const FName Glacier;
 	CODENAMEGAEACORE_API extern const FName Anastomosis;
 	CODENAMEGAEACORE_API extern const FName Lichtenberg;
+	CODENAMEGAEACORE_API extern const FName Trees;
+	CODENAMEGAEACORE_API extern const FName Shrubs;
 	CODENAMEGAEACORE_API extern const FName Sediments;
 	CODENAMEGAEACORE_API extern const FName Debris;
 	CODENAMEGAEACORE_API extern const FName Scree;
