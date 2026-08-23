@@ -8,7 +8,8 @@ enum class EGaeaTerrainParameterType : uint8
 	Integer,
 	Boolean,
 	Name,
-	Range
+	Range,
+	Color
 };
 
 struct CODENAMEGAEACORE_API FGaeaTerrainPortDescriptor
@@ -34,6 +35,7 @@ struct CODENAMEGAEACORE_API FGaeaTerrainParameterDescriptor
 		bool DefaultBool;
 	};
 	FName DefaultName = NAME_None;
+	FLinearColor DefaultColor = FLinearColor::White;
 	TArray<FName> NameOptions;
 
 	// Range parameters are stored in the node's NumericParameters map as
