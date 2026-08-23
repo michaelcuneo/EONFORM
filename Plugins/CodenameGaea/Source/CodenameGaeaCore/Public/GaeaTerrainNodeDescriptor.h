@@ -27,7 +27,12 @@ struct CODENAMEGAEACORE_API FGaeaTerrainParameterDescriptor
 
 	double DefaultNumber = 0.0;
 	int64 DefaultInteger = 0;
-	bool DefaultBoolean = false;
+	union
+	{
+		bool DefaultBoolean = false;
+		// Legacy source compatibility for older node implementations.
+		bool DefaultBool;
+	};
 	FName DefaultName = NAME_None;
 	TArray<FName> NameOptions;
 
