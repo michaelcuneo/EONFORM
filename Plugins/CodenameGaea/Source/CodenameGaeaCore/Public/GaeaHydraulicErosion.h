@@ -24,6 +24,12 @@ struct CODENAMEGAEACORE_API FGaeaHydraulicErosionSettings
 	bool bAggressiveMode = false;
 	bool bDeterministic = true;
 
+	/**
+	 * Enables the drainage-network/stream-power solver used by Erosion2.
+	 * Legacy Erosion keeps the original water-cell solver for compatibility.
+	 */
+	bool bAdvancedFlowSolver = false;
+
 	/** Optional physical overrides supplied by graph evaluation. Zero preserves legacy domain units. */
 	double PhysicalSampleSpacingMeters = 0.0;
 	double PhysicalElevationScaleMeters = 0.0;
