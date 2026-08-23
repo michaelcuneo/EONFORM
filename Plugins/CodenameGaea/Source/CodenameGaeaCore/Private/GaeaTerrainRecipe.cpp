@@ -124,6 +124,11 @@ namespace GaeaTerrainNodeTypes
 	const FName Height(TEXT("Height"));
 	const FName FlowMap(TEXT("FlowMap"));
 	const FName FlowMapClassic(TEXT("FlowMapClassic"));
+	const FName Peaks(TEXT("Peaks"));
+	const FName RockMap(TEXT("RockMap"));
+	const FName Soil(TEXT("Soil"));
+	const FName Normals(TEXT("Normals"));
+	const FName Occlusion(TEXT("Occlusion"));
 }
 
 namespace
