@@ -26,4 +26,9 @@ namespace GaeaTerrainFieldNames
 	const FName CatchmentAreaKm2(TEXT("CatchmentAreaKm2"));
 	const FName DistanceToOutletKm(TEXT("DistanceToOutletKm"));
 	const FName StreamOrder(TEXT("StreamOrder"));
+	const FName FlowMap(TEXT("FlowMap"));
+	const FName FlowMapDirection(TEXT("FlowMapDirection"));
+	const FName FlowMapAccumulation(TEXT("FlowMapAccumulation"));
+	const FName FlowMapClassic(TEXT("FlowMapClassic"));
+	const FName FlowMapClassicHierarchy(TEXT("FlowMapClassicHierarchy"));
 }
