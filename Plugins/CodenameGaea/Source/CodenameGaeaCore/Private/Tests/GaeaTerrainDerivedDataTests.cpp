@@ -49,7 +49,7 @@ namespace
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FGaeaTerrainImplicitAnalysisGraphTest,
-	"CodenameGaea.Core.Graph.HydraulicDerivesAnalysisOnDemand",
+	"CodenameGaea.Core.Graph.HydraulicDerivesRequiredAnalysisOnDemand",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 bool FGaeaTerrainImplicitAnalysisGraphTest::RunTest(const FString& Parameters)
@@ -81,11 +81,6 @@ bool FGaeaTerrainImplicitAnalysisGraphTest::RunTest(const FString& Parameters)
 		GaeaTerrainFieldNames::RockHardness,
 		GaeaTerrainFieldNames::Weathering,
 		GaeaTerrainFieldNames::SoilDepth,
-		GaeaTerrainFieldNames::FlowDirection,
-		GaeaTerrainFieldNames::FlowAccumulation,
-		GaeaTerrainFieldNames::CatchmentAreaKm2,
-		GaeaTerrainFieldNames::DistanceToOutletKm,
-		GaeaTerrainFieldNames::StreamOrder,
 		GaeaTerrainFieldNames::Wear,
 		GaeaTerrainFieldNames::Deposits,
 		GaeaTerrainFieldNames::Flow
@@ -98,7 +93,22 @@ bool FGaeaTerrainImplicitAnalysisGraphTest::RunTest(const FString& Parameters)
 			Result.Dataset.HasScalarField(FieldName));
 	}
 
-	TestEqual(TEXT("Implicit analysis pipeline publishes all canonical fields"), Result.Dataset.NumScalarFields(), 24);
+	const FName LazyHydrologyFields[] =
+	{
+		GaeaTerrainFieldNames::FlowDirection,
+		GaeaTerrainFieldNames::FlowAccumulation,
+		GaeaTerrainFieldNames::CatchmentAreaKm2,
+		GaeaTerrainFieldNames::DistanceToOutletKm,
+		GaeaTerrainFieldNames::StreamOrder
+	};
+	for (const FName FieldName : LazyHydrologyFields)
+	{
+		TestFalse(
+			*FString::Printf(TEXT("Hydraulic erosion does not eagerly derive %s"), *FieldName.ToString()),
+			Result.Dataset.HasScalarField(FieldName));
+	}
+
+	TestEqual(TEXT("Hydraulic output publishes only required canonical fields"), Result.Dataset.NumScalarFields(), 19);
 	return true;
 }
 
