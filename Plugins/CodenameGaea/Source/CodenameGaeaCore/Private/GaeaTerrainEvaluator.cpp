@@ -471,10 +471,35 @@ namespace
 		FGaeaScalarField DepositsOutput = Result.Deposits;
 		FGaeaScalarField FlowOutput = Result.Flow;
 
-		PreparedDataset.SetScalarField(MoveTemp(Result.Height));
-		PreparedDataset.SetScalarField(MoveTemp(Result.Wear));
-		PreparedDataset.SetScalarField(MoveTemp(Result.Deposits));
-		PreparedDataset.SetScalarField(MoveTemp(Result.Flow));
+		if (!PreparedDataset.SetScalarField(MoveTemp(Result.Height))
+			|| !PreparedDataset.SetScalarField(MoveTemp(Result.Wear))
+			|| !PreparedDataset.SetScalarField(MoveTemp(Result.Deposits))
+			|| !PreparedDataset.SetScalarField(MoveTemp(Result.Flow)))
+		{
+			Error = TEXT("Erosion could not publish its terrain fields.");
+			return false;
+		}
+
+		// Height replacement correctly invalidates all analysis that described the
+		// pre-erosion surface. Rebuild the intrinsic context and drainage semantics
+		// from the newly eroded Height before publishing the terrain downstream.
+		if (!FGaeaTerrainDerivedData::EnsureContext(
+			PreparedDataset,
+			FMath::Max(Input->HeightScale, 1.0f),
+			Context.PhysicalMetrics,
+			&Error))
+		{
+			return false;
+		}
+		if (!FGaeaTerrainDerivedData::EnsureHydrology(
+			PreparedDataset,
+			FMath::Max(Input->HeightScale, 1.0f),
+			Context.PhysicalMetrics,
+			&Error))
+		{
+			return false;
+		}
+
 		if (!PublishTerrain(Out, MoveTemp(PreparedDataset), Input->HeightScale, Error)) return false;
 
 		Out.Outputs.Add(TEXT("Wear"), FGaeaTerrainValue::MakeScalarField(MoveTemp(WearOutput)));
