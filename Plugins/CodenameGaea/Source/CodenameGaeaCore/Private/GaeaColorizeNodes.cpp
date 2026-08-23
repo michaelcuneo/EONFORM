@@ -120,8 +120,62 @@ namespace GaeaColorize
 		return FLinearColor(FColor(R, G, B, 255));
 	}
 
+	TArray<FPaletteStop> BuildSample01Palette()
+	{
+		// Exact 200-color sample supplied for EONFORM SatMap development.
+		// Do not collapse this into sparse control points: the local variations in
+		// the measured sequence are part of the palette and must survive sampling.
+		static const uint8 Samples[][3] = {
+			{26, 34, 53}, {27, 35, 54}, {26, 34, 52}, {26, 34, 52}, {26, 34, 53}, {27, 35, 54}, {27, 35, 54}, {27, 35, 54},
+			{27, 35, 54}, {27, 35, 54}, {27, 35, 54}, {28, 35, 53}, {28, 35, 53}, {28, 35, 53}, {28, 35, 53}, {28, 35, 53},
+			{28, 35, 53}, {29, 36, 55}, {29, 36, 55}, {29, 36, 55}, {29, 36, 55}, {29, 36, 55}, {29, 36, 55}, {29, 36, 55},
+			{29, 37, 56}, {29, 36, 55}, {30, 37, 56}, {30, 37, 56}, {30, 37, 56}, {30, 37, 56}, {31, 38, 57}, {31, 38, 57},
+			{33, 39, 58}, {33, 39, 56}, {34, 39, 59}, {34, 39, 59}, {34, 41, 57}, {34, 40, 56}, {34, 40, 56}, {34, 40, 56},
+			{35, 42, 58}, {35, 42, 58}, {35, 43, 56}, {36, 44, 57}, {36, 43, 59}, {36, 43, 60}, {36, 43, 60}, {37, 44, 59},
+			{37, 45, 57}, {37, 45, 56}, {37, 45, 57}, {38, 46, 58}, {39, 46, 61}, {39, 47, 66}, {39, 47, 66}, {39, 47, 66},
+			{41, 50, 67}, {41, 50, 67}, {42, 51, 64}, {44, 50, 63}, {44, 50, 63}, {43, 49, 63}, {44, 50, 64}, {44, 51, 65},
+			{43, 51, 66}, {44, 50, 64}, {35, 43, 59}, {29, 37, 54}, {30, 38, 56}, {33, 43, 58}, {35, 44, 59}, {35, 46, 61},
+			{34, 46, 62}, {35, 49, 63}, {36, 51, 68}, {37, 55, 75}, {38, 55, 75}, {38, 58, 78}, {36, 62, 87}, {40, 65, 90},
+			{41, 62, 82}, {44, 65, 83}, {45, 68, 86}, {45, 66, 87}, {45, 68, 90}, {46, 70, 92}, {45, 66, 90}, {44, 64, 90},
+			{43, 66, 92}, {43, 64, 85}, {44, 67, 87}, {41, 68, 86}, {42, 74, 95}, {43, 64, 84}, {43, 61, 78}, {44, 61, 79},
+			{44, 61, 79}, {46, 62, 75}, {45, 62, 74}, {45, 64, 73}, {47, 68, 72}, {48, 70, 73}, {49, 76, 72}, {54, 80, 67},
+			{68, 76, 69}, {93, 105, 82}, {146, 151, 115}, {151, 92, 55}, {149, 76, 47}, {142, 69, 42}, {140, 68, 44}, {140, 65, 43},
+			{139, 64, 41}, {139, 64, 41}, {141, 67, 44}, {141, 67, 43}, {142, 69, 44}, {146, 70, 44}, {147, 71, 44}, {141, 66, 42},
+			{147, 66, 44}, {145, 64, 42}, {145, 65, 42}, {150, 70, 46}, {146, 65, 44}, {143, 63, 41}, {144, 64, 41}, {141, 60, 39},
+			{145, 65, 43}, {148, 68, 45}, {146, 65, 40}, {149, 67, 43}, {153, 69, 45}, {147, 66, 41}, {148, 66, 42}, {147, 65, 39},
+			{148, 67, 41}, {150, 69, 42}, {150, 68, 43}, {144, 63, 43}, {143, 62, 43}, {139, 62, 44}, {138, 61, 43}, {150, 74, 49},
+			{143, 68, 43}, {148, 70, 47}, {155, 83, 51}, {162, 87, 52}, {154, 75, 48}, {157, 79, 49}, {155, 76, 48}, {153, 74, 47},
+			{152, 72, 45}, {158, 78, 47}, {156, 76, 46}, {175, 93, 57}, {177, 110, 63}, {164, 96, 56}, {167, 93, 54}, {158, 79, 45},
+			{162, 82, 46}, {163, 85, 46}, {168, 92, 52}, {180, 108, 56}, {172, 98, 55}, {174, 98, 52}, {173, 101, 53}, {170, 97, 50},
+			{176, 103, 55}, {172, 98, 51}, {172, 103, 55}, {177, 114, 65}, {166, 101, 54}, {178, 118, 67}, {189, 129, 73}, {188, 122, 62},
+			{180, 110, 54}, {187, 126, 69}, {169, 94, 49}, {168, 119, 63}, {184, 123, 63}, {150, 85, 48}, {145, 81, 49}, {146, 79, 47},
+			{149, 85, 45}, {146, 81, 49}, {148, 85, 46}, {183, 122, 67}, {195, 127, 72}, {179, 125, 77}, {166, 116, 61}, {162, 94, 53},
+			{188, 117, 62}, {194, 131, 78}, {171, 109, 60}, {175, 117, 66}, {166, 116, 69}, {163, 112, 65}, {169, 119, 72}, {173, 119, 69},
+		};
+
+		constexpr int32 SampleCount = UE_ARRAY_COUNT(Samples);
+		static_assert(SampleCount == 200, "Sample01 palette must remain a 200-color LUT.");
+		TArray<FPaletteStop> Stops;
+		Stops.Reserve(SampleCount);
+		for (int32 I = 0; I < SampleCount; ++I)
+		{
+			FPaletteStop Stop;
+			Stop.Position = static_cast<float>(I) / static_cast<float>(SampleCount - 1);
+			Stop.Color = RGB8(Samples[I][0], Samples[I][1], Samples[I][2]);
+			Stops.Add(Stop);
+		}
+		return Stops;
+	}
+
 	TArray<FPaletteStop> BuildPalette(FName Family, int32 Item)
 	{
+		// Sample01 is the canonical measured 200-color LUT. It is intentionally
+		// returned without family/item variation so the supplied sample remains exact.
+		if (Family == TEXT("Sample01"))
+		{
+			return BuildSample01Palette();
+		}
+
 		const int32 Variant = FMath::Abs(Item) % 4;
 		TArray<FPaletteStop> Stops;
 
@@ -157,14 +211,11 @@ namespace GaeaColorize
 		}
 		else
 		{
-			// Alpine is the default: dark vegetated bases, exposed rock, then pale high relief.
 			Stops = {
 				{0.00f, RGB8(31, 43, 31)}, {0.13f, RGB8(51, 70, 39)}, {0.30f, RGB8(76, 88, 49)},
 				{0.48f, RGB8(104, 95, 67)}, {0.65f, RGB8(113, 105, 91)}, {0.82f, RGB8(154, 153, 145)}, {1.00f, RGB8(226, 228, 224)} };
 		}
 
-		// Each item is a deterministic variation of the same natural family, not a
-		// copied satellite palette. Keep changes restrained enough to preserve the family identity.
 		const float HueShift = (static_cast<float>(Variant) - 1.5f) * 4.0f;
 		const float SatScale = 0.93f + static_cast<float>(Variant) * 0.045f;
 		const float ValueScale = 0.96f + static_cast<float>((Variant + 1) % 4) * 0.025f;
@@ -236,7 +287,7 @@ namespace GaeaColorize
 			return false;
 		}
 
-		const FName Family = Node.GetName(TEXT("Palette"), TEXT("Alpine"));
+		const FName Family = Node.GetName(TEXT("Palette"), TEXT("Sample01"));
 		const int32 Item = static_cast<int32>(Node.GetInteger(TEXT("Item"), 0));
 		const FName Enhance = Node.GetName(TEXT("Enhance"), TEXT("None"));
 		const bool bReverse = Node.GetBool(TEXT("Reverse"), false);
@@ -294,8 +345,6 @@ namespace GaeaColorize
 				}
 				else
 				{
-					// Terrain sources commonly use signed normalized heights. Scalar masks are
-					// normally 0..1; only remap when a signed value is actually present.
 					if (SourceMin < -UE_SMALL_NUMBER) T = T * 0.5f + 0.5f;
 					T = FMath::Clamp(T, 0.0f, 1.0f);
 				}
@@ -332,9 +381,6 @@ namespace GaeaColorize
 		}
 		Out.Outputs.Add(TEXT("Out"), FGaeaTerrainValue::MakeColor(MoveTemp(Color)));
 
-		// Preserve compatibility with the terrain-only top-level evaluator. SatMap
-		// remains a genuine Color producer, while graphs ending on a Terrain-driven
-		// SatMap can still be evaluated/materialized by current terrain consumers.
 		if (Input->Type == EGaeaTerrainValueType::Terrain)
 		{
 			Out.Outputs.Add(TEXT("Terrain"), *Input);
@@ -352,12 +398,12 @@ void RegisterGaeaColorizeNodes()
 	D.Type = GaeaTerrainNodeTypes::SatMap;
 	D.DisplayName = TEXT("SatMap");
 	D.Category = TEXT("Colorize");
-	D.Description = TEXT("Maps terrain or scalar values through an EONFORM satellite-inspired natural color palette.");
+	D.Description = TEXT("Maps terrain or scalar values through a sampled EONFORM color lookup table.");
 	D.Inputs.Add(Port(TEXT("Input"), TEXT("Input"), TEXT("Terrain")));
 	D.Outputs.Add(Port(TEXT("Out"), TEXT("Out"), TEXT("Color")));
 	D.Outputs.Add(Port(TEXT("Terrain"), TEXT("Terrain"), TEXT("Terrain")));
 	D.Parameters = {
-		Choice(TEXT("Palette"), TEXT("Palette"), TEXT("Alpine"), { TEXT("Alpine"), TEXT("Temperate"), TEXT("Arid"), TEXT("Volcanic"), TEXT("Coastal"), TEXT("Tundra") }, TEXT("Library")),
+		Choice(TEXT("Palette"), TEXT("Palette"), TEXT("Sample01"), { TEXT("Sample01"), TEXT("Alpine"), TEXT("Temperate"), TEXT("Arid"), TEXT("Volcanic"), TEXT("Coastal"), TEXT("Tundra") }, TEXT("Library")),
 		Int(TEXT("Item"), TEXT("Item"), 0, 0, 255, TEXT("Library")),
 		Range(TEXT("Range"), TEXT("Range"), 0.0, 1.0, TEXT("Mapping")),
 		Num(TEXT("Bias"), TEXT("Bias"), 0.0, -1.0, 1.0, TEXT("Mapping")),
@@ -372,9 +418,6 @@ void RegisterGaeaColorizeNodes()
 	FGaeaTerrainNodeRegistry::Register(D.Type, EvaluateSatMap);
 }
 
-// GaeaColorizeNodes.cpp is compiled as part of CodenameGaeaCore. Delay automatic
-// registration until engine initialization is complete so registry globals in
-// other translation units are guaranteed to exist regardless of static-init order.
 static FDelayedAutoRegisterHelper GSatMapAutoRegister(
 	EDelayedRegisterRunPhase::EndOfEngineInit,
 	[]()
