@@ -182,7 +182,7 @@ void RegisterGaeaCryosphereNodes()
 	using namespace GaeaSnowNode;
 
 	FGaeaTerrainNodeDescriptor Descriptor;
-	Descriptor.Type = FName(TEXT("Snow"));
+	Descriptor.Type = GaeaTerrainNodeTypes::Snow;
 	Descriptor.DisplayName = TEXT("Snow");
 	Descriptor.Category = TEXT("Simulate");
 	Descriptor.Description = TEXT("Accumulates snow from physically scaled elevation, atmospheric lapse rate, slope stability, and terrain shelter. Snow exists where cold and terrain conditions permit it rather than as a uniform height mask.");
@@ -203,4 +203,7 @@ void RegisterGaeaCryosphereNodes()
 	Descriptor.Parameters.Add(Bool(TEXT("AffectHeight"), TEXT("Affect Height"), true, TEXT("Output")));
 	FGaeaTerrainNodeDescriptorRegistry::Register(Descriptor);
 	FGaeaTerrainNodeRegistry::Register(Descriptor.Type, EvaluateSnow);
+
+	RegisterGaeaIceFloeNode();
+	RegisterGaeaDustingNode();
 }
