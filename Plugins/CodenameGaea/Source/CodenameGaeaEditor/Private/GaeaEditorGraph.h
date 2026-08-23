@@ -70,6 +70,9 @@ public:
 	UPROPERTY()
 	TMap<FName, FName> NameParameters;
 
+	UPROPERTY()
+	TMap<FName, FLinearColor> ColorParameters;
+
 	void Initialize(const FGuid& InRecipeNodeId, FName InRecipeNodeType);
 	void InitializeParameterDefaults();
 
