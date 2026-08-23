@@ -98,7 +98,7 @@ bool FGaeaCurrentNodeContractTest::RunTest(const FString& Parameters)
 	CheckNode(*this, GaeaTerrainNodeTypes::Curvature, TEXT("Curvature"), TEXT("Derive"), 3);
 	CheckNode(*this, GaeaTerrainNodeTypes::Height, TEXT("Height"), TEXT("Derive"), 2);
 	CheckNode(*this, GaeaTerrainNodeTypes::Slope, TEXT("Slope"), TEXT("Derive"), 4);
-	CheckNode(*this, GaeaTerrainNodeTypes::Combine, TEXT("Combine"), TEXT("Utility"), 4);
+	CheckNode(*this, GaeaTerrainNodeTypes::Combine, TEXT("Combine"), TEXT("Utility"), 5);
 	CheckNode(*this, GaeaTerrainNodeTypes::ZeroBorders, TEXT("Edge"), TEXT("Utility"), 4);
 	CheckNode(*this, GaeaTerrainNodeTypes::SourceDataset, TEXT("Source Dataset"), TEXT("Internal"), 0, true);
 	CheckNode(*this, GaeaTerrainNodeTypes::TerrainShape, TEXT("Terrain Shape"), TEXT("Internal"), 8, true);
