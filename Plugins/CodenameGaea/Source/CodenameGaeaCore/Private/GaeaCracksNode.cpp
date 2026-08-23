@@ -97,7 +97,6 @@ namespace
 		const int32 BaseY = FMath::FloorToInt(Y);
 		float F1 = TNumericLimits<float>::Max();
 		float F2 = TNumericLimits<float>::Max();
-
 		for (int32 CY = BaseY - 2; CY <= BaseY + 2; ++CY)
 		{
 			for (int32 CX = BaseX - 2; CX <= BaseX + 2; ++CX)
@@ -107,46 +106,59 @@ namespace
 				const float DX = X - FeatureX;
 				const float DY = Y - FeatureY;
 				const float Distance = FMath::Sqrt(DX * DX + DY * DY);
-				if (Distance < F1)
-				{
-					F2 = F1;
-					F1 = Distance;
-				}
-				else if (Distance < F2)
-				{
-					F2 = Distance;
-				}
+				if (Distance < F1) { F2 = F1; F1 = Distance; }
+				else if (Distance < F2) F2 = Distance;
 			}
 		}
-
 		return FMath::Max(F2 - F1, 0.0f);
 	}
 
 	float CracksProfile(float EdgeDistance, FName Style, float Width)
 	{
 		const float T = FMath::Clamp(EdgeDistance / FMath::Max(Width, UE_SMALL_NUMBER), 0.0f, 1.0f);
-		if (Style == TEXT("Hard"))
-		{
-			return T < 1.0f ? 1.0f : 0.0f;
-		}
-		if (Style == TEXT("Classic"))
-		{
-			return T < 0.22f ? 1.0f : 0.0f;
-		}
-
-		// Normal: a broad crack with a gentle inward slope, matching the current
-		// Gaea description and giving the pattern useful subtractive shoulders.
+		if (Style == TEXT("Hard")) return T < 1.0f ? 1.0f : 0.0f;
+		if (Style == TEXT("Classic")) return T < 0.22f ? 1.0f : 0.0f;
 		const float Smooth = T * T * (3.0f - 2.0f * T);
 		return 1.0f - Smooth;
 	}
 
-	bool EvaluateCracksNode(const FGaeaTerrainNode& Node, const FGaeaTerrainNodeInputs&, const FGaeaTerrainEvaluationContext&, FGaeaTerrainNodeEvaluation& Out, FString& Error)
+	FGaeaGridDomain ResolveDomain(const FGaeaTerrainNode& Node, const FGaeaTerrainEvaluationContext& Context)
 	{
-		const int32 Resolution = FMath::Clamp<int32>(static_cast<int32>(Node.GetInteger(TEXT("Resolution"), 257)), 2, 1025);
-		const float WorldSize = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("WorldSize"), 100000.0)), 1.0f, 10000000.0f);
-		const float HeightScale = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("HeightScale"), 8000.0)), 1.0f, 1000000.0f);
+		const int32 RequestedX = Context.TargetResolution.X > 1 ? Context.TargetResolution.X : 257;
+		const int32 RequestedY = Context.TargetResolution.Y > 1 ? Context.TargetResolution.Y : RequestedX;
+		const int32 LegacyResolution = static_cast<int32>(Node.GetInteger(TEXT("Resolution"), 0));
+		const int32 Width = FMath::Clamp(LegacyResolution > 1 ? LegacyResolution : RequestedX, 2, 4097);
+		const int32 Height = FMath::Clamp(LegacyResolution > 1 ? LegacyResolution : RequestedY, 2, 4097);
+
+		double WidthCm = 100000.0;
+		double DepthCm = 100000.0;
+		if (Context.PhysicalMetrics.HasWorldDimensions())
+		{
+			WidthCm = Context.PhysicalMetrics.WorldWidthMeters * 100.0;
+			DepthCm = Context.PhysicalMetrics.WorldDepthMeters * 100.0;
+		}
+		else
+		{
+			const double LegacyWorld = FMath::Max(Node.GetNumber(TEXT("WorldSize"), 100000.0), 1.0);
+			WidthCm = LegacyWorld;
+			DepthCm = LegacyWorld;
+		}
+		return FGaeaGridDomain::Make(FIntPoint(Width, Height), FVector2d(-WidthCm * 0.5, -DepthCm * 0.5), FVector2d(WidthCm * 0.5, DepthCm * 0.5));
+	}
+
+	float ResolveHeightScale(const FGaeaTerrainNode& Node, const FGaeaTerrainEvaluationContext& Context)
+	{
+		if (Context.PhysicalMetrics.HasElevationScale()) return static_cast<float>(Context.PhysicalMetrics.ElevationScaleMeters * 100.0);
+		return FMath::Max(static_cast<float>(Node.GetNumber(TEXT("HeightScale"), Context.HeightScale)), 1.0f);
+	}
+
+	bool EvaluateCracksNode(const FGaeaTerrainNode& Node, const FGaeaTerrainNodeInputs&, const FGaeaTerrainEvaluationContext& Context, FGaeaTerrainNodeEvaluation& Out, FString& Error)
+	{
+		const FGaeaGridDomain Domain = ResolveDomain(Node, Context);
+		if (!Domain.IsValid()) { Error = TEXT("Cracks produced an invalid grid domain."); return false; }
 
 		const FName Style = Node.GetName(TEXT("Style"), TEXT("Normal"));
+		if (Style != TEXT("Normal") && Style != TEXT("Hard") && Style != TEXT("Classic")) { Error = TEXT("Cracks Style must be Normal, Hard, or Classic."); return false; }
 		const int32 Octaves = FMath::Clamp<int32>(static_cast<int32>(Node.GetInteger(TEXT("Octaves"), 1)), 1, 8);
 		const float Scale = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Scale"), 1.0)), 0.01f, 32.0f);
 		const float Depth = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Depth"), 0.5)), 0.0f, 1.0f);
@@ -157,39 +169,30 @@ namespace
 		const float ScaleX = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("ScaleX"), 1.0)), 0.01f, 100.0f);
 		const float ScaleY = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("ScaleY"), 1.0)), 0.01f, 100.0f);
 
-		const double HalfWorldSize = static_cast<double>(WorldSize) * 0.5;
-		const FGaeaGridDomain Domain = FGaeaGridDomain::Make(FIntPoint(Resolution, Resolution), FVector2d(-HalfWorldSize, -HalfWorldSize), FVector2d(HalfWorldSize, HalfWorldSize));
-		if (!Domain.IsValid())
-		{
-			Error = TEXT("Cracks produced an invalid grid domain.");
-			return false;
-		}
-
 		FGaeaFieldDescriptor Descriptor;
 		Descriptor.Name = GaeaTerrainFieldNames::Height;
 		Descriptor.Unit = EGaeaFieldUnit::Normalized;
 		Descriptor.Interpolation = EGaeaInterpolation::Bilinear;
 		FGaeaScalarField Height;
-		Height.Initialize(Domain, Descriptor);
+		Height.Initialize(Domain, Descriptor, 0.0f);
 
-		const float BaseCellWorldSize = FMath::Max(WorldSize * 0.12f * Scale, 1.0f);
+		const FVector2d WorldExtent = Domain.WorldSize();
+		const double ReferenceWorld = FMath::Max(FMath::Min(FMath::Abs(WorldExtent.X), FMath::Abs(WorldExtent.Y)), UE_DOUBLE_SMALL_NUMBER);
+		const double BaseCellWorldSize = FMath::Max(ReferenceWorld * 0.12 * Scale, 1.0);
 		const float BaseWidth = FMath::Lerp(0.012f, 0.18f, Depth);
-		for (int32 Y = 0; Y < Resolution; ++Y)
+		for (int32 Y = 0; Y < Domain.Dimensions.Y; ++Y)
 		{
-			for (int32 X = 0; X < Resolution; ++X)
+			for (int32 X = 0; X < Domain.Dimensions.X; ++X)
 			{
 				const FVector2d World = Domain.InteriorSampleToWorld(X, Y);
 				float Combined = 0.0f;
 				float Weight = 1.0f;
-				float WeightSum = 0.0f;
-
 				for (int32 Octave = 0; Octave < Octaves; ++Octave)
 				{
 					const float FrequencyMultiplier = FMath::Pow(2.0f, static_cast<float>(Octave));
-					const float CellWorldSize = BaseCellWorldSize / FrequencyMultiplier;
-					float PX = static_cast<float>(World.X) / (CellWorldSize * ScaleX);
-					float PY = static_cast<float>(World.Y) / (CellWorldSize * ScaleY);
-
+					const double CellWorldSize = BaseCellWorldSize / FrequencyMultiplier;
+					float PX = static_cast<float>(World.X / (CellWorldSize * ScaleX));
+					float PY = static_cast<float>(World.Y / (CellWorldSize * ScaleY));
 					if (WarpStrength > UE_SMALL_NUMBER)
 					{
 						const float WarpFrequency = 1.0f / FMath::Max(WarpSize, 0.01f);
@@ -198,33 +201,20 @@ namespace
 						PX += WX * WarpStrength;
 						PY += WY * WarpStrength;
 					}
-
 					const float EdgeDistance = CracksVoronoiEdge(PX, PY, Jitter, Seed + Octave * 7919);
 					const float Width = BaseWidth * FMath::Lerp(1.0f, 0.7f, static_cast<float>(Octave) / FMath::Max(static_cast<float>(Octaves - 1), 1.0f));
 					const float Crack = CracksProfile(EdgeDistance, Style, Width);
 					Combined = FMath::Max(Combined, Crack * Weight);
-					WeightSum += Weight;
 					Weight *= 0.72f;
 				}
-
-				const float Normalized = WeightSum > UE_SMALL_NUMBER ? Combined : 0.0f;
-				Height.AtInterior(X, Y) = FMath::Clamp(Normalized * Depth, 0.0f, 1.0f);
+				Height.AtInterior(X, Y) = FMath::Clamp(Combined * Depth, 0.0f, 1.0f);
 			}
 		}
 
 		FGaeaTerrainDataset Dataset;
-		if (!Dataset.SetScalarField(MoveTemp(Height)))
-		{
-			Error = TEXT("Cracks could not publish its Height field.");
-			return false;
-		}
-
-		FGaeaTerrainValue Result = FGaeaTerrainValue::MakeTerrain(MoveTemp(Dataset), HeightScale);
-		if (!Result.IsValid())
-		{
-			Error = TEXT("Cracks produced an invalid terrain value.");
-			return false;
-		}
+		if (!Dataset.SetScalarField(MoveTemp(Height))) { Error = TEXT("Cracks could not publish its Height field."); return false; }
+		FGaeaTerrainValue Result = FGaeaTerrainValue::MakeTerrain(MoveTemp(Dataset), ResolveHeightScale(Node, Context));
+		if (!Result.IsValid()) { Error = TEXT("Cracks produced an invalid terrain value."); return false; }
 		Out.Outputs.Add(TEXT("Out"), MoveTemp(Result));
 		return true;
 	}
@@ -236,7 +226,7 @@ void RegisterGaeaCracksNode()
 	Descriptor.Type = GaeaTerrainNodeTypes::Cracks;
 	Descriptor.DisplayName = TEXT("Cracks");
 	Descriptor.Category = TEXT("Primitive");
-	Descriptor.Description = TEXT("Creates large geometric crack patterns for masking or subtractive terrain workflows.");
+	Descriptor.Description = TEXT("Creates large cracked patterns on a flat base for masking and subtractive terrain workflows.");
 	Descriptor.Outputs.Add(CracksTerrainPort(TEXT("Out"), TEXT("Out")));
 	Descriptor.Parameters.Add(CracksNameParameter(TEXT("Style"), TEXT("Style"), TEXT("Normal"), { TEXT("Normal"), TEXT("Hard"), TEXT("Classic") }, TEXT("Cracks")));
 	Descriptor.Parameters.Add(CracksIntegerParameter(TEXT("Octaves"), TEXT("Octaves"), 1, 1, 8, TEXT("Cracks")));
@@ -248,7 +238,6 @@ void RegisterGaeaCracksNode()
 	Descriptor.Parameters.Add(CracksIntegerParameter(TEXT("Seed"), TEXT("Seed"), 1337, -2147483647, 2147483647, TEXT("Cracks")));
 	Descriptor.Parameters.Add(CracksNumberParameter(TEXT("ScaleX"), TEXT("Scale X"), 1.0, 0.01, 100.0, TEXT("Advanced Settings")));
 	Descriptor.Parameters.Add(CracksNumberParameter(TEXT("ScaleY"), TEXT("Scale Y"), 1.0, 0.01, 100.0, TEXT("Advanced Settings")));
-
 	FGaeaTerrainNodeDescriptorRegistry::Register(Descriptor);
 	FGaeaTerrainNodeRegistry::Register(GaeaTerrainNodeTypes::Cracks, EvaluateCracksNode);
 }
