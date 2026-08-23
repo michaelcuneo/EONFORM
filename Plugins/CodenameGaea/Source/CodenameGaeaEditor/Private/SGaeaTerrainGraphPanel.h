@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GaeaEditorGraph.h"
+#include "GaeaTerrainEvaluator.h"
 #include "GaeaTerrainGraphAsset.h"
 #include "GaeaTerrainRecipe.h"
 #include "GraphEditor.h"
@@ -63,6 +64,14 @@ private:
 	TWeakObjectPtr<UGaeaTerrainGraphAsset> LastOutputSettingsAsset;
 	FSimpleDelegate OnEvaluated;
 	FText StatusText;
+
+	/**
+	 * Persistent node outputs for interactive authoring. The pointer is replaced
+	 * on asset switches so an obsolete worker can safely finish against its old
+	 * cache without racing the newly opened graph.
+	 */
+	TSharedPtr<FGaeaTerrainEvaluationCache, ESPMode::ThreadSafe> IncrementalEvaluationCache =
+		MakeShared<FGaeaTerrainEvaluationCache, ESPMode::ThreadSafe>();
 
 	uint32 LastAutoPreviewHash = 0;
 	float AutoPreviewPollAccumulator = 0.0f;
