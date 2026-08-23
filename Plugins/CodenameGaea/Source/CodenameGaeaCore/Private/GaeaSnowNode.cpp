@@ -117,7 +117,7 @@ namespace GaeaSnowNode
 		FGaeaScalarField Height = *Source;
 		FGaeaScalarField Snow = MakeScalar(Source->Domain, TEXT("Snow"));
 		FGaeaScalarField SnowDepth = MakeScalar(Source->Domain, TEXT("SnowDepth"), EGaeaFieldUnit::Meters);
-		FGaeaScalarField Temperature = MakeScalar(Source->Domain, TEXT("TemperatureC"), EGaeaFieldUnit::Scalar);
+		FGaeaScalarField Temperature = MakeScalar(Source->Domain, TEXT("TemperatureC"), EGaeaFieldUnit::Celsius);
 
 		for (int32 Y = 0; Y < Source->Domain.Dimensions.Y; ++Y)
 		{
