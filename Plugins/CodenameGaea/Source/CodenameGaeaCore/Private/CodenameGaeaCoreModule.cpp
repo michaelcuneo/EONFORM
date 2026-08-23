@@ -31,6 +31,7 @@
 #include "GaeaModifyProfileNodes.h"
 #include "GaeaModifySpatialNodes.h"
 #include "GaeaMultiCombineNode.h"
+#include "GaeaNetworkProcessNodes.h"
 #include "GaeaPerlinNode.h"
 #include "GaeaPrimitiveAssetNodes.h"
 #include "GaeaPrimitiveCoverageNodes.h"
@@ -105,6 +106,7 @@ public:
 		RegisterGaeaCryosphereNodes();
 		RegisterGaeaSnowfieldNode();
 		RegisterGaeaGlacierNode();
+		RegisterGaeaNetworkProcessNodes();
 		RegisterGaeaCurvatureNode();
 		RegisterGaeaHeightNode();
 		RegisterGaeaAngleNode();
@@ -192,6 +194,8 @@ public:
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Snow, TEXT("Snow"), TEXT("Simulate"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Snowfield, TEXT("Snowfield"), TEXT("Simulate"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Glacier, TEXT("Glacier"), TEXT("Simulate"));
+		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Anastomosis, TEXT("Anastomosis"), TEXT("Simulate"));
+		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Lichtenberg, TEXT("Lichtenberg"), TEXT("Simulate"));
 
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Adjust, TEXT("Adjust"), TEXT("Modify"));
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Aperture, TEXT("Aperture"), TEXT("Modify"));
