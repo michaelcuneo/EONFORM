@@ -29,6 +29,10 @@ namespace GaeaTerrainNodeTypes
 	CODENAMEGAEACORE_API extern const FName TileInput;
 	CODENAMEGAEACORE_API extern const FName Voronoi;
 	CODENAMEGAEACORE_API extern const FName WaveShine;
+
+	// EONFORM high-level Terrain composites.
+	CODENAMEGAEACORE_API extern const FName Mountain;
+
 	CODENAMEGAEACORE_API extern const FName TerrainShape;
 	CODENAMEGAEACORE_API extern const FName TerrainContext;
 	CODENAMEGAEACORE_API extern const FName Geology;
