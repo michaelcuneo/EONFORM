@@ -4,10 +4,12 @@
 #include "Framework/Application/SlateApplication.h"
 #include "Framework/Commands/UIAction.h"
 #include "Framework/Docking/TabManager.h"
+#include "GaeaEditorStyle.h"
 #include "GaeaTerrainGraphNode.h"
 #include "GaeaTerrainGraphPin.h"
 #include "SGaeaTerrainInspector.h"
 #include "SGaeaTerrainOutputPanel.h"
+#include "Styling/SlateIcon.h"
 #include "ToolMenus.h"
 #include "Widgets/Docking/SDockTab.h"
 
@@ -23,6 +25,8 @@ class FCodenameGaeaEditorModule : public IModuleInterface
 public:
 	virtual void StartupModule() override
 	{
+		FGaeaEditorStyle::Initialize();
+
 		TerrainGraphNodeFactory = MakeShared<FGaeaTerrainGraphNodeFactory>();
 		FEdGraphUtilities::RegisterVisualNodeFactory(TerrainGraphNodeFactory);
 
@@ -34,6 +38,7 @@ public:
 			FOnSpawnTab::CreateRaw(this, &FCodenameGaeaEditorModule::SpawnCodenameGaeaTab))
 			.SetDisplayName(LOCTEXT("CodenameGaeaTabTitle", "EONFORM"))
 			.SetTooltipText(LOCTEXT("CodenameGaeaTabTooltip", "Open the EONFORM terrain authoring workspace."))
+			.SetIcon(FSlateIcon(FGaeaEditorStyle::GetStyleSetName(), TEXT("EONFORM.Tab")))
 			.SetMenuType(ETabSpawnerMenuType::Hidden);
 
 		UToolMenus::RegisterStartupCallback(
@@ -61,6 +66,8 @@ public:
 		{
 			FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(CodenameGaeaTabName);
 		}
+
+		FGaeaEditorStyle::Shutdown();
 	}
 
 private:
@@ -73,7 +80,7 @@ private:
 			TEXT("OpenCodenameGaea"),
 			LOCTEXT("OpenCodenameGaeaLabel", "EONFORM"),
 			LOCTEXT("OpenCodenameGaeaTooltip", "Open the EONFORM terrain authoring workspace."),
-			FSlateIcon(),
+			FSlateIcon(FGaeaEditorStyle::GetStyleSetName(), TEXT("EONFORM.Open")),
 			FUIAction(FExecuteAction::CreateRaw(this, &FCodenameGaeaEditorModule::OpenCodenameGaeaTab)));
 	}
 
