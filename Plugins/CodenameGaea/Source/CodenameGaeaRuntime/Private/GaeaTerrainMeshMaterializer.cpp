@@ -7,6 +7,7 @@
 
 using UE::Geometry::FDynamicMesh3;
 using UE::Geometry::FDynamicMeshColorOverlay;
+using UE::Geometry::FIndex3i;
 using UE::Geometry::FMeshNormals;
 
 namespace
