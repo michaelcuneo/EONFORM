@@ -281,7 +281,7 @@ FText SGaeaTerrainOutputPanel::GetGenerateButtonText() const
 {
 	if (bGenerateQueued)
 	{
-		return FText::FromString(TEXT("Generate Terrain (waiting for analysis...)"));
+		return FText::FromString(TEXT("Generate Terrain (waiting for terrain...)"));
 	}
 	return FText::FromString(TEXT("Generate Terrain"));
 }
@@ -290,34 +290,32 @@ FReply SGaeaTerrainOutputPanel::GenerateTerrain()
 {
 	FGaeaTerrainOutputEditorState& State = FGaeaTerrainOutputEditorState::Get();
 
+	// A published base terrain is generation-safe even while derived hydrology is
+	// still running. Do not make the output button wait for analysis enrichment.
+	if (State.IsAnalysisAvailable())
+	{
+		if (!GenerateAvailableTerrain()) bGenerateQueued = true;
+		return FReply::Handled();
+	}
+
 	if (!State.GetAnalysisError().IsEmpty() && !State.IsAnalysisPending())
 	{
 		FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(FString::Printf(
-			TEXT("EONFORM terrain analysis failed: %s"),
+			TEXT("EONFORM terrain evaluation failed: %s"),
 			*State.GetAnalysisError())));
 		return FReply::Handled();
 	}
 
-	if (State.IsAnalysisPending() || !State.IsAnalysisAvailable())
-	{
-		bGenerateQueued = true;
-		return FReply::Handled();
-	}
-
-	if (!GenerateAvailableTerrain())
-	{
-		// Analysis state and registry publication are completed on the game thread,
-		// but if they are observed between operations simply queue until the exact
-		// published revision is visible. Never fall back to an older snapshot.
-		bGenerateQueued = true;
-	}
+	// The graph evaluator has not produced terrain yet. Remember the user's click
+	// and fulfil it automatically as soon as the first valid final revision lands.
+	bGenerateQueued = true;
 	return FReply::Handled();
 }
 
 bool SGaeaTerrainOutputPanel::GenerateAvailableTerrain()
 {
 	const FGaeaTerrainOutputEditorState& State = FGaeaTerrainOutputEditorState::Get();
-	if (!State.IsAnalysisAvailable() || State.IsAnalysisPending())
+	if (!State.IsAnalysisAvailable())
 	{
 		return false;
 	}
@@ -374,20 +372,23 @@ void SGaeaTerrainOutputPanel::Tick(
 	if (!bGenerateQueued) return;
 
 	FGaeaTerrainOutputEditorState& State = FGaeaTerrainOutputEditorState::Get();
+
+	// The first valid terrain revision is enough to honour the queued request.
+	// Hydrology may still be enriching the published snapshot in parallel.
+	if (State.IsAnalysisAvailable())
+	{
+		if (GenerateAvailableTerrain()) bGenerateQueued = false;
+		return;
+	}
+
 	if (State.IsAnalysisPending()) return;
 
 	if (!State.GetAnalysisError().IsEmpty())
 	{
 		bGenerateQueued = false;
 		FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(FString::Printf(
-			TEXT("EONFORM terrain analysis failed: %s"),
+			TEXT("EONFORM terrain evaluation failed: %s"),
 			*State.GetAnalysisError())));
-		return;
-	}
-
-	if (State.IsAnalysisAvailable() && GenerateAvailableTerrain())
-	{
-		bGenerateQueued = false;
 	}
 }
 
