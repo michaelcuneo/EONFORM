@@ -151,7 +151,11 @@ void UGaeaEditorGraphNode::AllocateDefaultPins()
 	}
 	for (const FGaeaTerrainPortDescriptor& Output : Descriptor.Outputs)
 	{
-		const FName EditorPinName = Output.Name == TEXT("Out") ? TerrainPinName : Output.Name;
+		// Only terrain Out pins use the editor's historical "Terrain" alias.
+		// Scalar/Color/Any Out pins must retain their real identity or an exact
+		// terrain passthrough on the same node can shadow them during evaluation.
+		const bool bTerrainOutAlias = Output.Name == TEXT("Out") && Output.DataType == TEXT("Terrain");
+		const FName EditorPinName = bTerrainOutAlias ? TerrainPinName : Output.Name;
 		UEdGraphPin* Pin = CreatePin(EGPD_Output, PinCategoryForDataType(Output.DataType), EditorPinName, PinParams);
 		if (Pin) Pin->PinFriendlyName = FriendlyPinName(Output, EGPD_Output);
 	}
