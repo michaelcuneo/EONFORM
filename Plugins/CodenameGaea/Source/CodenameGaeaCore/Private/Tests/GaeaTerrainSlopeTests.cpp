@@ -29,12 +29,13 @@ namespace
 		FGaeaTerrainNode Erosion;
 		Erosion.Id = FGuid(0x33000001, 0x33000002, 0x33000003, 0x33000004);
 		Erosion.Type = GaeaTerrainNodeTypes::HydraulicErosion;
-		Erosion.IntegerParameters.Add(TEXT("Iterations"), 8);
-		Erosion.NumericParameters.Add(TEXT("Rainfall"), 0.03);
-		Erosion.NumericParameters.Add(TEXT("Strength"), 1.5);
+		Erosion.IntegerParameters.Add(TEXT("Duration"), 12);
+		Erosion.NumericParameters.Add(TEXT("Strength"), 2.0);
+		Erosion.NumericParameters.Add(TEXT("Volume"), 1.5);
 		if (bUseSlopeMask)
 		{
-			Erosion.NameParameters.Add(TEXT("SelectiveProcessing"), TEXT("ErosionStrength"));
+			Erosion.NameParameters.Add(TEXT("AreaEffect"), TEXT("Erosion Strength"));
+			Erosion.NumericParameters.Add(TEXT("Bias"), 0.0);
 		}
 
 		Recipe.Nodes.Add(Source);
@@ -61,7 +62,7 @@ namespace
 			MaskConnection.FromNode = Slope.Id;
 			MaskConnection.FromOutput = TEXT("Mask");
 			MaskConnection.ToNode = Erosion.Id;
-			MaskConnection.ToInput = TEXT("Mask");
+			MaskConnection.ToInput = TEXT("Area");
 			Recipe.Connections.Add(MaskConnection);
 		}
 
