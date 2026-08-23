@@ -1,5 +1,10 @@
 #include "GaeaTerrainDataset.h"
 
+namespace
+{
+	const FName HeightFieldName(TEXT("Height"));
+}
+
 bool FGaeaTerrainDataset::IsEmpty() const
 {
 	return ScalarFields.IsEmpty();
@@ -27,7 +32,13 @@ bool FGaeaTerrainDataset::SetScalarField(const FGaeaScalarField& Field)
 		return false;
 	}
 
-	ScalarFields.Add(Field.Descriptor.Name, Field);
+	const FName Name = Field.Descriptor.Name;
+	if (Name == HeightFieldName)
+	{
+		InvalidateHeightDerivedFields();
+	}
+	ScalarFields.Add(Name, Field);
+	HeightDerivedFields.Remove(Name);
 	return true;
 }
 
@@ -39,18 +50,79 @@ bool FGaeaTerrainDataset::SetScalarField(FGaeaScalarField&& Field)
 	}
 
 	const FName Name = Field.Descriptor.Name;
+	if (Name == HeightFieldName)
+	{
+		InvalidateHeightDerivedFields();
+	}
 	ScalarFields.Add(Name, MoveTemp(Field));
+	HeightDerivedFields.Remove(Name);
 	return true;
+}
+
+bool FGaeaTerrainDataset::SetHeightDerivedScalarField(const FGaeaScalarField& Field)
+{
+	if (!Field.IsValid() || Field.Descriptor.Name.IsNone() || Field.Descriptor.Name == HeightFieldName)
+	{
+		return false;
+	}
+
+	const FName Name = Field.Descriptor.Name;
+	ScalarFields.Add(Name, Field);
+	HeightDerivedFields.Add(Name);
+	return true;
+}
+
+bool FGaeaTerrainDataset::SetHeightDerivedScalarField(FGaeaScalarField&& Field)
+{
+	if (!Field.IsValid() || Field.Descriptor.Name.IsNone() || Field.Descriptor.Name == HeightFieldName)
+	{
+		return false;
+	}
+
+	const FName Name = Field.Descriptor.Name;
+	ScalarFields.Add(Name, MoveTemp(Field));
+	HeightDerivedFields.Add(Name);
+	return true;
+}
+
+bool FGaeaTerrainDataset::IsHeightDerivedScalarField(FName Name) const
+{
+	return HeightDerivedFields.Contains(Name);
+}
+
+bool FGaeaTerrainDataset::MarkScalarFieldHeightDerived(FName Name)
+{
+	if (Name.IsNone() || Name == HeightFieldName || !ScalarFields.Contains(Name))
+	{
+		return false;
+	}
+	HeightDerivedFields.Add(Name);
+	return true;
+}
+
+int32 FGaeaTerrainDataset::InvalidateHeightDerivedFields()
+{
+	int32 Removed = 0;
+	TArray<FName> Names;
+	HeightDerivedFields.GenerateKeyArray(Names);
+	for (const FName Name : Names)
+	{
+		Removed += ScalarFields.Remove(Name);
+	}
+	HeightDerivedFields.Reset();
+	return Removed;
 }
 
 bool FGaeaTerrainDataset::RemoveScalarField(FName Name)
 {
+	HeightDerivedFields.Remove(Name);
 	return ScalarFields.Remove(Name) > 0;
 }
 
 void FGaeaTerrainDataset::Reset()
 {
 	ScalarFields.Reset();
+	HeightDerivedFields.Reset();
 }
 
 void FGaeaTerrainDataset::GetScalarFieldNames(TArray<FName>& OutNames) const
