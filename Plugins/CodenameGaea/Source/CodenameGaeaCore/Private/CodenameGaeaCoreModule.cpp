@@ -50,6 +50,7 @@
 #include "GaeaTerraceNode.h"
 #include "GaeaTerrainNodeDescriptor.h"
 #include "GaeaTerrainRecipe.h"
+#include "GaeaTerrainSemanticNodes.h"
 #include "GaeaThermalErosionNode.h"
 #include "GaeaThresholdNode.h"
 #include "GaeaTransformNode.h"
@@ -117,6 +118,7 @@ public:
 		RegisterGaeaAngleNode();
 		RegisterGaeaSlopeNode();
 		RegisterGaeaFlowMapNodes();
+		RegisterGaeaTerrainSemanticNodes();
 		RegisterGaeaCombineNode();
 		RegisterGaeaClampNode();
 
