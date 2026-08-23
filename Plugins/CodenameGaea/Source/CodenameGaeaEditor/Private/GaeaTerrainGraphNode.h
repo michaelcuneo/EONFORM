@@ -7,6 +7,7 @@
 class SGraphPin;
 class UEdGraphNode;
 class UEdGraphPin;
+enum class EGaeaEditorGraphActivity : uint8;
 
 /**
  * Explicit visual node for Codename Gaea terrain nodes.
@@ -31,6 +32,7 @@ private:
 	FSlateColor GetSolveGlowColor() const;
 	FSlateColor GetSolveStatusColor() const;
 	FText GetSolveStatusText() const;
+	EGaeaEditorGraphActivity LastObservedActivity;
 };
 
 class FGaeaTerrainGraphNodeFactory final : public FGraphPanelNodeFactory
