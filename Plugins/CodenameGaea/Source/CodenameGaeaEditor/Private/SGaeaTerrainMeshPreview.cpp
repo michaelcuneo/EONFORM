@@ -150,12 +150,11 @@ void SGaeaTerrainMeshPreview::SetTerrain(const FGaeaTerrainDatasetSnapshot& Snap
 	PreviewMeshComponent->SetMesh(MoveTemp(Mesh));
 	PreviewMeshComponent->SetColorOverrideMode(
 		bHasBaseColor ? EDynamicMeshComponentColorOverrideMode::VertexColors : EDynamicMeshComponentColorOverrideMode::None);
-	StatusText = FText::FromString(FString::Printf(
-		bHasBaseColor
-			? TEXT("Preview %d vertices   %d triangles   SatMap color   sea level 0 m")
-			: TEXT("Preview %d vertices   %d triangles   sea level 0 m"),
-		VertexCount,
-		TriangleCount));
+
+	const FString PreviewStatus = bHasBaseColor
+		? FString::Printf(TEXT("Preview %d vertices   %d triangles   SatMap color   sea level 0 m"), VertexCount, TriangleCount)
+		: FString::Printf(TEXT("Preview %d vertices   %d triangles   sea level 0 m"), VertexCount, TriangleCount);
+	StatusText = FText::FromString(PreviewStatus);
 	FrameTerrain();
 }
 
