@@ -254,14 +254,9 @@ namespace
 		}
 
 		// The new Height invalidates analysis of the pre-erosion surface. Rebuild
-		// intrinsic context and drainage against the actual eroded terrain before
-		// publishing downstream, while preserving authored geology/process fields.
+		// only cheap intrinsic context here. Drainage remains demand-driven and is
+		// derived later only when a downstream node actually requests hydrology.
 		if (!FGaeaTerrainDerivedData::EnsureContext(
-			PreparedDataset,
-			FMath::Max(Input->HeightScale, 1.0f),
-			Context.PhysicalMetrics,
-			&Error)) return false;
-		if (!FGaeaTerrainDerivedData::EnsureHydrology(
 			PreparedDataset,
 			FMath::Max(Input->HeightScale, 1.0f),
 			Context.PhysicalMetrics,
