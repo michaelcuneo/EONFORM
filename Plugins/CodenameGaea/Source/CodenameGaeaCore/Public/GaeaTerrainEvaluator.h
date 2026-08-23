@@ -42,17 +42,20 @@ struct CODENAMEGAEACORE_API FGaeaTerrainNodeEvaluation
 
 	const FGaeaTerrainValue* FindOutput(FName Name) const
 	{
-		// Gaea-facing terrain nodes use "Out". Older built-in nodes still publish
-		// their terrain value under "Terrain", so final-output resolution accepts
-		// both without forcing new nodes to expose the wrong public pin name.
+		// Prefer an exact pin match first. Some Derive nodes expose a terrain
+		// passthrough named "Terrain" and a scalar result named "Out".
+		if (const FGaeaTerrainValue* Exact = Outputs.Find(Name))
+		{
+			return Exact;
+		}
+
+		// Compatibility fallback for modern Gaea-facing nodes whose terrain output
+		// is named "Out" rather than "Terrain".
 		if (Name == TEXT("Terrain"))
 		{
-			if (const FGaeaTerrainValue* OutValue = Outputs.Find(TEXT("Out")))
-			{
-				return OutValue;
-			}
+			return Outputs.Find(TEXT("Out"));
 		}
-		return Outputs.Find(Name);
+		return nullptr;
 	}
 };
 
