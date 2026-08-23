@@ -28,7 +28,7 @@ bool FGaeaTerrainSoftClipDescriptorTest::RunTest(const FString& Parameters)
 	FGaeaTerrainNodeDescriptor Descriptor;
 	TestTrue(TEXT("SoftClip descriptor exists"), FGaeaTerrainNodeDescriptorRegistry::Get(GaeaTerrainNodeTypes::SoftClip, Descriptor));
 	TestEqual(TEXT("SoftClip display name"), Descriptor.DisplayName, FString(TEXT("SoftClip")));
-	TestEqual(TEXT("SoftClip category"), Descriptor.Category, FString(TEXT("Profile")));
+	TestEqual(TEXT("SoftClip category"), Descriptor.Category, FString(TEXT("Modify")));
 	TestEqual(TEXT("SoftClip input count"), Descriptor.Inputs.Num(), 1);
 	TestEqual(TEXT("SoftClip output count"), Descriptor.Outputs.Num(), 1);
 	TestEqual(TEXT("SoftClip parameter count"), Descriptor.Parameters.Num(), 4);
@@ -39,6 +39,14 @@ bool FGaeaTerrainSoftClipDescriptorTest::RunTest(const FString& Parameters)
 	if (Descriptor.Outputs.Num() == 1)
 	{
 		TestEqual(TEXT("SoftClip output pin"), Descriptor.Outputs[0].Name, FName(TEXT("Out")));
+	}
+	const FGaeaTerrainParameterDescriptor* ClipMode = Descriptor.Parameters.FindByPredicate(
+		[](const FGaeaTerrainParameterDescriptor& P) { return P.Name == FName(TEXT("ClipMode")); });
+	TestNotNull(TEXT("SoftClip ClipMode parameter exists"), ClipMode);
+	if (ClipMode)
+	{
+		TestTrue(TEXT("SoftClip supports Above Threshold"), ClipMode->NameOptions.Contains(TEXT("Above Threshold")));
+		TestTrue(TEXT("SoftClip supports Below Threshold"), ClipMode->NameOptions.Contains(TEXT("Below Threshold")));
 	}
 	return true;
 }
@@ -64,7 +72,7 @@ bool FGaeaTerrainSoftClipTerminalTest::RunTest(const FString& Parameters)
 	FGaeaTerrainNode SoftClip;
 	SoftClip.Id = FGuid(0xD2000001, 0xD2000002, 0xD2000003, 0xD2000004);
 	SoftClip.Type = GaeaTerrainNodeTypes::SoftClip;
-	SoftClip.NameParameters.Add(TEXT("ClipMode"), TEXT("AboveThreshold"));
+	SoftClip.NameParameters.Add(TEXT("ClipMode"), TEXT("Above Threshold"));
 	SoftClip.NumericParameters.Add(TEXT("Threshold"), 0.5);
 	SoftClip.NumericParameters.Add(TEXT("Softness"), 0.1);
 	SoftClip.NumericParameters.Add(TEXT("Clipping"), 1.0);
