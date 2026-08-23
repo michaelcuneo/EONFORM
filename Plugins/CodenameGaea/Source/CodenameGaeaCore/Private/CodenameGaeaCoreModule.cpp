@@ -40,6 +40,7 @@
 #include "GaeaRadialGradientNode.h"
 #include "GaeaRecurveNode.h"
 #include "GaeaReferenceFidelityNodes.h"
+#include "GaeaReferenceFidelityExtendedNodes.h"
 #include "GaeaShaperNode.h"
 #include "GaeaSharpenNode.h"
 #include "GaeaSimulateEvolutionNodes.h"
@@ -274,6 +275,7 @@ public:
 		// Audited Gaea-facing implementations register last so descriptor and
 		// evaluator fidelity wins over older compatibility implementations.
 		RegisterGaeaReferenceFidelityNodes();
+		RegisterGaeaReferenceFidelityExtendedNodes();
 	}
 };
 
