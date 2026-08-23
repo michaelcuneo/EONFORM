@@ -7,6 +7,13 @@ namespace GaeaTerrainProceduralOps
 {
 	namespace
 	{
+		// Gaea's RawNoise implementation uses FastNoiseSIMD. Its packed constants
+		// still hide the exact product used by SetFrequency and its perturb amplitude.
+		// Keep those two unresolved calibration values isolated here; all surrounding
+		// coordinate, scale, cellular-return and 0..1 mapping semantics are now explicit.
+		constexpr float RawNoiseFeatureCycles = 12.0f;
+		constexpr float RawNoisePerturbFraction = 0.06f;
+
 		uint32 Hash(uint32 X)
 		{
 			X ^= X >> 16;
@@ -67,12 +74,43 @@ namespace GaeaTerrainProceduralOps
 			float Weight = 0.0f;
 			for (int32 I = 0; I < FMath::Max(Octaves, 1); ++I)
 			{
-				Sum += Perlin(X * Frequency, Y * Frequency, Seed + I * 1013, Salt + I * 7919u) * Amplitude;
+				Sum += Perlin(X * Frequency, Y * Frequency, Seed + I, Salt) * Amplitude;
 				Weight += Amplitude;
 				Frequency *= 2.0f;
 				Amplitude *= Gain;
 			}
 			return Weight > UE_SMALL_NUMBER ? Sum / Weight : 0.0f;
+		}
+
+		float PerlinBillow(float X, float Y, int32 Octaves, float Gain, int32 Seed, uint32 Salt)
+		{
+			float Frequency = 1.0f;
+			float Amplitude = 1.0f;
+			float Sum = 0.0f;
+			float Weight = 0.0f;
+			for (int32 I = 0; I < FMath::Max(Octaves, 1); ++I)
+			{
+				const float N = FMath::Abs(Perlin(X * Frequency, Y * Frequency, Seed + I, Salt)) * 2.0f - 1.0f;
+				Sum += N * Amplitude;
+				Weight += Amplitude;
+				Frequency *= 2.0f;
+				Amplitude *= Gain;
+			}
+			return Weight > UE_SMALL_NUMBER ? Sum / Weight : 0.0f;
+		}
+
+		float PerlinRigidMulti(float X, float Y, int32 Octaves, float Gain, int32 Seed, uint32 Salt)
+		{
+			float Frequency = 1.0f;
+			float Amplitude = 1.0f;
+			float Result = 1.0f - FMath::Abs(Perlin(X, Y, Seed, Salt));
+			for (int32 I = 1; I < FMath::Max(Octaves, 1); ++I)
+			{
+				Frequency *= 2.0f;
+				Amplitude *= Gain;
+				Result -= (1.0f - FMath::Abs(Perlin(X * Frequency, Y * Frequency, Seed + I, Salt))) * Amplitude;
+			}
+			return Result;
 		}
 
 		float MirrorCoord(float V, int32 MaxIndex)
@@ -115,7 +153,18 @@ namespace GaeaTerrainProceduralOps
 			float F1 = TNumericLimits<float>::Max();
 			float F2 = TNumericLimits<float>::Max();
 			float Cell = 0.0f;
+			float FeatureX = 0.0f;
+			float FeatureY = 0.0f;
 		};
+
+		float CellularDistance(float DX, float DY, FName Function)
+		{
+			const float Euclidean = DX * DX + DY * DY;
+			const float Manhattan = FMath::Abs(DX) + FMath::Abs(DY);
+			if (Function == TEXT("Manhattan")) return Manhattan;
+			if (Function == TEXT("Natural")) return Euclidean * Manhattan;
+			return Euclidean;
+		}
 
 		FVoronoiSample SampleVoronoi(float X, float Y, float Jitter, FName Function, int32 Seed)
 		{
@@ -126,16 +175,18 @@ namespace GaeaTerrainProceduralOps
 			{
 				for (int32 CX = BX - 2; CX <= BX + 2; ++CX)
 				{
-					const float FX = static_cast<float>(CX) + 0.5f + (Hash01(CX, CY, Seed, 0x17u) - 0.5f) * Jitter;
-					const float FY = static_cast<float>(CY) + 0.5f + (Hash01(CY, CX, Seed, 0x91u) - 0.5f) * Jitter;
-					const float DX = X - FX;
-					const float DY = Y - FY;
-					const float D = Function == TEXT("Manhattan") ? FMath::Abs(DX) + FMath::Abs(DY) : FMath::Sqrt(DX * DX + DY * DY);
+					const float Angle = Hash01(CX, CY, Seed, 0x17u) * 2.0f * PI;
+					const float Radius = Jitter * (0.72f + Hash01(CY, CX, Seed, 0x91u) * 0.28f);
+					const float FeatureX = static_cast<float>(CX) + FMath::Cos(Angle) * Radius;
+					const float FeatureY = static_cast<float>(CY) + FMath::Sin(Angle) * Radius;
+					const float D = CellularDistance(X - FeatureX, Y - FeatureY, Function);
 					if (D < S.F1)
 					{
 						S.F2 = S.F1;
 						S.F1 = D;
-						S.Cell = Hash01(CX, CY, Seed, 0x71u);
+						S.Cell = Hash01(CX, CY, Seed, 0x71u) * 2.0f - 1.0f;
+						S.FeatureX = FeatureX;
+						S.FeatureY = FeatureY;
 					}
 					else if (D < S.F2)
 					{
@@ -146,20 +197,27 @@ namespace GaeaTerrainProceduralOps
 			return S;
 		}
 
-		float VoronoiForm(const FVoronoiSample& S, FName Form)
+		float VoronoiRawForm(float X, float Y, const FVoronoiSample& S, FName Form, float Jitter, FName Function, int32 Seed, float LookupFrequency)
 		{
-			const float Peak = FMath::Clamp(1.0f - S.F1, 0.0f, 1.0f);
-			const float Neighbor = FMath::Clamp(1.0f - S.F2 * 0.72f, 0.0f, 1.0f);
-			const float EdgeDistance = FMath::Max(S.F2 - S.F1, 0.0f);
-			const float Ridge = FMath::Clamp(1.0f - EdgeDistance * 2.15f, 0.0f, 1.0f);
+			// RawNoise maps FastNoiseSIMD's signed/raw cellular result with
+			// 0.5 + value * 0.5. These letters are Gaea's enum-to-FNSIMD mapping:
+			// C=CellValue, R=Distance, A=Distance2, P=Distance2Add,
+			// S=Distance2Mul, M=Distance2Div, D=NoiseLookup, N=Distance2Cave.
 			if (Form == TEXT("C")) return S.Cell;
-			if (Form == TEXT("N")) return Neighbor;
-			if (Form == TEXT("R")) return FMath::Pow(Ridge, 1.45f);
-			if (Form == TEXT("S")) return FMath::Pow(Peak, 2.45f) * FMath::Pow(FMath::Clamp(EdgeDistance * 2.0f, 0.0f, 1.0f), 0.42f);
-			if (Form == TEXT("M")) return FMath::Clamp(Peak * (0.62f + S.Cell * 0.68f), 0.0f, 1.0f);
-			if (Form == TEXT("D")) return FMath::Pow(Ridge, 2.15f);
-			if (Form == TEXT("A")) return FMath::Clamp(FMath::Lerp(FMath::Pow(Peak, 1.34f), Peak * (0.62f + S.Cell * 0.68f), 0.5f), 0.0f, 1.0f);
-			return FMath::Clamp(FMath::Pow(Peak, 1.34f) * FMath::Lerp(0.72f, 1.20f, S.Cell), 0.0f, 1.0f);
+			if (Form == TEXT("R")) return S.F1;
+			if (Form == TEXT("A")) return S.F2;
+			if (Form == TEXT("P")) return S.F1 + S.F2;
+			if (Form == TEXT("S")) return S.F1 * S.F2;
+			if (Form == TEXT("M")) return S.F1 / FMath::Max(S.F2, UE_SMALL_NUMBER);
+			if (Form == TEXT("D")) return Perlin(S.FeatureX * LookupFrequency, S.FeatureY * LookupFrequency, Seed, 0x4d31u);
+			if (Form == TEXT("N"))
+			{
+				const float C0 = S.F1 / FMath::Max(S.F2, UE_SMALL_NUMBER);
+				const FVoronoiSample S1 = SampleVoronoi(X + 0.5f, Y + 0.5f, Jitter, Function, Seed + 1);
+				const float C1 = S1.F1 / FMath::Max(S1.F2, UE_SMALL_NUMBER);
+				return FMath::Min(C0, C1);
+			}
+			return S.F1 + S.F2;
 		}
 
 		FName CanonicalWarpType(FName Type)
@@ -175,12 +233,23 @@ namespace GaeaTerrainProceduralOps
 			Type = CanonicalWarpType(Type);
 			if (Type == TEXT("Perlin FBM")) return PerlinFractal(U, V, Octaves, Roughness, Seed, Salt);
 			const FVoronoiSample S = SampleVoronoi(U, V, Jitter, TEXT("Euclidean"), Seed + static_cast<int32>(Salt));
-			if (Type == TEXT("Voronoi R")) return VoronoiForm(S, TEXT("R")) * 2.0f - 1.0f;
-			if (Type == TEXT("Voronoi A")) return VoronoiForm(S, TEXT("A")) * 2.0f - 1.0f;
-			if (Type == TEXT("Voronoi S")) return VoronoiForm(S, TEXT("S")) * 2.0f - 1.0f;
-			if (Type == TEXT("Voronoi M")) return VoronoiForm(S, TEXT("M")) * 2.0f - 1.0f;
-			if (Type == TEXT("Voronoi D")) return VoronoiForm(S, TEXT("D")) * 2.0f - 1.0f;
-			return VoronoiForm(S, TEXT("P")) * 2.0f - 1.0f;
+			const FName Form = Type == TEXT("Voronoi R") ? TEXT("R")
+				: Type == TEXT("Voronoi A") ? TEXT("A")
+				: Type == TEXT("Voronoi S") ? TEXT("S")
+				: Type == TEXT("Voronoi M") ? TEXT("M")
+				: Type == TEXT("Voronoi D") ? TEXT("D")
+				: TEXT("P");
+			const float Raw = VoronoiRawForm(U, V, S, Form, Jitter, TEXT("Euclidean"), Seed, 0.2f);
+			return FMath::Clamp(Raw, -1.0f, 1.0f);
+		}
+
+		float PerturbNoise(float RawX, float RawY, FName WarpType, float Frequency, int32 Octaves, int32 Seed, uint32 Salt)
+		{
+			if (WarpType == TEXT("None")) return 0.0f;
+			const float PX = RawX * Frequency;
+			const float PY = RawY * Frequency;
+			if (WarpType == TEXT("Simple")) return Perlin(PX, PY, Seed, Salt);
+			return PerlinFractal(PX, PY, FMath::Max(Octaves, 1), 0.5f, Seed, Salt);
 		}
 
 		void MakeHeightDescriptor(FGaeaFieldDescriptor& Descriptor)
@@ -198,39 +267,46 @@ namespace GaeaTerrainProceduralOps
 			if (OutError) *OutError = TEXT("Voronoi requires a valid domain.");
 			return false;
 		}
+
 		FGaeaFieldDescriptor Descriptor;
 		MakeHeightDescriptor(Descriptor);
 		OutField.Initialize(Domain, Descriptor, 0.0f);
 		const int32 W = Domain.Dimensions.X;
 		const int32 H = Domain.Dimensions.Y;
+		const float Resolution = static_cast<float>(W);
 		const float Scale = FMath::Clamp(Settings.Scale, 0.0001f, 4.0f);
-		const float BaseFrequency = 18.0f * Scale;
-		const bool bWarp = Settings.WarpType != TEXT("None") && Settings.WarpAmplitude > UE_SMALL_NUMBER;
+		const float MainFrequency = Scale * RawNoiseFeatureCycles / FMath::Max(Resolution, 1.0f);
+		const float LookupFrequency = Scale;
+		const float PerturbPixels = Settings.WarpAmplitude * Resolution * RawNoisePerturbFraction;
+
 		for (int32 Y = 0; Y < H; ++Y)
 		{
-			const float V = H > 1 ? static_cast<float>(Y) / static_cast<float>(H - 1) - 0.5f : 0.0f;
+			const float RawYBase = (H > 1 ? static_cast<float>(Y) / static_cast<float>(H - 1) - 0.5f : 0.0f) * Resolution;
 			for (int32 X = 0; X < W; ++X)
 			{
-				const float U = W > 1 ? static_cast<float>(X) / static_cast<float>(W - 1) - 0.5f : 0.0f;
-				float PX = (U + Settings.X) * BaseFrequency * Settings.ScaleX;
-				float PY = (V + Settings.Y) * BaseFrequency * Settings.ScaleY;
-				if (bWarp)
+				const float RawXBase = (W > 1 ? static_cast<float>(X) / static_cast<float>(W - 1) - 0.5f : 0.0f) * Resolution;
+				float RawX = RawXBase;
+				float RawY = RawYBase;
+
+				if (Settings.WarpType != TEXT("None") && Settings.WarpAmplitude > UE_SMALL_NUMBER)
 				{
-					const float F = FMath::Max(Settings.WarpFrequency, 0.0001f) * 3.5f;
-					const int32 O = FMath::Clamp(Settings.WarpOctaves, 1, 14);
-					const float R = Settings.WarpType == TEXT("Complex") ? 0.58f : 0.48f;
-					PX += PerlinFractal(U * F, V * F, O, R, Settings.Seed + 1201, 0x31u) * Settings.WarpAmplitude * 2.2f;
-					PY += PerlinFractal(U * F, V * F, O, R, Settings.Seed + 2707, 0x57u) * Settings.WarpAmplitude * 2.2f;
+					const float WX = PerturbNoise(RawXBase, RawYBase, Settings.WarpType, Settings.WarpFrequency, Settings.WarpOctaves, Settings.Seed + 1201, 0x31u);
+					const float WY = PerturbNoise(RawXBase, RawYBase, Settings.WarpType, Settings.WarpFrequency, Settings.WarpOctaves, Settings.Seed + 2707, 0x57u);
+					RawX += WX * PerturbPixels;
+					RawY += WY * PerturbPixels;
 				}
-				float Value = VoronoiForm(SampleVoronoi(PX, PY, Settings.Jitter, Settings.Function, Settings.Seed), Settings.Form);
-				if (!FMath::IsNearlyEqual(Settings.Gain, 0.5f))
-				{
-					const float Gamma = FMath::Lerp(2.0f, 0.5f, FMath::Clamp(Settings.Gain, 0.0f, 1.0f));
-					Value = FMath::Pow(FMath::Clamp(Value, 0.0f, 1.0f), Gamma);
-				}
-				OutField.AtInterior(X, Y) = FMath::Clamp(Value, 0.0f, 1.0f);
+
+				const float PX = (RawX * MainFrequency + Settings.X) * Settings.ScaleX;
+				const float PY = (RawY * MainFrequency + Settings.Y) * Settings.ScaleY;
+				const FVoronoiSample S = SampleVoronoi(PX, PY, Settings.Jitter, Settings.Function, Settings.Seed);
+				const float Raw = VoronoiRawForm(PX, PY, S, Settings.Form, Settings.Jitter, Settings.Function, Settings.Seed, LookupFrequency);
+
+				// Noises.Voronoi exposes Gain, but the supplied implementation does not
+				// forward it to RawNoise.Voronoi. Preserve that behavior deliberately.
+				OutField.AtInterior(X, Y) = 0.5f + Raw * 0.5f;
 			}
 		}
+
 		if (OutError) OutError->Reset();
 		return OutField.IsValid();
 	}
@@ -242,34 +318,49 @@ namespace GaeaTerrainProceduralOps
 			if (OutError) *OutError = TEXT("Perlin requires a valid domain.");
 			return false;
 		}
+
 		FGaeaFieldDescriptor Descriptor;
 		MakeHeightDescriptor(Descriptor);
 		OutField.Initialize(Domain, Descriptor, 0.0f);
 		const int32 W = Domain.Dimensions.X;
 		const int32 H = Domain.Dimensions.Y;
-		const float Frequency = 1.0f / FMath::Max(Settings.Scale, 0.0001f);
+		const float Resolution = static_cast<float>(W);
+
+		// RawNoise.Perlin explicitly does Scale = 1 - Scale before SetFrequency.
+		const float ScaleTerm = FMath::Max(1.0f - FMath::Clamp(Settings.Scale, 0.0f, 1.0f), 0.0001f);
+		const float MainFrequency = ScaleTerm * RawNoiseFeatureCycles / FMath::Max(Resolution, 1.0f);
+		const float PerturbPixels = Settings.WarpAmplitude * Resolution * RawNoisePerturbFraction;
+		const int32 Octaves = FMath::Clamp(Settings.Octaves, 1, 14);
+		const float Gain = FMath::Clamp(Settings.Gain, 0.0f, 1.0f);
+
 		for (int32 Y = 0; Y < H; ++Y)
 		{
-			const float V = H > 1 ? static_cast<float>(Y) / static_cast<float>(H - 1) - 0.5f : 0.0f;
+			const float RawYBase = (H > 1 ? static_cast<float>(Y) / static_cast<float>(H - 1) - 0.5f : 0.0f) * Resolution;
 			for (int32 X = 0; X < W; ++X)
 			{
-				const float U = W > 1 ? static_cast<float>(X) / static_cast<float>(W - 1) - 0.5f : 0.0f;
-				float PX = (U + Settings.X) * Frequency / FMath::Max(Settings.ScaleX, 0.0001f);
-				float PY = (V + Settings.Y) * Frequency / FMath::Max(Settings.ScaleY, 0.0001f);
+				const float RawXBase = (W > 1 ? static_cast<float>(X) / static_cast<float>(W - 1) - 0.5f : 0.0f) * Resolution;
+				float RawX = RawXBase;
+				float RawY = RawYBase;
+
 				if (Settings.WarpType != TEXT("None") && Settings.WarpAmplitude > UE_SMALL_NUMBER)
 				{
-					const float WF = FMath::Max(Settings.WarpFrequency, 0.0001f) * Frequency;
-					const int32 WO = FMath::Clamp(Settings.WarpOctaves, 1, 14);
-					const float WR = Settings.WarpType == TEXT("Complex") ? 0.58f : 0.48f;
-					PX += PerlinFractal(U * WF, V * WF, WO, WR, Settings.Seed + 1301, 0x51u) * Settings.WarpAmplitude;
-					PY += PerlinFractal(U * WF, V * WF, WO, WR, Settings.Seed + 2903, 0x79u) * Settings.WarpAmplitude;
+					const float WX = PerturbNoise(RawXBase, RawYBase, Settings.WarpType, Settings.WarpFrequency, Settings.WarpOctaves, Settings.Seed + 1301, 0x51u);
+					const float WY = PerturbNoise(RawXBase, RawYBase, Settings.WarpType, Settings.WarpFrequency, Settings.WarpOctaves, Settings.Seed + 2903, 0x79u);
+					RawX += WX * PerturbPixels;
+					RawY += WY * PerturbPixels;
 				}
-				float Value = PerlinFractal(PX, PY, FMath::Clamp(Settings.Octaves, 1, 14), FMath::Clamp(Settings.Gain, 0.0f, 1.0f), Settings.Seed, 0x151u);
-				if (Settings.Type == TEXT("Ridged")) Value = 1.0f - FMath::Abs(Value);
-				else if (Settings.Type == TEXT("Billowy")) Value = FMath::Abs(Value) * 2.0f - 1.0f;
-				OutField.AtInterior(X, Y) = FMath::Clamp(Value * 0.5f + 0.5f, 0.0f, 1.0f);
+
+				const float PX = (RawX * MainFrequency + Settings.X) * Settings.ScaleX;
+				const float PY = (RawY * MainFrequency + Settings.Y) * Settings.ScaleY;
+				float Raw;
+				if (Settings.Type == TEXT("Ridged")) Raw = PerlinRigidMulti(PX, PY, Octaves, Gain, Settings.Seed, 0x151u);
+				else if (Settings.Type == TEXT("Billowy")) Raw = PerlinBillow(PX, PY, Octaves, Gain, Settings.Seed, 0x151u);
+				else Raw = PerlinFractal(PX, PY, Octaves, Gain, Settings.Seed, 0x151u);
+
+				OutField.AtInterior(X, Y) = 0.5f + Raw * 0.5f;
 			}
 		}
+
 		if (OutError) OutError->Reset();
 		return OutField.IsValid();
 	}
