@@ -4,10 +4,7 @@ namespace
 {
 	float ThermalMaskValue(const TArray<float>* Mask, int32 Index, int32 ExpectedNum)
 	{
-		if (!Mask || Mask->Num() != ExpectedNum)
-		{
-			return 1.0f;
-		}
+		if (!Mask || Mask->Num() != ExpectedNum) return 1.0f;
 		return FMath::Clamp((*Mask)[Index], 0.0f, 1.0f);
 	}
 
@@ -17,6 +14,17 @@ namespace
 			? FMath::Clamp((*RockHardness)[Index], 0.0f, 1.0f)
 			: 0.5f;
 		return FMath::Lerp(1.0f, 0.18f, Hardness);
+	}
+
+	float ThermalHash01(int32 Value)
+	{
+		uint32 H = static_cast<uint32>(Value);
+		H ^= H >> 16;
+		H *= 0x7feb352dU;
+		H ^= H >> 15;
+		H *= 0x846ca68bU;
+		H ^= H >> 16;
+		return static_cast<float>(H & 0x00ffffffU) / 16777215.0f;
 	}
 }
 
@@ -108,13 +116,18 @@ bool FGaeaThermalErosion::ApplyInPlaceWithArrays(
 
 	const float SafeStrength = FMath::Clamp(Settings.Strength, 0.0f, 1.0f);
 	const float SafeTalus = FMath::Clamp(Settings.TalusAngleDegrees, 0.0f, 89.9f);
+	const float SafeAnisotropy = FMath::Clamp(Settings.Anisotropy, 0.0f, 1.0f);
+	const float SafeSettling = FMath::Clamp(Settings.Settling, 0.0f, 1.0f);
+	const float SafeRemoval = FMath::Clamp(Settings.SedimentRemoval, 0.0f, 1.0f);
+	const int32 MaximumUsefulRadius = FMath::Max(1, FMath::Min(Dimensions.X, Dimensions.Y) / 8);
+	const int32 MaxRadius = FMath::Clamp(FMath::RoundToInt(Settings.FeatureScaleSamples), 1, FMath::Min(MaximumUsefulRadius, 96));
 	const double BaseCellSize = FMath::Max(FMath::Min(CellSize.X, CellSize.Y), static_cast<double>(UE_SMALL_NUMBER));
-	const float TalusHeight = FMath::Tan(FMath::DegreesToRadians(SafeTalus)) * static_cast<float>(BaseCellSize) / HeightScale;
+	const float TalusHeightPerCell = FMath::Tan(FMath::DegreesToRadians(SafeTalus)) * static_cast<float>(BaseCellSize) / HeightScale;
 
 	TArray<float> Delta;
 	Delta.SetNumZeroed(NumCells);
 
-	static const FIntPoint Neighbors[] =
+	static const FIntPoint Directions[] =
 	{
 		FIntPoint(-1, 0), FIntPoint(1, 0),
 		FIntPoint(0, -1), FIntPoint(0, 1),
@@ -125,6 +138,18 @@ bool FGaeaThermalErosion::ApplyInPlaceWithArrays(
 	for (int32 Iteration = 0; Iteration < Settings.Iterations; ++Iteration)
 	{
 		FMemory::Memzero(Delta.GetData(), Delta.Num() * sizeof(float));
+
+		// Cycle logarithmically through local and broad thermal scales. A physical
+		// feature scale therefore changes morphology instead of merely multiplying
+		// the strength of the same one-cell operation.
+		const int32 ScalePhase = Iteration % 8;
+		const float Phase01 = static_cast<float>(ScalePhase) / 7.0f;
+		const int32 Radius = MaxRadius <= 1
+			? 1
+			: FMath::Clamp(FMath::RoundToInt(FMath::Pow(static_cast<float>(MaxRadius), Phase01)), 1, MaxRadius);
+		const float AxisAngle = ThermalHash01(Settings.Seed + Iteration * 7919) * 2.0f * PI;
+		const FVector2D PreferredAxis(FMath::Cos(AxisAngle), FMath::Sin(AxisAngle));
+
 		for (int32 Y = 1; Y < Dimensions.Y - 1; ++Y)
 		{
 			for (int32 X = 1; X < Dimensions.X - 1; ++X)
@@ -134,40 +159,58 @@ bool FGaeaThermalErosion::ApplyInPlaceWithArrays(
 				if (LocalMask <= UE_SMALL_NUMBER) continue;
 
 				const float CenterHeight = HeightField.AtInterior(X, Y);
-				float TotalExcess = 0.0f;
-				float ExcessByNeighbor[UE_ARRAY_COUNT(Neighbors)] = {};
-				for (int32 NeighborIndex = 0; NeighborIndex < UE_ARRAY_COUNT(Neighbors); ++NeighborIndex)
+				float TotalWeightedExcess = 0.0f;
+				float WeightedExcess[UE_ARRAY_COUNT(Directions)] = {};
+				int32 NeighborX[UE_ARRAY_COUNT(Directions)] = {};
+				int32 NeighborY[UE_ARRAY_COUNT(Directions)] = {};
+
+				for (int32 NeighborIndex = 0; NeighborIndex < UE_ARRAY_COUNT(Directions); ++NeighborIndex)
 				{
-					const FIntPoint Offset = Neighbors[NeighborIndex];
-					const float NeighborHeight = HeightField.AtInterior(X + Offset.X, Y + Offset.Y);
-					const float DistanceScale = (Offset.X != 0 && Offset.Y != 0) ? UE_SQRT_2 : 1.0f;
-					const float Excess = CenterHeight - NeighborHeight - TalusHeight * DistanceScale;
-					if (Excess > 0.0f)
-					{
-						ExcessByNeighbor[NeighborIndex] = Excess;
-						TotalExcess += Excess;
-					}
+					const FIntPoint Direction = Directions[NeighborIndex];
+					const int32 NX = X + Direction.X * Radius;
+					const int32 NY = Y + Direction.Y * Radius;
+					NeighborX[NeighborIndex] = NX;
+					NeighborY[NeighborIndex] = NY;
+					if (NX < 0 || NX >= Dimensions.X || NY < 0 || NY >= Dimensions.Y) continue;
+
+					const float DistanceCells = static_cast<float>(Radius) * ((Direction.X != 0 && Direction.Y != 0) ? UE_SQRT_2 : 1.0f);
+					const float NeighborHeight = HeightField.AtInterior(NX, NY);
+					const float Excess = CenterHeight - NeighborHeight - TalusHeightPerCell * DistanceCells;
+					if (Excess <= 0.0f) continue;
+
+					const FVector2D DirectionUnit = FVector2D(static_cast<float>(Direction.X), static_cast<float>(Direction.Y)).GetSafeNormal();
+					const float AxisAlignment = FMath::Abs(FVector2D::DotProduct(DirectionUnit, PreferredAxis));
+					const float DirectionWeight = FMath::Lerp(1.0f, FMath::Lerp(0.22f, 1.0f, AxisAlignment), SafeAnisotropy);
+					WeightedExcess[NeighborIndex] = Excess * DirectionWeight;
+					TotalWeightedExcess += WeightedExcess[NeighborIndex];
 				}
-				if (TotalExcess <= UE_SMALL_NUMBER) continue;
+				if (TotalWeightedExcess <= UE_SMALL_NUMBER) continue;
 
 				const float Resistance = ThermalHardnessResistance(RockHardness, CenterIndex, NumCells);
-				const float MaterialToMove = TotalExcess * 0.5f * SafeStrength * LocalMask * Resistance;
+				const float ScaleDamping = 1.0f / FMath::Sqrt(static_cast<float>(Radius));
+				const float MaterialToMove = FMath::Min(
+					TotalWeightedExcess * 0.5f * SafeStrength * LocalMask * Resistance * ScaleDamping,
+					FMath::Max(CenterHeight + 1.0f, 0.0f) * 0.25f);
+				if (MaterialToMove <= UE_SMALL_NUMBER) continue;
+
 				Delta[CenterIndex] -= MaterialToMove;
-				for (int32 NeighborIndex = 0; NeighborIndex < UE_ARRAY_COUNT(Neighbors); ++NeighborIndex)
+				const float MaterialToSettle = MaterialToMove * (1.0f - SafeRemoval) * FMath::Lerp(0.35f, 1.0f, SafeSettling);
+				for (int32 NeighborIndex = 0; NeighborIndex < UE_ARRAY_COUNT(Directions); ++NeighborIndex)
 				{
-					const float Excess = ExcessByNeighbor[NeighborIndex];
+					const float Excess = WeightedExcess[NeighborIndex];
 					if (Excess <= 0.0f) continue;
-					const FIntPoint Offset = Neighbors[NeighborIndex];
-					const int32 NeighborStorageX = X + Offset.X + HeightField.Domain.BorderSamples;
-					const int32 NeighborStorageY = Y + Offset.Y + HeightField.Domain.BorderSamples;
-					const int32 NeighborValueIndex = HeightField.Domain.GetStorageIndex(NeighborStorageX, NeighborStorageY);
-					Delta[NeighborValueIndex] += MaterialToMove * (Excess / TotalExcess);
+					const int32 NX = NeighborX[NeighborIndex];
+					const int32 NY = NeighborY[NeighborIndex];
+					if (NX < 0 || NX >= Dimensions.X || NY < 0 || NY >= Dimensions.Y) continue;
+					const int32 NeighborValueIndex = HeightField.Domain.GetStorageIndex(NX + HeightField.Domain.BorderSamples, NY + HeightField.Domain.BorderSamples);
+					Delta[NeighborValueIndex] += MaterialToSettle * (Excess / TotalWeightedExcess);
 				}
 			}
 		}
+
 		for (int32 Index = 0; Index < NumCells; ++Index)
 		{
-			HeightField.Values[Index] += Delta[Index];
+			HeightField.Values[Index] = FMath::Clamp(HeightField.Values[Index] + Delta[Index], -1.0f, 1.0f);
 		}
 	}
 
