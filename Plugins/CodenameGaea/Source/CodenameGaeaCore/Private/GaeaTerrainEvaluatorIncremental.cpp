@@ -2,7 +2,7 @@
 
 #include "HAL/PlatformTime.h"
 
-namespace
+namespace EonformIncrementalEvaluatorPrivate
 {
 	template<typename ValueType>
 	void HashNamedMap(uint32& Hash, const TMap<FName, ValueType>& Map)
@@ -40,6 +40,8 @@ FGaeaTerrainEvaluationResult FGaeaTerrainEvaluator::EvaluateIncremental(
 	const FGaeaTerrainEvaluationContext& Context,
 	FGaeaTerrainEvaluationCache& PersistentCache)
 {
+	using namespace EonformIncrementalEvaluatorPrivate;
+
 	const double StartSeconds = FPlatformTime::Seconds();
 	FGaeaTerrainEvaluationResult Result;
 	Result.RecipeHash = Recipe.GetDeterministicHash();
