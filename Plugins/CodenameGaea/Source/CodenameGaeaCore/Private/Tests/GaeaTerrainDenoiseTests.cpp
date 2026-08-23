@@ -15,7 +15,7 @@ bool FGaeaTerrainDenoiseTerminalTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Denoise descriptor exists"),
 		FGaeaTerrainNodeDescriptorRegistry::Get(GaeaTerrainNodeTypes::Denoise, Descriptor));
 	TestEqual(TEXT("Denoise display name"), Descriptor.DisplayName, FString(TEXT("Denoise")));
-	TestEqual(TEXT("Denoise category"), Descriptor.Category, FString(TEXT("Adjustments")));
+	TestEqual(TEXT("Denoise category"), Descriptor.Category, FString(TEXT("Modify")));
 
 	FGaeaTerrainRecipe Recipe;
 
