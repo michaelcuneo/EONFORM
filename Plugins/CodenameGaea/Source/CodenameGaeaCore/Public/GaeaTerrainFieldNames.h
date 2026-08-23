@@ -41,4 +41,9 @@ namespace GaeaTerrainFieldNames
 	CODENAMEGAEACORE_API extern const FName FlowMapAccumulation;
 	CODENAMEGAEACORE_API extern const FName FlowMapClassic;
 	CODENAMEGAEACORE_API extern const FName FlowMapClassicHierarchy;
+
+	// Public terrain-semantic Derive fields.
+	CODENAMEGAEACORE_API extern const FName Peaks;
+	CODENAMEGAEACORE_API extern const FName RockMap;
+	CODENAMEGAEACORE_API extern const FName Soil;
 }
