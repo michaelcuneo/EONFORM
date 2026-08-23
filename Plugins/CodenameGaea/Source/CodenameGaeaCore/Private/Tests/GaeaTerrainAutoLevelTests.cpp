@@ -13,22 +13,22 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FGaeaTerrainAutoLevelDescriptorTest::RunTest(const FString& Parameters)
 {
 	FGaeaTerrainNodeDescriptor Descriptor;
-	TestTrue(TEXT("AutoLevel descriptor exists"),
+	TestTrue(TEXT("Autolevel descriptor exists"),
 		FGaeaTerrainNodeDescriptorRegistry::Get(GaeaTerrainNodeTypes::AutoLevel, Descriptor));
-	TestEqual(TEXT("AutoLevel display name"), Descriptor.DisplayName, FString(TEXT("AutoLevel")));
-	TestEqual(TEXT("AutoLevel category"), Descriptor.Category, FString(TEXT("Adjustments")));
-	TestEqual(TEXT("AutoLevel has one input"), Descriptor.Inputs.Num(), 1);
-	TestEqual(TEXT("AutoLevel has one output"), Descriptor.Outputs.Num(), 1);
-	TestEqual(TEXT("AutoLevel parameter count"), Descriptor.Parameters.Num(), 12);
+	TestEqual(TEXT("Autolevel display name"), Descriptor.DisplayName, FString(TEXT("Autolevel")));
+	TestEqual(TEXT("Autolevel category"), Descriptor.Category, FString(TEXT("Modify")));
+	TestEqual(TEXT("Autolevel has one input"), Descriptor.Inputs.Num(), 1);
+	TestEqual(TEXT("Autolevel has one output"), Descriptor.Outputs.Num(), 1);
+	TestEqual(TEXT("Autolevel parameter count"), Descriptor.Parameters.Num(), 0);
 	if (Descriptor.Inputs.Num() == 1)
 	{
-		TestEqual(TEXT("AutoLevel input name"), Descriptor.Inputs[0].Name, FName(TEXT("Input")));
-		TestEqual(TEXT("AutoLevel input is polymorphic"), Descriptor.Inputs[0].DataType, FName(TEXT("Any")));
+		TestEqual(TEXT("Autolevel input name"), Descriptor.Inputs[0].Name, FName(TEXT("Input")));
+		TestEqual(TEXT("Autolevel input is polymorphic"), Descriptor.Inputs[0].DataType, FName(TEXT("Any")));
 	}
 	if (Descriptor.Outputs.Num() == 1)
 	{
-		TestEqual(TEXT("AutoLevel output name is Out"), Descriptor.Outputs[0].Name, FName(TEXT("Out")));
-		TestEqual(TEXT("AutoLevel output is polymorphic"), Descriptor.Outputs[0].DataType, FName(TEXT("Any")));
+		TestEqual(TEXT("Autolevel output name is Out"), Descriptor.Outputs[0].Name, FName(TEXT("Out")));
+		TestEqual(TEXT("Autolevel output is polymorphic"), Descriptor.Outputs[0].DataType, FName(TEXT("Any")));
 	}
 	return true;
 }
@@ -53,8 +53,6 @@ bool FGaeaTerrainAutoLevelTerminalTest::RunTest(const FString& Parameters)
 	FGaeaTerrainNode AutoLevel;
 	AutoLevel.Id = FGuid(1202, 2, 2, 2);
 	AutoLevel.Type = GaeaTerrainNodeTypes::AutoLevel;
-	AutoLevel.BoolParameters.Add(TEXT("ApplyAutoLevel"), true);
-	AutoLevel.NumericParameters.Add(TEXT("AutoLevelStrength"), 1.0);
 
 	Recipe.Nodes = { Source, AutoLevel };
 
@@ -68,7 +66,7 @@ bool FGaeaTerrainAutoLevelTerminalTest::RunTest(const FString& Parameters)
 
 	FGaeaTerrainEvaluationContext Context;
 	const FGaeaTerrainEvaluationResult Result = FGaeaTerrainEvaluator::Evaluate(Recipe, Context);
-	TestTrue(TEXT("AutoLevel Out can terminate the terrain graph"), Result.bSuccess);
+	TestTrue(TEXT("Autolevel Out can terminate the terrain graph"), Result.bSuccess);
 	if (!Result.bSuccess)
 	{
 		AddError(Result.Error);
@@ -76,7 +74,7 @@ bool FGaeaTerrainAutoLevelTerminalTest::RunTest(const FString& Parameters)
 	}
 
 	const FGaeaScalarField* Height = Result.Dataset.FindScalarField(GaeaTerrainFieldNames::Height);
-	TestNotNull(TEXT("AutoLevel result retains Height"), Height);
+	TestNotNull(TEXT("Autolevel result retains Height"), Height);
 	return true;
 }
 
@@ -108,7 +106,9 @@ bool FGaeaTerrainAutoLevelMaskTest::RunTest(const FString& Parameters)
 	FGaeaTerrainNode Erosion;
 	Erosion.Id = FGuid(1214, 4, 4, 4);
 	Erosion.Type = GaeaTerrainNodeTypes::HydraulicErosion;
-	Erosion.IntegerParameters.Add(TEXT("Iterations"), 1);
+	Erosion.IntegerParameters.Add(TEXT("Duration"), 4);
+	Erosion.NameParameters.Add(TEXT("AreaEffect"), TEXT("Erosion Strength"));
+	Erosion.NumericParameters.Add(TEXT("Bias"), 0.0);
 
 	Recipe.Nodes = { Source, Slope, AutoLevel, Erosion };
 
@@ -125,12 +125,12 @@ bool FGaeaTerrainAutoLevelMaskTest::RunTest(const FString& Parameters)
 	Connect(Source, TEXT("Terrain"), Slope, TEXT("Terrain"));
 	Connect(Slope, TEXT("Mask"), AutoLevel, TEXT("Input"));
 	Connect(Source, TEXT("Terrain"), Erosion, TEXT("Terrain"));
-	Connect(AutoLevel, TEXT("Out"), Erosion, TEXT("Mask"));
+	Connect(AutoLevel, TEXT("Out"), Erosion, TEXT("Area"));
 	Recipe.OutputNode = Erosion.Id;
 
 	FGaeaTerrainEvaluationContext Context;
 	const FGaeaTerrainEvaluationResult Result = FGaeaTerrainEvaluator::Evaluate(Recipe, Context);
-	TestTrue(TEXT("AutoLevel can process a mask"), Result.bSuccess);
+	TestTrue(TEXT("Autolevel can process an Area mask"), Result.bSuccess);
 	if (!Result.bSuccess) AddError(Result.Error);
 	return Result.bSuccess;
 }
