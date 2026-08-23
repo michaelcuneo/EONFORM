@@ -28,10 +28,10 @@ bool FGaeaTerrainDistanceDescriptorTest::RunTest(const FString& Parameters)
 	FGaeaTerrainNodeDescriptor Descriptor;
 	TestTrue(TEXT("Distance descriptor exists"), FGaeaTerrainNodeDescriptorRegistry::Get(GaeaTerrainNodeTypes::Distance, Descriptor));
 	TestEqual(TEXT("Distance display name"), Descriptor.DisplayName, FString(TEXT("Distance")));
-	TestEqual(TEXT("Distance category"), Descriptor.Category, FString(TEXT("Profile")));
+	TestEqual(TEXT("Distance category"), Descriptor.Category, FString(TEXT("Modify")));
 	TestEqual(TEXT("Distance input count"), Descriptor.Inputs.Num(), 1);
 	TestEqual(TEXT("Distance output count"), Descriptor.Outputs.Num(), 1);
-	TestEqual(TEXT("Distance parameter count"), Descriptor.Parameters.Num(), 5);
+	TestEqual(TEXT("Distance parameter count"), Descriptor.Parameters.Num(), 13);
 	if (Descriptor.Outputs.Num() == 1)
 	{
 		TestEqual(TEXT("Distance output pin"), Descriptor.Outputs[0].Name, FName(TEXT("Out")));
