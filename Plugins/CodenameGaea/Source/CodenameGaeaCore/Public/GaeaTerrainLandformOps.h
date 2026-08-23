@@ -8,9 +8,9 @@
 struct CODENAMEGAEACORE_API FGaeaMountainLandformSettings
 {
 	// Domain fallbacks. The public node intentionally mirrors Gaea's visible controls.
-	int32 Resolution = 513;
+	int32 Resolution = 1009;
 	float WorldSize = 100000.0f;
-	float HeightScale = 8000.0f;
+	float HeightScale = 300000.0f;
 
 	// Gaea Mountain public contract.
 	float Scale = 1.0f;
@@ -26,7 +26,7 @@ struct CODENAMEGAEACORE_API FGaeaMountainLandformSettings
 struct CODENAMEGAEACORE_API FGaeaMountainLandformResult
 {
 	FGaeaTerrainDataset Dataset;
-	float HeightScale = 8000.0f;
+	float HeightScale = 300000.0f;
 };
 
 /** Reusable high-level landform construction used by public Terrain nodes and composites. */
@@ -34,9 +34,10 @@ class CODENAMEGAEACORE_API FGaeaTerrainLandformOps
 {
 public:
 	/**
-	 * Builds a Gaea-style Mountain primitive from a distorted, modulated Voronoi
-	 * structure with clustered summits and branching ridge spurs. This operation
-	 * intentionally does not derive hydrology.
+	 * Builds the pre-simulation Mountain body. The primitive contains a dominant
+	 * summit complex, recursive ridge branches, seeded valleys, warped ridged
+	 * multifractal structure, and only subtle Voronoi modulation. Hydraulic and
+	 * thermal processes are applied by the public Mountain composite afterwards.
 	 */
 	static bool BuildMountain(
 		const FGaeaMountainLandformSettings& Settings,
