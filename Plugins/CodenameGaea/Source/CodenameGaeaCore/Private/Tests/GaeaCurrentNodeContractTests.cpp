@@ -81,7 +81,7 @@ bool FGaeaCurrentNodeContractTest::RunTest(const FString& Parameters)
 	CheckNode(*this, GaeaTerrainNodeTypes::Shaper, TEXT("Shaper"), TEXT("Modify"), 5);
 	CheckNode(*this, GaeaTerrainNodeTypes::Sharpen, TEXT("Sharpen"), TEXT("Modify"), 2);
 	CheckNode(*this, GaeaTerrainNodeTypes::SlopeBlur, TEXT("SlopeBlur"), TEXT("Modify"), 2);
-	CheckNode(*this, GaeaTerrainNodeTypes::SlopeWarp, TEXT("SlopeWarp"), TEXT("Modify"), 4);
+	CheckNode(*this, GaeaTerrainNodeTypes::SlopeWarp, TEXT("SlopeWarp"), TEXT("Modify"), 6);
 	CheckNode(*this, GaeaTerrainNodeTypes::SoftClip, TEXT("SoftClip"), TEXT("Modify"), 4);
 	CheckNode(*this, GaeaTerrainNodeTypes::Swirl, TEXT("Swirl"), TEXT("Modify"), 4);
 	CheckNode(*this, GaeaTerrainNodeTypes::ThermalShaper, TEXT("ThermalShaper"), TEXT("Modify"), 3);
