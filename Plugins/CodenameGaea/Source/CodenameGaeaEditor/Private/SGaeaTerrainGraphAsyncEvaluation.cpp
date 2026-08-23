@@ -20,6 +20,7 @@ namespace
 	{
 		OutContext = FGaeaTerrainEvaluationContext();
 		OutContext.PhysicalMetrics = FGaeaTerrainPhysicalContext::GetActive();
+		OutContext.CacheContextRevision = FGaeaTerrainPhysicalContext::GetRevision();
 
 		const bool bUsesExternalSource = Recipe.Nodes.ContainsByPredicate([](const FGaeaTerrainNode& Node)
 		{
@@ -35,6 +36,9 @@ namespace
 			}
 			OutContext.SourceDataset = SourceSnapshot.Dataset;
 			OutContext.HeightScale = SourceSnapshot.Metadata.HeightScale;
+			OutContext.CacheContextRevision = HashCombineFast(
+				GetTypeHash(OutContext.CacheContextRevision),
+				GetTypeHash(SourceSnapshot.Revision));
 		}
 
 		// Load File-node dependencies while still on the game thread. File decoding
@@ -154,7 +158,7 @@ void SGaeaTerrainGraphPanel::StartNextAsyncEvaluation()
 	if (bEvaluateFinal)
 	{
 		bFinalEvaluationPending = false;
-		StatusText = FText::FromString(TEXT("Evaluating terrain in background..."));
+		StatusText = FText::FromString(TEXT("Evaluating terrain incrementally in background..."));
 	}
 	else
 	{
@@ -164,8 +168,10 @@ void SGaeaTerrainGraphPanel::StartNextAsyncEvaluation()
 
 	bAutoPreviewEvaluating = true;
 	TWeakPtr<SGaeaTerrainGraphPanel> WeakPanel = SharedThis(this);
+	const TSharedPtr<FGaeaTerrainEvaluationCache, ESPMode::ThreadSafe> CapturedCache = IncrementalEvaluationCache;
 	Async(EAsyncExecution::ThreadPool,
 		[WeakPanel,
+		 CapturedCache,
 		 Recipe = MoveTemp(Recipe),
 		 Context = MoveTemp(Context),
 		 bEvaluateFinal,
@@ -173,7 +179,9 @@ void SGaeaTerrainGraphPanel::StartNextAsyncEvaluation()
 		 CapturedGraphGeneration,
 		 CapturedInspectionGeneration]() mutable
 		{
-			FGaeaTerrainEvaluationResult Result = FGaeaTerrainEvaluator::Evaluate(Recipe, Context);
+			FGaeaTerrainEvaluationResult Result = bEvaluateFinal && CapturedCache.IsValid()
+				? FGaeaTerrainEvaluator::EvaluateIncremental(Recipe, Context, *CapturedCache)
+				: FGaeaTerrainEvaluator::Evaluate(Recipe, Context);
 			if (!Result.bSuccess)
 			{
 				const FString Failure = Result.Error;
@@ -203,6 +211,9 @@ void SGaeaTerrainGraphPanel::StartNextAsyncEvaluation()
 			const float HeightScale = Result.HeightScale;
 			const uint32 RecipeHash = Result.RecipeHash;
 			const int32 BaseFieldCount = BaseDataset.NumScalarFields();
+			const int32 EvaluatedNodeCount = Result.EvaluatedNodeCount;
+			const int32 CachedNodeCount = Result.CachedNodeCount;
+			const double EvaluationMilliseconds = Result.EvaluationMilliseconds;
 
 			AsyncTask(ENamedThreads::GameThread,
 				[WeakPanel,
@@ -215,7 +226,10 @@ void SGaeaTerrainGraphPanel::StartNextAsyncEvaluation()
 				 BaseDataset = MoveTemp(BaseDataset),
 				 HeightScale,
 				 RecipeHash,
-				 BaseFieldCount]() mutable
+				 BaseFieldCount,
+				 EvaluatedNodeCount,
+				 CachedNodeCount,
+				 EvaluationMilliseconds]() mutable
 				{
 					const TSharedPtr<SGaeaTerrainGraphPanel> Panel = WeakPanel.Pin();
 					if (!Panel.IsValid()) return;
@@ -264,10 +278,12 @@ void SGaeaTerrainGraphPanel::StartNextAsyncEvaluation()
 
 					FGaeaTerrainOutputEditorState::Get().PublishTerrain(BaseRevision);
 					Panel->StatusText = FText::FromString(FString::Printf(
-						TEXT("Terrain %08X -> revision %llu (%d fields). Deriving hydrology in background..."),
+						TEXT("Terrain %08X ready in %.1f ms: %d node%s recomputed, %d cached. Deriving hydrology..."),
 						RecipeHash,
-						static_cast<unsigned long long>(BaseRevision),
-						BaseFieldCount));
+						EvaluationMilliseconds,
+						EvaluatedNodeCount,
+						EvaluatedNodeCount == 1 ? TEXT("") : TEXT("s"),
+						CachedNodeCount));
 					Panel->OnEvaluated.ExecuteIfBound();
 
 					// The graph evaluator is free now. Hydrology is an independent enrichment
