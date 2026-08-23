@@ -39,6 +39,7 @@
 #include "GaeaPrimitiveCoverageNodes.h"
 #include "GaeaRadialGradientNode.h"
 #include "GaeaRecurveNode.h"
+#include "GaeaReferenceFidelityNodes.h"
 #include "GaeaShaperNode.h"
 #include "GaeaSharpenNode.h"
 #include "GaeaSimulateEvolutionNodes.h"
@@ -269,6 +270,10 @@ public:
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Invert, TEXT("Invert"), TEXT("Legacy"), true);
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::Sine, TEXT("Sine"), TEXT("Legacy"), true);
 		ApplyCurrentGaeaPublicMetadata(GaeaTerrainNodeTypes::MultiCombine, TEXT("MultiCombine"), TEXT("Legacy"), true);
+
+		// Audited Gaea-facing implementations register last so descriptor and
+		// evaluator fidelity wins over older compatibility implementations.
+		RegisterGaeaReferenceFidelityNodes();
 	}
 };
 
