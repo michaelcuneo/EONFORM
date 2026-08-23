@@ -2,6 +2,7 @@
 
 #include "GaeaTerrainEvaluator.h"
 #include "GaeaTerrainFieldNames.h"
+#include "GaeaTerrainFractalWarp.h"
 #include "GaeaTerrainNodeDescriptor.h"
 #include "GaeaTerrainProceduralOps.h"
 #include "GaeaTerrainRecipe.h"
@@ -138,11 +139,9 @@ bool FGaeaRidgeGenerator::Generate(
 	const float Scale = FMath::Clamp(Settings.Scale, 0.0001f, 1.0f);
 	const float Definition = FMath::Clamp(Settings.Definition, 0.0f, 1.0f);
 
-	// Ridge follows the supplied Landscapes.Ridge operation topology exactly:
+	// Ridge follows the supplied Landscapes.Ridge operation topology:
 	// Voronoi -> Perlin -> Terrace -> Max(Terrace, FractalWarp(Terrace))
 	// -> DirectionWarpF(Voronoi, Guide) -> FractalWarp -> Min -> range/profile -> Height.
-	// The few constants still hidden behind Gaea's packed constant table are kept
-	// isolated here as calibration values rather than changing the topology.
 	constexpr float RidgeVoronoiScaleCoefficient = 0.72f;
 	constexpr float RidgePerlinScale = 0.75f;
 	constexpr int32 RidgePerlinOctaves = 12;
@@ -215,7 +214,7 @@ bool FGaeaRidgeGenerator::Generate(
 	GuideWarpSettings.Seed = Settings.Seed + 2;
 
 	FGaeaScalarField WarpedGuide;
-	if (!GaeaTerrainProceduralOps::FractalWarp(Terraced, GuideWarpSettings, WarpedGuide, OutError)) return false;
+	if (!GaeaTerrainProceduralOps::FractalWarpFidelity(Terraced, GuideWarpSettings, WarpedGuide, OutError)) return false;
 	FGaeaScalarField Guide = Terraced;
 	for (int32 I = 0; I < Guide.Values.Num(); ++I)
 	{
@@ -249,15 +248,11 @@ bool FGaeaRidgeGenerator::Generate(
 	SecondaryWarpSettings.Seed = Settings.Seed + 5;
 
 	FGaeaScalarField SecondaryWarped;
-	if (!GaeaTerrainProceduralOps::FractalWarp(Directed, SecondaryWarpSettings, SecondaryWarped, OutError)) return false;
+	if (!GaeaTerrainProceduralOps::FractalWarpFidelity(Directed, SecondaryWarpSettings, SecondaryWarped, OutError)) return false;
 
 	OutHeight = Directed;
 	for (int32 I = 0; I < OutHeight.Values.Num(); ++I)
 	{
-		// The supplied code applies Min, then a range operation (0..Scale), then
-		// a parameterless normalization/profile operation. Preserve that observed
-		// behavior without inventing another terrain generator: clamp by Scale,
-		// normalize, then apply Height.
 		OutHeight.Values[I] = FMath::Min(Directed.Values[I], SecondaryWarped.Values[I]);
 		OutHeight.Values[I] = FMath::Clamp(OutHeight.Values[I], 0.0f, Scale);
 	}
