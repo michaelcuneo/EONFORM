@@ -1,20 +1,28 @@
 #include "GaeaTerrainLandformNodes.h"
 
-#include "GaeaReferenceFidelityExtendedNodes.h"
-#include "GaeaReferenceFidelityMountainNodes.h"
-#include "GaeaReferenceFidelityNodes.h"
-#include "GaeaReferenceFidelityProcessNodes.h"
-#include "GaeaShaperNode.h"
+#include "GaeaGridDomain.h"
+#include "GaeaHydraulicErosion.h"
 #include "GaeaScalarField.h"
 #include "GaeaTerrainDerivedData.h"
 #include "GaeaTerrainEvaluator.h"
 #include "GaeaTerrainFieldNames.h"
 #include "GaeaTerrainNodeDescriptor.h"
+#include "GaeaTerrainPhysicalMetrics.h"
 #include "GaeaTerrainRecipe.h"
+#include "GaeaTerrainValue.h"
 #include "Math/RandomStream.h"
 
 namespace
 {
+	FGaeaTerrainPortDescriptor TerrainIn()
+	{
+		FGaeaTerrainPortDescriptor P;
+		P.Name = TEXT("In");
+		P.DisplayName = TEXT("In");
+		P.DataType = TEXT("Terrain");
+		return P;
+	}
+
 	FGaeaTerrainPortDescriptor TerrainOut()
 	{
 		FGaeaTerrainPortDescriptor P;
@@ -59,7 +67,7 @@ namespace
 		P.bHasMinimum = true;
 		P.Minimum = static_cast<double>(Min);
 		P.bHasMaximum = true;
-		P.Maximum = Max;
+		P.Maximum = static_cast<double>(Max);
 		return P;
 	}
 
@@ -82,7 +90,10 @@ namespace
 		P.Group = Group;
 		P.Type = EGaeaTerrainParameterType::Name;
 		P.DefaultName = Default;
-		for (const FName Option : Options) P.NameOptions.Add(Option);
+		for (const FName Option : Options)
+		{
+			P.NameOptions.Add(Option);
+		}
 		return P;
 	}
 
@@ -92,128 +103,471 @@ namespace
 		return Value * Value * (3.0f - 2.0f * Value);
 	}
 
-	FGuid CompositeId(int32 Seed, uint32 Ordinal)
+	FGaeaGridDomain BuildMountainDomain(const FGaeaTerrainEvaluationContext& Context)
 	{
-		return FGuid(0x4D544E00u + Ordinal, 0x454F4E46u, static_cast<uint32>(Seed), 0x434F4D50u);
-	}
+		if (const FGaeaScalarField* SourceHeight = Context.SourceDataset.FindScalarField(GaeaTerrainFieldNames::Height))
+		{
+			if (SourceHeight->IsValid())
+			{
+				return SourceHeight->Domain;
+			}
+		}
 
-	FGaeaTerrainNode& AddNode(FGaeaTerrainRecipe& Recipe, FName Type, int32 Seed, uint32 Ordinal)
-	{
-		FGaeaTerrainNode Node;
-		Node.Id = CompositeId(Seed, Ordinal);
-		Node.Type = Type;
-		return Recipe.Nodes.Add_GetRef(MoveTemp(Node));
-	}
+		const int32 Width = FMath::Clamp(Context.TargetResolution.X > 1 ? Context.TargetResolution.X : 257, 2, 4097);
+		const int32 Height = FMath::Clamp(Context.TargetResolution.Y > 1 ? Context.TargetResolution.Y : Width, 2, 4097);
 
-	void Link(FGaeaTerrainRecipe& Recipe, const FGaeaTerrainNode& From, FName Output, const FGaeaTerrainNode& To, FName Input)
-	{
-		FGaeaTerrainConnection Connection;
-		Connection.FromNode = From.Id;
-		Connection.FromOutput = Output;
-		Connection.ToNode = To.Id;
-		Connection.ToInput = Input;
-		Recipe.Connections.Add(Connection);
-	}
-
-	void EnsureAuditedMountainNodes()
-	{
-		if (!FGaeaTerrainNodeRegistry::IsRegistered(GaeaTerrainNodeTypes::RadialGradient)
-			|| !FGaeaTerrainNodeRegistry::IsRegistered(GaeaTerrainNodeTypes::Voronoi)
-			|| !FGaeaTerrainNodeRegistry::IsRegistered(GaeaTerrainNodeTypes::Combine))
-		{
-			RegisterGaeaReferenceFidelityNodes();
-		}
-		if (!FGaeaTerrainNodeRegistry::IsRegistered(GaeaTerrainNodeTypes::SlopeWarp)
-			|| !FGaeaTerrainNodeRegistry::IsRegistered(GaeaTerrainNodeTypes::Thermal2)
-			|| !FGaeaTerrainNodeRegistry::IsRegistered(GaeaTerrainNodeTypes::Craggy))
-		{
-			RegisterGaeaReferenceFidelityMountainNodes();
-		}
-		if (!FGaeaTerrainNodeRegistry::IsRegistered(GaeaTerrainNodeTypes::Erosion2))
-		{
-			RegisterGaeaReferenceFidelityProcessNodes();
-		}
-		if (!FGaeaTerrainNodeRegistry::IsRegistered(GaeaTerrainNodeTypes::Stratify))
-		{
-			RegisterGaeaReferenceFidelityExtendedNodes();
-		}
-		if (!FGaeaTerrainNodeRegistry::IsRegistered(GaeaTerrainNodeTypes::Shaper))
-		{
-			RegisterGaeaShaperNode();
-		}
-	}
-
-	double ResolveReferenceWorldMeters(const FGaeaTerrainEvaluationContext& Context)
-	{
+		double WorldWidthCm = 100000.0;
+		double WorldDepthCm = 100000.0;
 		if (Context.PhysicalMetrics.HasWorldDimensions())
 		{
-			return FMath::Max(
-				FMath::Min(
-					FMath::Abs(Context.PhysicalMetrics.WorldWidthMeters),
-					FMath::Abs(Context.PhysicalMetrics.WorldDepthMeters)),
-				1.0);
+			WorldWidthCm = Context.PhysicalMetrics.WorldWidthMeters * 100.0;
+			WorldDepthCm = Context.PhysicalMetrics.WorldDepthMeters * 100.0;
 		}
-		return 10000.0;
+
+		return FGaeaGridDomain::Make(
+			FIntPoint(Width, Height),
+			FVector2d(-WorldWidthCm * 0.5, -WorldDepthCm * 0.5),
+			FVector2d(WorldWidthCm * 0.5, WorldDepthCm * 0.5));
 	}
 
-	bool ConstrainMountainHeight(
+	float ResolveHeightScale(const FGaeaTerrainEvaluationContext& Context)
+	{
+		if (Context.PhysicalMetrics.HasElevationScale())
+		{
+			return static_cast<float>(Context.PhysicalMetrics.ElevationScaleMeters * 100.0);
+		}
+		return FMath::Max(Context.HeightScale, 1.0f);
+	}
+
+	FGaeaScalarField MakeHeightField(const FGaeaGridDomain& Domain)
+	{
+		FGaeaFieldDescriptor Descriptor;
+		Descriptor.Name = GaeaTerrainFieldNames::Height;
+		Descriptor.Unit = EGaeaFieldUnit::Normalized;
+		Descriptor.Interpolation = EGaeaInterpolation::Bilinear;
+
+		FGaeaScalarField Field;
+		Field.Initialize(Domain, Descriptor, 0.0f);
+		return Field;
+	}
+
+	uint32 Hash(uint32 X)
+	{
+		X ^= X >> 16;
+		X *= 0x7feb352dU;
+		X ^= X >> 15;
+		X *= 0x846ca68bU;
+		X ^= X >> 16;
+		return X;
+	}
+
+	float Hash01(int32 X, int32 Y, int32 Seed, uint32 Salt = 0)
+	{
+		uint32 H = static_cast<uint32>(X) * 0x9e3779b9U;
+		H ^= static_cast<uint32>(Y) * 0x85ebca6bU;
+		H ^= static_cast<uint32>(Seed) * 0xc2b2ae35U;
+		H ^= Salt;
+		return static_cast<float>(Hash(H) & 0x00ffffffU) / 16777215.0f;
+	}
+
+	float SmoothNoise(float X, float Y, int32 Seed, uint32 Salt)
+	{
+		const int32 X0 = FMath::FloorToInt(X);
+		const int32 Y0 = FMath::FloorToInt(Y);
+		const float FX = X - static_cast<float>(X0);
+		const float FY = Y - static_cast<float>(Y0);
+		const float SX = FX * FX * (3.0f - 2.0f * FX);
+		const float SY = FY * FY * (3.0f - 2.0f * FY);
+		const float A = FMath::Lerp(Hash01(X0, Y0, Seed, Salt), Hash01(X0 + 1, Y0, Seed, Salt), SX);
+		const float B = FMath::Lerp(Hash01(X0, Y0 + 1, Seed, Salt), Hash01(X0 + 1, Y0 + 1, Seed, Salt), SX);
+		return FMath::Lerp(A, B, SY) * 2.0f - 1.0f;
+	}
+
+	float BilinearSample(const FGaeaScalarField& Field, float X, float Y)
+	{
+		X = FMath::Clamp(X, 0.0f, static_cast<float>(Field.Domain.Dimensions.X - 1));
+		Y = FMath::Clamp(Y, 0.0f, static_cast<float>(Field.Domain.Dimensions.Y - 1));
+		const int32 X0 = FMath::FloorToInt(X);
+		const int32 Y0 = FMath::FloorToInt(Y);
+		const int32 X1 = FMath::Min(X0 + 1, Field.Domain.Dimensions.X - 1);
+		const int32 Y1 = FMath::Min(Y0 + 1, Field.Domain.Dimensions.Y - 1);
+		const float TX = X - static_cast<float>(X0);
+		const float TY = Y - static_cast<float>(Y0);
+		return FMath::Lerp(
+			FMath::Lerp(Field.AtInterior(X0, Y0), Field.AtInterior(X1, Y0), TX),
+			FMath::Lerp(Field.AtInterior(X0, Y1), Field.AtInterior(X1, Y1), TX),
+			TY);
+	}
+
+	struct FMountainRidgeSettings
+	{
+		float Frequency = 2.0f;
+		float Definition = 1.0f;
+		float RotationRadians = 0.0f;
+		float CrossAxisScale = 0.65f;
+		float WarpAmount = 0.16f;
+		int32 Octaves = 5;
+	};
+
+	FMountainRidgeSettings MakeRidgeSettings(FRandomStream& Random, bool bReduceDetails, int32 Layer)
+	{
+		FMountainRidgeSettings Settings;
+		Settings.Frequency = Random.FRandRange(1.45f, 2.75f) * (1.0f + static_cast<float>(Layer) * 0.16f);
+		Settings.Definition = Random.FRandRange(0.90f, 1.75f);
+		Settings.RotationRadians = Random.FRandRange(-PI, PI);
+		Settings.CrossAxisScale = Random.FRandRange(0.48f, 0.76f);
+		Settings.WarpAmount = Random.FRandRange(0.10f, 0.24f);
+		Settings.Octaves = bReduceDetails ? 4 : 6;
+		return Settings;
+	}
+
+	FGaeaScalarField GenerateMountainRidge(
+		const FGaeaGridDomain& Domain,
+		const FMountainRidgeSettings& Settings,
+		int32 Seed,
+		uint32 Salt)
+	{
+		FGaeaScalarField Out = MakeHeightField(Domain);
+		const float CosA = FMath::Cos(Settings.RotationRadians);
+		const float SinA = FMath::Sin(Settings.RotationRadians);
+		const float OffsetX = Hash01(Seed, 17, Seed, Salt) * 47.0f + 3.0f;
+		const float OffsetY = Hash01(31, Seed, Seed, Salt ^ 0x8f31u) * 53.0f + 7.0f;
+
+		for (int32 Y = 0; Y < Domain.Dimensions.Y; ++Y)
+		{
+			const float V = Domain.Dimensions.Y > 1
+				? static_cast<float>(Y) / static_cast<float>(Domain.Dimensions.Y - 1)
+				: 0.0f;
+			for (int32 X = 0; X < Domain.Dimensions.X; ++X)
+			{
+				const float U = Domain.Dimensions.X > 1
+					? static_cast<float>(X) / static_cast<float>(Domain.Dimensions.X - 1)
+					: 0.0f;
+
+				const float CX = U - 0.5f;
+				const float CY = V - 0.5f;
+				float RX = CX * CosA - CY * SinA;
+				float RY = (CX * SinA + CY * CosA) * Settings.CrossAxisScale;
+
+				const float WarpX = SmoothNoise(
+					RX * Settings.Frequency * 0.72f + OffsetX,
+					RY * Settings.Frequency * 0.72f + OffsetY,
+					Seed + 911,
+					Salt ^ 0x51a7u);
+				const float WarpY = SmoothNoise(
+					RX * Settings.Frequency * 0.72f + OffsetY,
+					RY * Settings.Frequency * 0.72f + OffsetX,
+					Seed + 1613,
+					Salt ^ 0xb37du);
+				RX += WarpX * Settings.WarpAmount;
+				RY += WarpY * Settings.WarpAmount;
+
+				float Frequency = Settings.Frequency;
+				float Amplitude = 1.0f;
+				float Sum = 0.0f;
+				float WeightSum = 0.0f;
+				float RidgeWeight = 1.0f;
+
+				for (int32 Octave = 0; Octave < Settings.Octaves; ++Octave)
+				{
+					const float N = SmoothNoise(
+						RX * Frequency + OffsetX,
+						RY * Frequency + OffsetY,
+						Seed + Octave * 193,
+						Salt + static_cast<uint32>(Octave) * 7919u);
+					float Ridge = 1.0f - FMath::Abs(N);
+					Ridge = FMath::Pow(FMath::Clamp(Ridge, 0.0f, 1.0f), Settings.Definition);
+					Ridge *= FMath::Lerp(0.68f, 1.0f, RidgeWeight);
+					Sum += Ridge * Amplitude;
+					WeightSum += Amplitude;
+					RidgeWeight = FMath::Clamp(Ridge * 1.85f, 0.0f, 1.0f);
+					Frequency *= 2.03f;
+					Amplitude *= 0.52f;
+				}
+
+				const float RidgeValue = WeightSum > UE_SMALL_NUMBER ? Sum / WeightSum : 0.0f;
+				Out.AtInterior(X, Y) = FMath::Pow(FMath::Clamp(RidgeValue, 0.0f, 1.0f), 1.15f);
+			}
+		}
+		return Out;
+	}
+
+	void NormalizePositiveField(FGaeaScalarField& Field)
+	{
+		float MaxValue = 0.0f;
+		for (const float Value : Field.Values)
+		{
+			MaxValue = FMath::Max(MaxValue, Value);
+		}
+		if (MaxValue <= UE_SMALL_NUMBER)
+		{
+			return;
+		}
+		const float InvMax = 1.0f / MaxValue;
+		for (float& Value : Field.Values)
+		{
+			Value = FMath::Max(Value, 0.0f) * InvMax;
+		}
+	}
+
+	void ApplyRadialFootprint(FGaeaScalarField& Height, float Scale, float XCenter, float YCenter)
+	{
+		const int32 Width = Height.Domain.Dimensions.X;
+		const int32 HeightSamples = Height.Domain.Dimensions.Y;
+		const float CenterX = static_cast<float>(Width) * XCenter;
+		const float CenterY = static_cast<float>(HeightSamples) * YCenter;
+		const float Radius = FMath::Max(static_cast<float>(Width) * Scale, 0.0001f);
+
+		for (int32 Y = 0; Y < HeightSamples; ++Y)
+		{
+			for (int32 X = 0; X < Width; ++X)
+			{
+				const float DX = static_cast<float>(X) - CenterX;
+				const float DY = static_cast<float>(Y) - CenterY;
+				const float Distance = FMath::Sqrt(DX * DX + DY * DY);
+				const float Mask = FMath::Clamp(1.0f - Distance / Radius, 0.0f, 1.0f);
+				Height.AtInterior(X, Y) *= Mask;
+			}
+		}
+	}
+
+	void ApplyFractalWarpMin(FGaeaScalarField& Height, int32 Seed, bool bReduceDetails)
+	{
+		const FGaeaScalarField Source = Height;
+		const int32 Width = Source.Domain.Dimensions.X;
+		const int32 HeightSamples = Source.Domain.Dimensions.Y;
+		const float Displacement = static_cast<float>(FMath::Min(Width, HeightSamples)) * (bReduceDetails ? 0.018f : 0.030f);
+		const int32 Octaves = bReduceDetails ? 2 : 4;
+
+		for (int32 Y = 0; Y < HeightSamples; ++Y)
+		{
+			const float V = HeightSamples > 1 ? static_cast<float>(Y) / static_cast<float>(HeightSamples - 1) : 0.0f;
+			for (int32 X = 0; X < Width; ++X)
+			{
+				const float U = Width > 1 ? static_cast<float>(X) / static_cast<float>(Width - 1) : 0.0f;
+				float DX = 0.0f;
+				float DY = 0.0f;
+				float Amplitude = 1.0f;
+				float Frequency = 1.45f;
+				float Weight = 0.0f;
+				for (int32 I = 0; I < Octaves; ++I)
+				{
+					DX += SmoothNoise(U * Frequency + 11.3f, V * Frequency + 29.7f, Seed + 27 + I * 71, 0x721u + I * 17u) * Amplitude;
+					DY += SmoothNoise(U * Frequency + 37.9f, V * Frequency + 5.1f, Seed + 27 + I * 89, 0x9b1u + I * 23u) * Amplitude;
+					Weight += Amplitude;
+					Frequency *= 2.05f;
+					Amplitude *= 0.52f;
+				}
+				if (Weight > UE_SMALL_NUMBER)
+				{
+					DX /= Weight;
+					DY /= Weight;
+				}
+				const float Warped = BilinearSample(Source, X + DX * Displacement, Y + DY * Displacement);
+				Height.AtInterior(X, Y) = FMath::Min(Source.AtInterior(X, Y), Warped);
+			}
+		}
+	}
+
+	bool ApplyStyleErosion(
+		FGaeaScalarField& Height,
 		FGaeaTerrainDataset& Dataset,
-		float RequestedHeight,
+		FName Style,
+		bool bReduceDetails,
+		int32 Seed,
+		float HeightScale,
+		const FGaeaTerrainEvaluationContext& Context,
 		FString& Error)
 	{
-		const FGaeaScalarField* Source = Dataset.FindScalarField(GaeaTerrainFieldNames::Height);
-		if (!Source || !Source->IsValid())
+		if (Style == TEXT("Basic"))
 		{
-			Error = TEXT("Mountain composite produced no valid Height field.");
+			return true;
+		}
+
+		const bool bOld = Style == TEXT("Old");
+		const bool bAlpineOrStrata = Style == TEXT("Alpine") || Style == TEXT("Strata");
+		FGaeaHydraulicErosionSettings Settings;
+		Settings.Iterations = bReduceDetails ? 14 : bOld ? 58 : bAlpineOrStrata ? 40 : 30;
+		Settings.RockSoftness = bOld ? 0.62f : bAlpineOrStrata ? 0.34f : 0.44f;
+		Settings.Strength = bOld ? 0.72f : bAlpineOrStrata ? 0.68f : 0.56f;
+		Settings.Downcutting = bOld ? 0.38f : bAlpineOrStrata ? 0.78f : 0.58f;
+		Settings.Inhibition = bOld ? 0.08f : bAlpineOrStrata ? 0.02f : 0.05f;
+		Settings.BaseLevel = -1.0f;
+		Settings.FeatureScale = bOld ? 4.0f : bAlpineOrStrata ? 2.2f : 3.0f;
+		Settings.Debris = bOld ? 0.74f : bAlpineOrStrata ? 0.38f : 0.52f;
+		Settings.Volume = bOld ? 1.18f : bAlpineOrStrata ? 1.08f : 1.0f;
+		Settings.SedimentRemoval = bOld ? 0.08f : bAlpineOrStrata ? 0.30f : 0.14f;
+		Settings.Seed = Seed;
+		Settings.bAggressiveMode = bAlpineOrStrata;
+		Settings.bDeterministic = true;
+		Settings.bAdvancedFlowSolver = true;
+		Settings.Rainfall = bOld ? 0.015f : bAlpineOrStrata ? 0.012f : 0.010f;
+		Settings.FlowRate = bOld ? 0.58f : bAlpineOrStrata ? 0.68f : 0.58f;
+		Settings.SedimentCapacity = bOld ? 0.74f : bAlpineOrStrata ? 0.66f : 0.70f;
+		Settings.ErosionRate = bOld ? 0.21f : bAlpineOrStrata ? 0.24f : 0.18f;
+		Settings.DepositionRate = bOld ? 0.14f : bAlpineOrStrata ? 0.08f : 0.11f;
+		Settings.Evaporation = bOld ? 0.07f : bAlpineOrStrata ? 0.10f : 0.08f;
+		Settings.MinimumSlope = bOld ? 0.006f : bAlpineOrStrata ? 0.012f : 0.009f;
+		Settings.PhysicalSampleSpacingMeters = Context.PhysicalMetrics.ResolveRepresentativeSampleSpacingMeters(
+			Height.Domain.Dimensions,
+			Height.Domain.GetCellSize());
+		Settings.PhysicalElevationScaleMeters = Context.PhysicalMetrics.ResolveElevationScaleMeters(HeightScale);
+
+		FGaeaHydraulicErosionResult Result;
+		if (!FGaeaHydraulicErosion::Evaluate(Height, HeightScale, Settings, Result))
+		{
+			Error = TEXT("Mountain style erosion failed.");
 			return false;
 		}
 
-		float MaxHeight = TNumericLimits<float>::Lowest();
-		for (const float Value : Source->Values)
+		Height = MoveTemp(Result.Height);
+		Height.Descriptor.Name = GaeaTerrainFieldNames::Height;
+		Result.Wear.Descriptor.Name = GaeaTerrainFieldNames::Wear;
+		Result.Deposits.Descriptor.Name = GaeaTerrainFieldNames::Deposits;
+		Result.Flow.Descriptor.Name = GaeaTerrainFieldNames::Flow;
+		if (!Dataset.SetScalarField(Result.Wear)
+			|| !Dataset.SetScalarField(Result.Deposits)
+			|| !Dataset.SetScalarField(Result.Flow))
+		{
+			Error = TEXT("Mountain style erosion could not publish process fields.");
+			return false;
+		}
+		return true;
+	}
+
+	void ApplyStrataProfile(FGaeaScalarField& Height, bool bReduceDetails, int32 Seed)
+	{
+		float MaxHeight = 0.0f;
+		for (const float Value : Height.Values)
 		{
 			MaxHeight = FMath::Max(MaxHeight, Value);
 		}
 		if (MaxHeight <= UE_SMALL_NUMBER)
 		{
-			Error = TEXT("Mountain composite produced no positive relief.");
+			return;
+		}
+
+		const float Levels = bReduceDetails ? 18.0f : 34.0f;
+		for (int32 Y = 0; Y < Height.Domain.Dimensions.Y; ++Y)
+		{
+			for (int32 X = 0; X < Height.Domain.Dimensions.X; ++X)
+			{
+				const float Source = Height.AtInterior(X, Y);
+				const float H01 = FMath::Clamp(Source / MaxHeight, 0.0f, 1.0f);
+				const float Mask = Smooth01((H01 - 0.18f) / 0.68f);
+				const float Broken = SmoothNoise(
+					static_cast<float>(X) * 0.052f,
+					static_cast<float>(Y) * 0.052f,
+					Seed + 911,
+					0x5a17u);
+				const float Phase = H01 * Levels + Broken * (bReduceDetails ? 0.18f : 0.32f);
+				const float Terrace = FMath::FloorToFloat(Phase) / Levels;
+				const float TerracedHeight = FMath::Clamp(Terrace, 0.0f, 1.0f) * MaxHeight;
+				Height.AtInterior(X, Y) = FMath::Lerp(Source, TerracedHeight, Mask * (bReduceDetails ? 0.28f : 0.46f));
+			}
+		}
+	}
+
+	void ApplyBulk(FGaeaScalarField& Height, FName Bulk)
+	{
+		if (Bulk == TEXT("Medium"))
+		{
+			return;
+		}
+
+		float MaxHeight = 0.0f;
+		for (const float Value : Height.Values)
+		{
+			MaxHeight = FMath::Max(MaxHeight, Value);
+		}
+		if (MaxHeight <= UE_SMALL_NUMBER)
+		{
+			return;
+		}
+
+		const float Exponent = Bulk == TEXT("Low") ? 1.34f : 0.76f;
+		for (float& Value : Height.Values)
+		{
+			const float H01 = FMath::Clamp(Value / MaxHeight, 0.0f, 1.0f);
+			Value = FMath::Pow(H01, Exponent) * MaxHeight;
+		}
+	}
+
+	bool ApplyInputMultiply(
+		FGaeaScalarField& Height,
+		const FGaeaTerrainNodeInputs& Inputs,
+		FString& Error)
+	{
+		const FGaeaTerrainValue* const* InputPtr = Inputs.Find(TEXT("In"));
+		const FGaeaTerrainValue* Input = InputPtr ? *InputPtr : nullptr;
+		if (!Input)
+		{
+			return true;
+		}
+		if (!Input->IsValid())
+		{
+			Error = TEXT("Mountain received an invalid In value.");
 			return false;
 		}
 
-		const float TargetHeight = FMath::Clamp(RequestedHeight, 0.0f, 0.985f);
-		const float Scale = MaxHeight > TargetHeight && MaxHeight > UE_SMALL_NUMBER
-			? TargetHeight / MaxHeight
-			: 1.0f;
-		FGaeaScalarField Height = *Source;
-		for (float& Value : Height.Values)
+		const FGaeaScalarField* Multiplier = nullptr;
+		if (Input->Type == EGaeaTerrainValueType::Terrain)
 		{
-			Value = FMath::Clamp(Value * Scale, 0.0f, TargetHeight);
+			Multiplier = Input->TerrainDataset.FindScalarField(GaeaTerrainFieldNames::Height);
 		}
-		Height.Descriptor.Name = GaeaTerrainFieldNames::Height;
-		if (!Dataset.SetScalarField(MoveTemp(Height)))
+		else if (Input->Type == EGaeaTerrainValueType::ScalarField)
 		{
-			Error = TEXT("Mountain could not publish constrained Height.");
+			Multiplier = &Input->ScalarField;
+		}
+
+		if (!Multiplier || !Multiplier->IsValid())
+		{
+			Error = TEXT("Mountain In must provide a valid height/scalar field.");
 			return false;
+		}
+		if (Multiplier->Domain != Height.Domain)
+		{
+			Error = TEXT("Mountain In must share the Mountain evaluation domain.");
+			return false;
+		}
+
+		for (int32 Y = 0; Y < Height.Domain.Dimensions.Y; ++Y)
+		{
+			for (int32 X = 0; X < Height.Domain.Dimensions.X; ++X)
+			{
+				Height.AtInterior(X, Y) *= Multiplier->AtInterior(X, Y);
+			}
 		}
 		return true;
 	}
 
 	bool RebuildSemantics(
 		FGaeaTerrainDataset& Dataset,
-		float RequestedHeight,
 		float HeightScale,
 		const FGaeaTerrainPhysicalMetrics& Metrics,
 		FString& Error)
 	{
-		if (!FGaeaTerrainDerivedData::EnsureContext(Dataset, HeightScale, Metrics, &Error)) return false;
+		if (!FGaeaTerrainDerivedData::EnsureContext(Dataset, HeightScale, Metrics, &Error))
+		{
+			return false;
+		}
+
 		const FGaeaScalarField* Height = Dataset.FindScalarField(GaeaTerrainFieldNames::Height);
 		const FGaeaScalarField* Slope = Dataset.FindScalarField(GaeaTerrainFieldNames::SlopeDegrees);
 		const FGaeaScalarField* Concavity = Dataset.FindScalarField(GaeaTerrainFieldNames::Concavity);
 		const FGaeaScalarField* Convexity = Dataset.FindScalarField(GaeaTerrainFieldNames::Convexity);
 		if (!Height || !Slope || !Concavity || !Convexity)
 		{
-			Error = TEXT("Mountain could not rebuild final semantic fields.");
+			Error = TEXT("Mountain could not rebuild semantic fields.");
 			return false;
 		}
+
+		float MaxHeight = 0.0f;
+		for (const float Value : Height->Values)
+		{
+			MaxHeight = FMath::Max(MaxHeight, Value);
+		}
+		const float Denominator = FMath::Max(MaxHeight, UE_SMALL_NUMBER);
 
 		auto MakeField = [Height](FName Name)
 		{
@@ -230,28 +584,26 @@ namespace
 		FGaeaScalarField Erosion = MakeField(GaeaTerrainFieldNames::ErosionEligibility);
 		FGaeaScalarField Rock = MakeField(GaeaTerrainFieldNames::RockExposure);
 		FGaeaScalarField Cryosphere = MakeField(GaeaTerrainFieldNames::CryosphereEligibility);
-		const float Denominator = FMath::Max(FMath::Min(RequestedHeight, 0.985f), UE_SMALL_NUMBER);
 
 		for (int32 Y = 0; Y < Height->Domain.Dimensions.Y; ++Y)
 		{
 			for (int32 X = 0; X < Height->Domain.Dimensions.X; ++X)
 			{
-				const float Height01 = FMath::Clamp(Height->AtInterior(X, Y) / Denominator, 0.0f, 1.0f);
-				const float M = Smooth01(Height01);
-				const float RidgeMass = Smooth01(FMath::Clamp((Height01 - 0.08f) / 0.72f, 0.0f, 1.0f));
+				const float H = FMath::Clamp(Height->AtInterior(X, Y) / Denominator, 0.0f, 1.0f);
+				const float M = Smooth01(H);
 				const float S = FMath::Clamp(Slope->AtInterior(X, Y) / 70.0f, 0.0f, 1.0f);
 				const float C = FMath::Clamp(Concavity->AtInterior(X, Y) * 0.5f + 0.5f, 0.0f, 1.0f);
 				const float V = FMath::Clamp(Convexity->AtInterior(X, Y) * 0.5f + 0.5f, 0.0f, 1.0f);
-				const float RidgeShape = FMath::Clamp(0.28f + V * 0.36f + S * 0.24f + Height01 * 0.12f, 0.0f, 1.0f);
-				const float R = FMath::Clamp(RidgeMass * RidgeShape, 0.0f, 1.0f);
+				const float RidgeMass = Smooth01(FMath::Clamp((H - 0.06f) / 0.76f, 0.0f, 1.0f));
+				const float R = FMath::Clamp(RidgeMass * (0.24f + V * 0.38f + S * 0.28f + H * 0.10f), 0.0f, 1.0f);
 
 				Mass.AtInterior(X, Y) = M;
-				Uplift.AtInterior(X, Y) = Height01 * M;
+				Uplift.AtInterior(X, Y) = H * M;
 				Ridge.AtInterior(X, Y) = R;
 				Drainage.AtInterior(X, Y) = M * FMath::Clamp(S * 0.52f + C * 0.48f, 0.0f, 1.0f);
-				Erosion.AtInterior(X, Y) = M * FMath::Clamp(S * 0.72f + Height01 * 0.28f, 0.0f, 1.0f);
-				Rock.AtInterior(X, Y) = M * FMath::Clamp(S * 0.48f + V * 0.30f + Height01 * 0.22f, 0.0f, 1.0f);
-				Cryosphere.AtInterior(X, Y) = M * Smooth01((Height01 - 0.58f) / 0.32f) * FMath::Lerp(0.72f, 1.0f, R);
+				Erosion.AtInterior(X, Y) = M * FMath::Clamp(S * 0.72f + H * 0.28f, 0.0f, 1.0f);
+				Rock.AtInterior(X, Y) = M * FMath::Clamp(S * 0.48f + V * 0.30f + H * 0.22f, 0.0f, 1.0f);
+				Cryosphere.AtInterior(X, Y) = M * Smooth01((H - 0.58f) / 0.32f) * FMath::Lerp(0.72f, 1.0f, R);
 			}
 		}
 
@@ -266,279 +618,92 @@ namespace
 
 	bool EvaluateMountain(
 		const FGaeaTerrainNode& Node,
-		const FGaeaTerrainNodeInputs&,
+		const FGaeaTerrainNodeInputs& Inputs,
 		const FGaeaTerrainEvaluationContext& Context,
 		FGaeaTerrainNodeEvaluation& Out,
 		FString& Error)
 	{
-		EnsureAuditedMountainNodes();
-
+		const float MountainScale = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Scale"), 0.5)), 0.0001f, 1.0f);
+		const float HeightAmount = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Height"), 1.25)), 0.0001f, 3.0f);
 		const bool bReduceDetails = Node.GetBool(TEXT("ReduceDetails"), false);
-		const float MountainScale = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Scale"), 1.0)), 0.01f, 2.0f);
-		const float RequestedHeight = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Height"), 0.92)), 0.0f, 1.0f);
-		const FName Style = Node.GetName(TEXT("Style"), TEXT("Basic"));
+		const FName Style = Node.GetName(TEXT("Style"), TEXT("Eroded"));
 		const FName Bulk = Node.GetName(TEXT("Bulk"), TEXT("Medium"));
 		const int32 Seed = static_cast<int32>(Node.GetInteger(TEXT("Seed"), 1337));
-		const float OffsetX = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("X"), 0.0)), -1.5f, 1.5f);
-		const float OffsetY = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Y"), 0.0)), -1.5f, 1.5f);
-		const double ReferenceWorldMeters = ResolveReferenceWorldMeters(Context);
+		const float XCenter = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("X"), 0.5)), 0.0f, 1.0f);
+		const float YCenter = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Y"), 0.5)), 0.0f, 1.0f);
 
-		const bool bEroded = Style == TEXT("Eroded");
-		const bool bOld = Style == TEXT("Old");
-		const bool bAlpine = Style == TEXT("Alpine");
-		const bool bStrata = Style == TEXT("Strata");
-		const float BulkFactor = Bulk == TEXT("Low") ? 0.82f : Bulk == TEXT("High") ? 1.18f : 1.0f;
-
-		// Gaea's Scale behaves like the perceptual footprint of the complete
-		// mountain. Preserve approximately the same amount of internal structure
-		// inside that footprint by inversely scaling the structural Voronoi fields.
-		const float FootprintScale = FMath::Clamp(MountainScale * BulkFactor * (bAlpine ? 0.86f : 0.90f), 0.01f, 3.6f);
-		const float StructureScale = FMath::Clamp((bAlpine ? 0.86f : 0.72f) / FMath::Max(MountainScale * BulkFactor, 0.01f), 0.04f, 16.0f);
-		const float RidgeScale = FMath::Clamp(StructureScale * (bAlpine ? 1.34f : 1.18f), 0.04f, 16.0f);
-		const double MacroErosionMeters = FMath::Clamp(ReferenceWorldMeters * (bOld ? 0.050 : bEroded ? 0.036 : bAlpine ? 0.024 : 0.030), 250.0, 7000.0);
-		const double FineErosionMeters = FMath::Clamp(MacroErosionMeters * (bOld ? 0.30 : bAlpine ? 0.26 : 0.34), 80.0, 2000.0);
-		const double ThermalFeatureMeters = FMath::Clamp(ReferenceWorldMeters * (bOld ? 0.009 : bAlpine ? 0.0035 : 0.005), 30.0, 800.0);
-
-		FGaeaTerrainRecipe Recipe;
-		Recipe.Nodes.Reserve(32);
-		Recipe.Connections.Reserve(40);
-		uint32 Ordinal = 1;
-		FRandomStream LayoutRandom(Seed ^ 0x4D544E31);
-
-		// ---- Massif envelope ---------------------------------------------------
-		// A single radial field produces a circular dome. Build a deterministic
-		// cluster of overlapping low-frequency support lobes instead. Max-combining
-		// them creates shoulders and asymmetric sub-masses without inventing a new
-		// terrain primitive; the public Mountain node remains an orchestration macro.
-		auto AddSupportLobe = [&](float ScaleMultiplier, float HeightMultiplier, float DistanceMultiplier) -> FGaeaTerrainNode&
+		const FGaeaGridDomain Domain = BuildMountainDomain(Context);
+		if (!Domain.IsValid())
 		{
-			const float Angle = LayoutRandom.FRandRange(0.0f, 2.0f * PI);
-			const float Distance = MountainScale * LayoutRandom.FRandRange(DistanceMultiplier * 0.72f, DistanceMultiplier * 1.18f);
-			FGaeaTerrainNode& Lobe = AddNode(Recipe, GaeaTerrainNodeTypes::RadialGradient, Seed, Ordinal++);
-			Lobe.NumericParameters.Add(TEXT("Scale"), FMath::Clamp(FootprintScale * ScaleMultiplier, 0.001f, 4.0f));
-			Lobe.NumericParameters.Add(TEXT("Height"), HeightMultiplier);
-			Lobe.NumericParameters.Add(TEXT("X"), OffsetX + FMath::Cos(Angle) * Distance);
-			Lobe.NumericParameters.Add(TEXT("Y"), OffsetY + FMath::Sin(Angle) * Distance);
-			return Lobe;
-		};
-
-		FGaeaTerrainNode& SupportCore = AddNode(Recipe, GaeaTerrainNodeTypes::RadialGradient, Seed, Ordinal++);
-		SupportCore.NumericParameters.Add(TEXT("Scale"), FMath::Clamp(FootprintScale * (bAlpine ? 0.70f : 0.76f), 0.001f, 4.0f));
-		SupportCore.NumericParameters.Add(TEXT("Height"), 1.0);
-		SupportCore.NumericParameters.Add(TEXT("X"), OffsetX);
-		SupportCore.NumericParameters.Add(TEXT("Y"), OffsetY);
-
-		FGaeaTerrainNode& SupportA = AddSupportLobe(bAlpine ? 0.62f : 0.66f, 0.90f, 0.14f);
-		FGaeaTerrainNode& SupportB = AddSupportLobe(bAlpine ? 0.52f : 0.57f, 0.80f, 0.20f);
-		FGaeaTerrainNode& SupportC = AddSupportLobe(bAlpine ? 0.44f : 0.49f, 0.70f, 0.25f);
-
-		auto MaxCombine = [&](FGaeaTerrainNode& A, FGaeaTerrainNode& B) -> FGaeaTerrainNode&
-		{
-			FGaeaTerrainNode& Combine = AddNode(Recipe, GaeaTerrainNodeTypes::Combine, Seed, Ordinal++);
-			Combine.NameParameters.Add(TEXT("Mode"), TEXT("Max"));
-			Combine.NumericParameters.Add(TEXT("Ratio"), 1.0);
-			Combine.NameParameters.Add(TEXT("Output"), TEXT("Clamp"));
-			Link(Recipe, A, TEXT("Out"), Combine, TEXT("Input1"));
-			Link(Recipe, B, TEXT("Out"), Combine, TEXT("Input2"));
-			return Combine;
-		};
-
-		FGaeaTerrainNode& SupportAB = MaxCombine(SupportCore, SupportA);
-		FGaeaTerrainNode& SupportABC = MaxCombine(SupportAB, SupportB);
-		FGaeaTerrainNode& Support = MaxCombine(SupportABC, SupportC);
-
-		// ---- Hierarchical structural fields ------------------------------------
-		// Gaea describes Mountain as modulated Voronoi plus distortion. One P-form
-		// field is not enough: use a broad M-form mass field, a P/A peak field and
-		// two ridge scales so the result has primary mass, subsidiary summits and
-		// ridge hierarchy before erosion ever runs.
-		const float AxisBias = LayoutRandom.FRandRange(0.84f, 1.16f);
-		FGaeaTerrainNode& MassCells = AddNode(Recipe, GaeaTerrainNodeTypes::Voronoi, Seed, Ordinal++);
-		MassCells.NumericParameters.Add(TEXT("Scale"), FMath::Clamp(StructureScale * 0.72f, 0.02f, 16.0f));
-		MassCells.NumericParameters.Add(TEXT("Jitter"), bAlpine ? 1.18 : 1.08);
-		MassCells.NameParameters.Add(TEXT("Form"), bAlpine ? TEXT("A") : TEXT("M"));
-		MassCells.NumericParameters.Add(TEXT("Gain"), bAlpine ? 1.12 : 0.96);
-		MassCells.IntegerParameters.Add(TEXT("Seed"), static_cast<int64>(Seed) + 17);
-		MassCells.NameParameters.Add(TEXT("WarpType"), TEXT("Complex"));
-		MassCells.NumericParameters.Add(TEXT("WarpFrequency"), bAlpine ? 0.72 : 0.56);
-		MassCells.NumericParameters.Add(TEXT("WarpAmplitude"), bAlpine ? 0.50 : 0.40);
-		MassCells.IntegerParameters.Add(TEXT("WarpOctaves"), bReduceDetails ? 2 : 4);
-		MassCells.NumericParameters.Add(TEXT("ScaleX"), AxisBias * (Bulk == TEXT("High") ? 0.88f : 1.0f));
-		MassCells.NumericParameters.Add(TEXT("ScaleY"), (2.0f - AxisBias) * (Bulk == TEXT("Low") ? 1.10f : 1.0f));
-		MassCells.NumericParameters.Add(TEXT("X"), -OffsetX * 0.18f);
-		MassCells.NumericParameters.Add(TEXT("Y"), -OffsetY * 0.18f);
-
-		FGaeaTerrainNode& Peaks = AddNode(Recipe, GaeaTerrainNodeTypes::Voronoi, Seed, Ordinal++);
-		Peaks.NumericParameters.Add(TEXT("Scale"), FMath::Clamp(StructureScale * (bAlpine ? 1.12f : 1.0f), 0.02f, 16.0f));
-		Peaks.NumericParameters.Add(TEXT("Jitter"), bAlpine ? 1.24 : 1.12);
-		Peaks.NameParameters.Add(TEXT("Form"), bAlpine ? TEXT("A") : TEXT("P"));
-		Peaks.NumericParameters.Add(TEXT("Gain"), bAlpine ? 1.24 : 1.08);
-		Peaks.IntegerParameters.Add(TEXT("Seed"), static_cast<int64>(Seed) + 47);
-		Peaks.NameParameters.Add(TEXT("WarpType"), TEXT("Complex"));
-		Peaks.NumericParameters.Add(TEXT("WarpFrequency"), bAlpine ? 0.86 : 0.68);
-		Peaks.NumericParameters.Add(TEXT("WarpAmplitude"), bAlpine ? 0.58 : 0.48);
-		Peaks.IntegerParameters.Add(TEXT("WarpOctaves"), bReduceDetails ? 2 : 4);
-		Peaks.NumericParameters.Add(TEXT("ScaleX"), (2.0f - AxisBias) * 0.96f);
-		Peaks.NumericParameters.Add(TEXT("ScaleY"), AxisBias * 1.04f);
-		Peaks.NumericParameters.Add(TEXT("X"), -OffsetX * 0.13f);
-		Peaks.NumericParameters.Add(TEXT("Y"), -OffsetY * 0.13f);
-
-		FGaeaTerrainNode& StructuralMass = AddNode(Recipe, GaeaTerrainNodeTypes::Combine, Seed, Ordinal++);
-		StructuralMass.NameParameters.Add(TEXT("Mode"), TEXT("Max"));
-		StructuralMass.NumericParameters.Add(TEXT("Ratio"), bAlpine ? 0.62 : 0.52);
-		StructuralMass.NameParameters.Add(TEXT("Output"), TEXT("Clamp"));
-		Link(Recipe, MassCells, TEXT("Out"), StructuralMass, TEXT("Input1"));
-		Link(Recipe, Peaks, TEXT("Out"), StructuralMass, TEXT("Input2"));
-
-		FGaeaTerrainNode& MacroRidges = AddNode(Recipe, GaeaTerrainNodeTypes::Voronoi, Seed, Ordinal++);
-		MacroRidges.NumericParameters.Add(TEXT("Scale"), FMath::Clamp(StructureScale * 0.63f, 0.02f, 16.0f));
-		MacroRidges.NumericParameters.Add(TEXT("Jitter"), bAlpine ? 1.22 : 1.12);
-		MacroRidges.NameParameters.Add(TEXT("Form"), TEXT("R"));
-		MacroRidges.NumericParameters.Add(TEXT("Gain"), bAlpine ? 1.32 : 1.12);
-		MacroRidges.IntegerParameters.Add(TEXT("Seed"), static_cast<int64>(Seed) + 83);
-		MacroRidges.NameParameters.Add(TEXT("WarpType"), TEXT("Complex"));
-		MacroRidges.NumericParameters.Add(TEXT("WarpFrequency"), bAlpine ? 0.78 : 0.62);
-		MacroRidges.NumericParameters.Add(TEXT("WarpAmplitude"), bAlpine ? 0.54 : 0.46);
-		MacroRidges.IntegerParameters.Add(TEXT("WarpOctaves"), bReduceDetails ? 2 : 4);
-
-		FGaeaTerrainNode& FineRidges = AddNode(Recipe, GaeaTerrainNodeTypes::Voronoi, Seed, Ordinal++);
-		FineRidges.NumericParameters.Add(TEXT("Scale"), RidgeScale);
-		FineRidges.NumericParameters.Add(TEXT("Jitter"), bAlpine ? 1.26 : 1.16);
-		FineRidges.NameParameters.Add(TEXT("Form"), TEXT("D"));
-		FineRidges.NumericParameters.Add(TEXT("Gain"), bAlpine ? 1.40 : 1.18);
-		FineRidges.IntegerParameters.Add(TEXT("Seed"), static_cast<int64>(Seed) + 149);
-		FineRidges.NameParameters.Add(TEXT("WarpType"), TEXT("Complex"));
-		FineRidges.NumericParameters.Add(TEXT("WarpFrequency"), bAlpine ? 0.92 : 0.76);
-		FineRidges.NumericParameters.Add(TEXT("WarpAmplitude"), bAlpine ? 0.60 : 0.50);
-		FineRidges.IntegerParameters.Add(TEXT("WarpOctaves"), bReduceDetails ? 2 : 4);
-
-		FGaeaTerrainNode& RidgeNetwork = AddNode(Recipe, GaeaTerrainNodeTypes::Combine, Seed, Ordinal++);
-		RidgeNetwork.NameParameters.Add(TEXT("Mode"), TEXT("Max"));
-		RidgeNetwork.NumericParameters.Add(TEXT("Ratio"), bAlpine ? 0.58 : 0.46);
-		RidgeNetwork.NameParameters.Add(TEXT("Output"), TEXT("Clamp"));
-		Link(Recipe, MacroRidges, TEXT("Out"), RidgeNetwork, TEXT("Input1"));
-		Link(Recipe, FineRidges, TEXT("Out"), RidgeNetwork, TEXT("Input2"));
-
-		FGaeaTerrainNode& StructuredWithRidges = AddNode(Recipe, GaeaTerrainNodeTypes::Combine, Seed, Ordinal++);
-		StructuredWithRidges.NameParameters.Add(TEXT("Mode"), TEXT("Max"));
-		StructuredWithRidges.NumericParameters.Add(TEXT("Ratio"), bAlpine ? 0.38 : 0.26);
-		StructuredWithRidges.NameParameters.Add(TEXT("Output"), TEXT("Clamp"));
-		Link(Recipe, StructuralMass, TEXT("Out"), StructuredWithRidges, TEXT("Input1"));
-		Link(Recipe, RidgeNetwork, TEXT("Out"), StructuredWithRidges, TEXT("Input2"));
-
-		// The support field now controls footprint only. Structural fields control
-		// the actual mountain surface; keeping this ratio high prevents the smooth
-		// support envelope from re-emerging as the visible dome.
-		FGaeaTerrainNode& Base = AddNode(Recipe, GaeaTerrainNodeTypes::Combine, Seed, Ordinal++);
-		Base.NameParameters.Add(TEXT("Mode"), TEXT("Multiply"));
-		Base.NumericParameters.Add(TEXT("Ratio"), bAlpine ? 0.94 : 0.90);
-		Base.NameParameters.Add(TEXT("Output"), TEXT("Clamp"));
-		Link(Recipe, Support, TEXT("Out"), Base, TEXT("Input1"));
-		Link(Recipe, StructuredWithRidges, TEXT("Out"), Base, TEXT("Input2"));
-
-		FGaeaTerrainNode& Shaper = AddNode(Recipe, GaeaTerrainNodeTypes::Shaper, Seed, Ordinal++);
-		Shaper.NumericParameters.Add(TEXT("Shape"), bAlpine ? 0.085 : 0.035);
-		Shaper.NumericParameters.Add(TEXT("LocalEffect"), bAlpine ? 0.22 : 0.16);
-		Shaper.NumericParameters.Add(TEXT("LocalArea"), bAlpine ? 0.46 : 0.54);
-		Shaper.BoolParameters.Add(TEXT("MaintainFineDetails"), true);
-		Shaper.NumericParameters.Add(TEXT("DetailSize"), bReduceDetails ? 0.52 : bAlpine ? 0.18 : 0.22);
-		Link(Recipe, Base, TEXT("Out"), Shaper, TEXT("Terrain"));
-
-		FGaeaTerrainNode& SlopeWarp = AddNode(Recipe, GaeaTerrainNodeTypes::SlopeWarp, Seed, Ordinal++);
-		SlopeWarp.NumericParameters.Add(TEXT("Intensity"), bAlpine ? 0.17 : bStrata ? 0.13 : 0.11);
-		SlopeWarp.IntegerParameters.Add(TEXT("Iterations"), bReduceDetails ? 1 : bAlpine ? 2 : 1);
-		SlopeWarp.NumericParameters.Add(TEXT("Direction"), bStrata ? 22.0 : 0.0);
-		// This is critical: normalized SlopeWarp displaced every non-flat Voronoi
-		// gradient by almost the same amount, producing the giant smooth vertical
-		// flutes visible in the previous Mountain output. Let gradient magnitude
-		// control displacement so major ridges move more than incidental texture.
-		SlopeWarp.BoolParameters.Add(TEXT("Normalized"), false);
-		SlopeWarp.NameParameters.Add(TEXT("Quality"), bReduceDetails ? TEXT("Medium") : TEXT("High"));
-		SlopeWarp.NameParameters.Add(TEXT("Antialiasing"), bReduceDetails ? TEXT("Off") : TEXT("x4"));
-		Link(Recipe, Shaper, TEXT("Out"), SlopeWarp, TEXT("Input"));
-		Link(Recipe, RidgeNetwork, TEXT("Out"), SlopeWarp, TEXT("Guide"));
-
-		FGaeaTerrainNode* LastProcess = &SlopeWarp;
-
-		// ---- Style branches ----------------------------------------------------
-		// Basic stops here. Eroded and Old are the same underlying Basic massif
-		// with increasing geomorphic age. Alpine uses the alternate structural
-		// field above and receives a lighter glacial-looking process pass.
-		if (bEroded || bOld || bAlpine)
-		{
-			FGaeaTerrainNode& Macro = AddNode(Recipe, GaeaTerrainNodeTypes::Erosion2, Seed, Ordinal++);
-			Macro.IntegerParameters.Add(TEXT("Duration"), bReduceDetails ? 12 : bOld ? 58 : bEroded ? 34 : 30);
-			Macro.NumericParameters.Add(TEXT("Downcutting"), bOld ? 0.48 : bEroded ? 0.58 : 0.70);
-			Macro.NumericParameters.Add(TEXT("ErosionScale"), MacroErosionMeters);
-			Macro.IntegerParameters.Add(TEXT("Seed"), static_cast<int64>(Seed) + 307);
-			Macro.NumericParameters.Add(TEXT("SuspendedLoad"), bOld ? 0.72 : bEroded ? 0.60 : 0.52);
-			Macro.NumericParameters.Add(TEXT("BedLoad"), bOld ? 0.62 : bEroded ? 0.48 : 0.42);
-			Macro.NumericParameters.Add(TEXT("CoarseSediments"), bOld ? 0.44 : bEroded ? 0.30 : 0.32);
-			Macro.NumericParameters.Add(TEXT("Shape"), bOld ? 0.56 : bEroded ? 0.48 : 0.64);
-			Macro.NumericParameters.Add(TEXT("ShapeSharpness"), bOld ? 0.38 : bEroded ? 0.50 : 0.72);
-			Macro.NumericParameters.Add(TEXT("ShapeDetailScale"), bReduceDetails ? 0.42 : bAlpine ? 0.92 : 0.76);
-			Macro.BoolParameters.Add(TEXT("EnableOrographic"), bAlpine);
-			Macro.NumericParameters.Add(TEXT("Direction"), 25.0);
-			Macro.NumericParameters.Add(TEXT("DirectionalPrecipitation"), 0.42);
-			Macro.NumericParameters.Add(TEXT("RainShadow"), 0.12);
-			Link(Recipe, *LastProcess, TEXT("Out"), Macro, TEXT("Terrain"));
-			LastProcess = &Macro;
-
-			if (!bReduceDetails)
-			{
-				FGaeaTerrainNode& Fine = AddNode(Recipe, GaeaTerrainNodeTypes::Erosion2, Seed, Ordinal++);
-				Fine.IntegerParameters.Add(TEXT("Duration"), bOld ? 34 : bEroded ? 18 : 14);
-				Fine.NumericParameters.Add(TEXT("Downcutting"), bOld ? 0.36 : bEroded ? 0.44 : 0.58);
-				Fine.NumericParameters.Add(TEXT("ErosionScale"), FineErosionMeters);
-				Fine.IntegerParameters.Add(TEXT("Seed"), static_cast<int64>(Seed) + 503);
-				Fine.NumericParameters.Add(TEXT("SuspendedLoad"), bOld ? 0.56 : 0.38);
-				Fine.NumericParameters.Add(TEXT("BedLoad"), bOld ? 0.48 : 0.30);
-				Fine.NumericParameters.Add(TEXT("CoarseSediments"), bOld ? 0.34 : 0.18);
-				Fine.NumericParameters.Add(TEXT("Shape"), bOld ? 0.44 : bAlpine ? 0.34 : 0.30);
-				Fine.NumericParameters.Add(TEXT("ShapeSharpness"), bOld ? 0.30 : bAlpine ? 0.58 : 0.46);
-				Fine.NumericParameters.Add(TEXT("ShapeDetailScale"), bAlpine ? 0.86 : 0.68);
-				Link(Recipe, *LastProcess, TEXT("Out"), Fine, TEXT("Terrain"));
-				LastProcess = &Fine;
-			}
-
-			FGaeaTerrainNode& Thermal = AddNode(Recipe, GaeaTerrainNodeTypes::Thermal2, Seed, Ordinal++);
-			Thermal.IntegerParameters.Add(TEXT("Duration"), bReduceDetails ? 4 : bOld ? 22 : bEroded ? 10 : 8);
-			Thermal.NumericParameters.Add(TEXT("Strength"), bOld ? 0.44 : bEroded ? 0.24 : 0.18);
-			Thermal.NumericParameters.Add(TEXT("Anisotropy"), bAlpine ? 0.12 : 0.03);
-			Thermal.NumericParameters.Add(TEXT("Angle"), bAlpine ? 41.0 : bOld ? 32.0 : 35.0);
-			Thermal.NumericParameters.Add(TEXT("SedimentRemoval"), bAlpine ? 0.32 : bOld ? 0.20 : 0.12);
-			Thermal.NumericParameters.Add(TEXT("FeatureScale"), ThermalFeatureMeters);
-			Link(Recipe, *LastProcess, TEXT("Out"), Thermal, TEXT("Terrain"));
-			LastProcess = &Thermal;
-		}
-		else if (bStrata)
-		{
-			FGaeaTerrainNode& Stratify = AddNode(Recipe, GaeaTerrainNodeTypes::Stratify, Seed, Ordinal++);
-			Stratify.NumericParameters.Add(TEXT("Spacing"), bReduceDetails ? 0.42 : 0.24);
-			Stratify.IntegerParameters.Add(TEXT("Octaves"), bReduceDetails ? 3 : 6);
-			Stratify.NumericParameters.Add(TEXT("Intensity"), bReduceDetails ? 0.34 : 0.62);
-			Stratify.NumericParameters.Add(TEXT("Shape"), 0.72);
-			Stratify.IntegerParameters.Add(TEXT("Seed"), static_cast<int64>(Seed) + 911);
-			Stratify.NumericParameters.Add(TEXT("TiltAmount"), 0.28);
-			Stratify.NumericParameters.Add(TEXT("Direction"), 26.0);
-			Link(Recipe, *LastProcess, TEXT("Out"), Stratify, TEXT("Terrain"));
-			LastProcess = &Stratify;
-		}
-
-		Recipe.OutputNode = LastProcess->Id;
-
-		FGaeaTerrainEvaluationContext InnerContext = Context;
-		const FGaeaTerrainEvaluationResult Evaluation = FGaeaTerrainEvaluator::Evaluate(Recipe, InnerContext);
-		if (!Evaluation.bSuccess)
-		{
-			Error = FString::Printf(TEXT("Mountain audited composite failed: %s"), *Evaluation.Error);
+			Error = TEXT("Mountain produced an invalid evaluation domain.");
 			return false;
 		}
 
-		FGaeaTerrainDataset Dataset = Evaluation.Dataset;
-		const float HeightScale = Evaluation.HeightScale;
-		if (!ConstrainMountainHeight(Dataset, RequestedHeight, Error)) return false;
-		if (!RebuildSemantics(Dataset, RequestedHeight, HeightScale, Context.PhysicalMetrics, Error)) return false;
+		// Recovered Gaea 2.3 architecture:
+		//   Ridge(seed) + Ridge(seed+1) + Ridge(seed+3)
+		//   -> one radial footprint mask using Scale/X/Y
+		//   -> fractal warp/min
+		//   -> Height multiplication
+		//   -> style process
+		//   -> final Bulk transform.
+		// Scale never changes the Ridge frequencies; it only changes the footprint.
+		FRandomStream RidgeRandom(Seed);
+		const FMountainRidgeSettings RidgeSettings0 = MakeRidgeSettings(RidgeRandom, bReduceDetails, 0);
+		const FMountainRidgeSettings RidgeSettings1 = MakeRidgeSettings(RidgeRandom, bReduceDetails, 1);
+		const FMountainRidgeSettings RidgeSettings2 = MakeRidgeSettings(RidgeRandom, bReduceDetails, 2);
+		FGaeaScalarField Ridge0 = GenerateMountainRidge(Domain, RidgeSettings0, Seed, 0x13579u);
+		FGaeaScalarField Ridge1 = GenerateMountainRidge(Domain, RidgeSettings1, Seed + 1, 0x2468bu);
+		FGaeaScalarField Ridge2 = GenerateMountainRidge(Domain, RidgeSettings2, Seed + 3, 0x97531u);
+
+		FGaeaScalarField Height = MakeHeightField(Domain);
+		for (int32 Y = 0; Y < Domain.Dimensions.Y; ++Y)
+		{
+			for (int32 X = 0; X < Domain.Dimensions.X; ++X)
+			{
+				Height.AtInterior(X, Y) = Ridge0.AtInterior(X, Y) + Ridge1.AtInterior(X, Y) + Ridge2.AtInterior(X, Y);
+			}
+		}
+		NormalizePositiveField(Height);
+		ApplyRadialFootprint(Height, MountainScale, XCenter, YCenter);
+
+		// The exact recovered call is Min(base, FractalWarp(base.Copy(), ...)).
+		// Keep that operation isolated until the remaining obfuscated warp constants
+		// are decoded; do not substitute SlopeWarp or alter the Ridge frequencies.
+		ApplyFractalWarpMin(Height, Seed + 27, bReduceDetails);
+		NormalizePositiveField(Height);
+
+		for (float& Value : Height.Values)
+		{
+			Value *= HeightAmount;
+		}
+
+		const float HeightScale = ResolveHeightScale(Context);
+		FGaeaTerrainDataset Dataset;
+		if (!ApplyStyleErosion(Height, Dataset, Style, bReduceDetails, Seed, HeightScale, Context, Error))
+		{
+			return false;
+		}
+
+		if (Style == TEXT("Strata"))
+		{
+			ApplyStrataProfile(Height, bReduceDetails, Seed);
+		}
+		ApplyBulk(Height, Bulk);
+		if (!ApplyInputMultiply(Height, Inputs, Error))
+		{
+			return false;
+		}
+
+		Height.Descriptor.Name = GaeaTerrainFieldNames::Height;
+		if (!Dataset.SetScalarField(MoveTemp(Height)))
+		{
+			Error = TEXT("Mountain could not publish Height.");
+			return false;
+		}
+		if (!RebuildSemantics(Dataset, HeightScale, Context.PhysicalMetrics, Error))
+		{
+			return false;
+		}
 
 		auto Publish = [&](FName OutputName, FName FieldName)
 		{
@@ -569,13 +734,12 @@ namespace
 
 void RegisterGaeaTerrainLandformNodes()
 {
-	EnsureAuditedMountainNodes();
-
 	FGaeaTerrainNodeDescriptor D;
 	D.Type = GaeaTerrainNodeTypes::Mountain;
 	D.DisplayName = TEXT("Mountain");
 	D.Category = TEXT("Terrain");
-	D.Description = TEXT("Gaea-style hierarchical mountain macro: Basic authors an asymmetric massif and ridge network; Eroded and Old progressively weather it; Alpine selects a distinct sharp-ridge form; Strata applies directional exposed-rock structure.");
+	D.Description = TEXT("Mountain generator following Gaea's recovered three-Ridge, radial-footprint, fractal-warp, style-process architecture.");
+	D.Inputs = { TerrainIn() };
 	D.Outputs = {
 		TerrainOut(),
 		ScalarOut(TEXT("Mass"), TEXT("Mass")),
@@ -586,14 +750,17 @@ void RegisterGaeaTerrainLandformNodes()
 		ScalarOut(TEXT("RockExposure"), TEXT("Rock Exposure")),
 		ScalarOut(TEXT("CryosphereEligibility"), TEXT("Cryosphere Eligibility"))
 	};
-	D.Parameters.Add(Num(TEXT("Scale"), TEXT("Scale"), 1.0, 0.01, 2.0, TEXT("Mountain")));
-	D.Parameters.Add(Num(TEXT("Height"), TEXT("Height"), 0.92, 0.0, 1.0, TEXT("Mountain")));
-	D.Parameters.Add(Choice(TEXT("Style"), TEXT("Style"), TEXT("Basic"), { TEXT("Basic"), TEXT("Eroded"), TEXT("Old"), TEXT("Alpine"), TEXT("Strata") }, TEXT("Mountain")));
+
+	// Gaea 2.3.0.1 public Mountain contract recovered from the managed assembly.
+	D.Parameters.Add(Num(TEXT("Scale"), TEXT("Scale"), 0.5, 0.0001, 1.0, TEXT("Mountain")));
+	D.Parameters.Add(Num(TEXT("Height"), TEXT("Height"), 1.25, 0.0001, 3.0, TEXT("Mountain")));
+	D.Parameters.Add(Choice(TEXT("Style"), TEXT("Style"), TEXT("Eroded"), { TEXT("Basic"), TEXT("Eroded"), TEXT("Old"), TEXT("Alpine"), TEXT("Strata") }, TEXT("Mountain")));
 	D.Parameters.Add(Choice(TEXT("Bulk"), TEXT("Bulk"), TEXT("Medium"), { TEXT("Low"), TEXT("Medium"), TEXT("High") }, TEXT("Mountain")));
 	D.Parameters.Add(Bool(TEXT("ReduceDetails"), TEXT("Reduce Details"), false, TEXT("Mountain")));
 	D.Parameters.Add(Int(TEXT("Seed"), TEXT("Seed"), 1337, -2147483647, 2147483647, TEXT("Mountain")));
-	D.Parameters.Add(Num(TEXT("X"), TEXT("X"), 0.0, -1.5, 1.5, TEXT("Position")));
-	D.Parameters.Add(Num(TEXT("Y"), TEXT("Y"), 0.0, -1.5, 1.5, TEXT("Position")));
+	D.Parameters.Add(Num(TEXT("X"), TEXT("X"), 0.5, 0.0, 1.0, TEXT("Position")));
+	D.Parameters.Add(Num(TEXT("Y"), TEXT("Y"), 0.5, 0.0, 1.0, TEXT("Position")));
+
 	FGaeaTerrainNodeDescriptorRegistry::Register(D);
 	FGaeaTerrainNodeRegistry::Register(D.Type, EvaluateMountain);
 }
