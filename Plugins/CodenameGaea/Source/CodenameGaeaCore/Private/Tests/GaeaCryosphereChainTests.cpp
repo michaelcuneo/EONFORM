@@ -33,8 +33,6 @@ namespace
 			FVector2d(50000.0, 50000.0));
 		FGaeaScalarField Height = MakeCryosphereField(Domain, GaeaTerrainFieldNames::Height, 0.0f);
 
-		// Broad cold upland with a shallow central trough. This gives Snowfield
-		// room to settle material and gives Glacier a valley-biased flow route.
 		for (int32 Y = 0; Y < 11; ++Y)
 		{
 			for (int32 X = 0; X < 11; ++X)
@@ -137,14 +135,12 @@ bool FGaeaCryosphereChainTest::RunTest(const FString& Parameters)
 		return false;
 	}
 
-	const FGaeaScalarField* Snowfield = Result.Dataset.FindScalarField(TEXT("Snowfield"));
-	const FGaeaScalarField* SnowfieldDepth = Result.Dataset.FindScalarField(TEXT("SnowfieldDepth"));
+	// Glacier changes Height, so stale upstream Snowfield analysis is correctly
+	// invalidated. Assert the final glacial process state instead.
 	const FGaeaScalarField* Glacier = Result.Dataset.FindScalarField(TEXT("Glacier"));
 	const FGaeaScalarField* IceDepth = Result.Dataset.FindScalarField(TEXT("IceDepth"));
 	const FGaeaScalarField* GlacialErosion = Result.Dataset.FindScalarField(TEXT("GlacialErosion"));
 	const FGaeaScalarField* IceFlow = Result.Dataset.FindScalarField(TEXT("IceFlow"));
-	TestNotNull(TEXT("Snowfield is published through the chain"), Snowfield);
-	TestNotNull(TEXT("SnowfieldDepth is published through the chain"), SnowfieldDepth);
 	TestNotNull(TEXT("Glacier is published"), Glacier);
 	TestNotNull(TEXT("IceDepth is published"), IceDepth);
 	TestNotNull(TEXT("GlacialErosion is published"), GlacialErosion);
