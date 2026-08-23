@@ -48,6 +48,18 @@ namespace
 		}
 		return true;
 	}
+
+	bool ResolveBaseColorFields(
+		const FGaeaTerrainDataset& Dataset,
+		const FGaeaScalarField*& OutR,
+		const FGaeaScalarField*& OutG,
+		const FGaeaScalarField*& OutB)
+	{
+		OutR = Dataset.FindScalarField(GaeaTerrainFieldNames::BaseColorR);
+		OutG = Dataset.FindScalarField(GaeaTerrainFieldNames::BaseColorG);
+		OutB = Dataset.FindScalarField(GaeaTerrainFieldNames::BaseColorB);
+		return OutR && OutG && OutB && OutR->IsValid() && OutG->IsValid() && OutB->IsValid();
+	}
 }
 
 FIntPoint FGaeaTerrainMeshMaterializer::ResolveTargetResolution(
@@ -128,6 +140,11 @@ bool FGaeaTerrainMeshMaterializer::BuildDynamicMeshRegion(
 		return false;
 	}
 
+	const FGaeaScalarField* BaseColorR = nullptr;
+	const FGaeaScalarField* BaseColorG = nullptr;
+	const FGaeaScalarField* BaseColorB = nullptr;
+	const bool bHasBaseColor = ResolveBaseColorFields(Dataset, BaseColorR, BaseColorG, BaseColorB);
+
 	const FVector2d MinWorld = Height->Domain.InteriorSampleToWorld(0, 0);
 	const FVector2d MaxWorld = Height->Domain.InteriorSampleToWorld(
 		Height->Domain.Dimensions.X - 1,
@@ -136,7 +153,7 @@ bool FGaeaTerrainMeshMaterializer::BuildDynamicMeshRegion(
 
 	const int32 LocalWidth = EndSample.X - StartSample.X + 1;
 	const int32 LocalHeight = EndSample.Y - StartSample.Y + 1;
-	OutMesh = FDynamicMesh3(true, false, false, false);
+	OutMesh = FDynamicMesh3(true, bHasBaseColor, false, false);
 
 	TArray<int32> VertexIds;
 	VertexIds.SetNumUninitialized(LocalWidth * LocalHeight);
@@ -165,7 +182,16 @@ bool FGaeaTerrainMeshMaterializer::BuildDynamicMeshRegion(
 				WorldCenter.Y + FromCenter.Y * Options.HorizontalScale * Options.HorizontalScaleXY.Y,
 				static_cast<double>(HeightValue) * static_cast<double>(Options.HeightScale) * Options.VerticalScale);
 
-			VertexIds[LocalY * LocalWidth + LocalX] = OutMesh.AppendVertex(Position);
+			const int32 VertexId = OutMesh.AppendVertex(Position);
+			VertexIds[LocalY * LocalWidth + LocalX] = VertexId;
+			if (bHasBaseColor)
+			{
+				const FVector3f VertexColor(
+					FMath::Clamp(BaseColorR->SampleWorld(SourceWorld, true), 0.0f, 1.0f),
+					FMath::Clamp(BaseColorG->SampleWorld(SourceWorld, true), 0.0f, 1.0f),
+					FMath::Clamp(BaseColorB->SampleWorld(SourceWorld, true), 0.0f, 1.0f));
+				OutMesh.SetVertexColor(VertexId, VertexColor);
+			}
 		}
 	}
 
