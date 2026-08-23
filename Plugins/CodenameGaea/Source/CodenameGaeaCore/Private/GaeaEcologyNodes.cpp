@@ -107,7 +107,7 @@ namespace GaeaEcology
 		if (!FGaeaTerrainDerivedData::EnsureContext(Dataset, Input.HeightScale, Context.PhysicalMetrics, &Error)) return false;
 		if (!FGaeaTerrainDerivedData::EnsureGeology(Dataset, Input.HeightScale, FGaeaTerrainDerivedDataSettings(), &Error)) return false;
 		if (!FGaeaTerrainDerivedData::EnsureProcessMasks(Dataset, Input.HeightScale, FGaeaTerrainDerivedDataSettings(), &Error)) return false;
-		if (!FGaeaTerrainDerivedData::EnsureHydrology(Dataset, Input.HeightScale, Context.PhysicalMetrics, &Error)) return false;
+		if (!FGaeaTerrainDerivedData::EnsureFlowAnalysis(Dataset, Input.HeightScale, Context.PhysicalMetrics, &Error)) return false;
 		return true;
 	}
 
@@ -141,7 +141,7 @@ namespace GaeaEcology
 		const FGaeaScalarField* Catchment = Dataset.FindScalarField(GaeaTerrainFieldNames::CatchmentAreaKm2);
 		if (!Height || !Elevation || !Slope || !Concavity || !Rainfall || !Evaporation || !SoilDepth || !Deposition || !Catchment)
 		{
-			Error = TEXT("Ecology could not resolve required terrain, climate, geology, and hydrology fields.");
+			Error = TEXT("Ecology could not resolve required terrain, climate, geology, and flow-analysis fields.");
 			return false;
 		}
 
