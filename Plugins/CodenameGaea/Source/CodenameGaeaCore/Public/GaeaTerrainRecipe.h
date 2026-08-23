@@ -132,6 +132,9 @@ namespace GaeaTerrainNodeTypes
 	CODENAMEGAEACORE_API extern const FName Soil;
 	CODENAMEGAEACORE_API extern const FName Normals;
 	CODENAMEGAEACORE_API extern const FName Occlusion;
+	CODENAMEGAEACORE_API extern const FName TextureBase;
+	CODENAMEGAEACORE_API extern const FName Texturizer;
+	CODENAMEGAEACORE_API extern const FName ColorThreshold;
 }
 
 USTRUCT(BlueprintType)
@@ -144,11 +147,13 @@ struct CODENAMEGAEACORE_API FGaeaTerrainNode
 	UPROPERTY(EditAnywhere, Category="Terrain Node") TMap<FName, int64> IntegerParameters;
 	UPROPERTY(EditAnywhere, Category="Terrain Node") TMap<FName, bool> BoolParameters;
 	UPROPERTY(EditAnywhere, Category="Terrain Node") TMap<FName, FName> NameParameters;
+	UPROPERTY(EditAnywhere, Category="Terrain Node") TMap<FName, FLinearColor> ColorParameters;
 	bool IsValid() const;
 	double GetNumber(FName Name, double DefaultValue) const;
 	int64 GetInteger(FName Name, int64 DefaultValue) const;
 	bool GetBool(FName Name, bool DefaultValue) const;
 	FName GetName(FName Name, FName DefaultValue = NAME_None) const;
+	FLinearColor GetColor(FName Name, const FLinearColor& DefaultValue = FLinearColor::White) const;
 };
 
 USTRUCT(BlueprintType)
