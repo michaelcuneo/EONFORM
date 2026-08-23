@@ -4,21 +4,23 @@
 #include "GaeaTerrainDataset.h"
 #include "GaeaTerrainPhysicalMetrics.h"
 
+/** Internal settings for the Gaea-compatible Mountain primitive. */
 struct CODENAMEGAEACORE_API FGaeaMountainLandformSettings
 {
+	// Domain fallbacks. The public node intentionally mirrors Gaea's visible controls.
 	int32 Resolution = 513;
 	float WorldSize = 100000.0f;
 	float HeightScale = 8000.0f;
-	float Radius = 0.72f;
-	float Elongation = 0.52f;
-	float OrientationDegrees = 20.0f;
-	float PeakSharpness = 0.58f;
-	float RidgeStrength = 0.72f;
-	float RidgeFrequency = 4.0f;
-	float Roughness = 0.34f;
-	float Asymmetry = 0.18f;
-	float BaseElevation = 0.02f;
+
+	// Gaea Mountain public contract.
+	float Scale = 1.0f;
+	float Height = 0.92f;
+	FName Style = TEXT("Basic");
+	FName Bulk = TEXT("Medium");
+	bool bReduceDetails = false;
 	int32 Seed = 1337;
+	float OffsetX = 0.0f;
+	float OffsetY = 0.0f;
 };
 
 struct CODENAMEGAEACORE_API FGaeaMountainLandformResult
@@ -31,6 +33,11 @@ struct CODENAMEGAEACORE_API FGaeaMountainLandformResult
 class CODENAMEGAEACORE_API FGaeaTerrainLandformOps
 {
 public:
+	/**
+	 * Builds a Gaea-style Mountain primitive from a distorted, modulated Voronoi
+	 * structure with clustered summits and branching ridge spurs. This operation
+	 * intentionally does not derive hydrology.
+	 */
 	static bool BuildMountain(
 		const FGaeaMountainLandformSettings& Settings,
 		const FGaeaTerrainPhysicalMetrics& PhysicalMetrics,
