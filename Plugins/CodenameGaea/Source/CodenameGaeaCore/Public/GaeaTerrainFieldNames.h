@@ -35,6 +35,12 @@ namespace GaeaTerrainFieldNames
 	CODENAMEGAEACORE_API extern const FName Deposits;
 	CODENAMEGAEACORE_API extern const FName Flow;
 
+	// Colorize handoff. SatMap publishes normalized RGB channels alongside
+	// Terrain so runtime/editor mesh materialization can preserve graph color.
+	CODENAMEGAEACORE_API extern const FName BaseColorR;
+	CODENAMEGAEACORE_API extern const FName BaseColorG;
+	CODENAMEGAEACORE_API extern const FName BaseColorB;
+
 	// Persistent D8 hydrology state.
 	CODENAMEGAEACORE_API extern const FName FlowDirection;
 	/** Legacy/sample-space accumulation: upstream contributing sample count including self. */
