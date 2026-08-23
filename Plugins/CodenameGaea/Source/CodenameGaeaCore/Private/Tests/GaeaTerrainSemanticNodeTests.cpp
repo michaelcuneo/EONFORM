@@ -185,7 +185,7 @@ bool FGaeaTerrainSemanticDeriveTest::RunTest(const FString& Parameters)
 		}
 		if (HighCount > 0 && LowCount > 0)
 		{
-			Test.TestTrue(TEXT("Peaks favor high terrain"), HighPeakSum / HighCount > LowPeakSum / LowCount);
+			TestTrue(TEXT("Peaks favor high terrain"), HighPeakSum / HighCount > LowPeakSum / LowCount);
 		}
 	}
 
@@ -227,8 +227,8 @@ bool FGaeaTerrainSemanticDeriveTest::RunTest(const FString& Parameters)
 		}
 		if (SteepCount > 0 && GentleCount > 0)
 		{
-			Test.TestTrue(TEXT("RockMap favors steeper exposed terrain"), SteepRock / SteepCount > GentleRock / GentleCount);
-			Test.TestTrue(TEXT("Soil favors gentler stable terrain"), GentleSoil / GentleCount > SteepSoil / SteepCount);
+			TestTrue(TEXT("RockMap favors steeper exposed terrain"), SteepRock / SteepCount > GentleRock / GentleCount);
+			TestTrue(TEXT("Soil favors gentler stable terrain"), GentleSoil / GentleCount > SteepSoil / SteepCount);
 		}
 	}
 
