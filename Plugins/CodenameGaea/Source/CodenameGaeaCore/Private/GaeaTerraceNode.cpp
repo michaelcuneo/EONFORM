@@ -3,6 +3,7 @@
 #include "GaeaTerrainEvaluator.h"
 #include "GaeaTerrainFieldNames.h"
 #include "GaeaTerrainNodeDescriptor.h"
+#include "GaeaTerrainProceduralOps.h"
 #include "GaeaTerrainRecipe.h"
 
 namespace
@@ -44,58 +45,6 @@ namespace
 		return Parameter;
 	}
 
-	float TerraceHash01(int32 X, int32 Y, int32 Seed)
-	{
-		uint32 H = static_cast<uint32>(X) * 374761393u;
-		H += static_cast<uint32>(Y) * 668265263u;
-		H += static_cast<uint32>(Seed) * 2246822519u;
-		H = (H ^ (H >> 13u)) * 1274126177u;
-		H ^= H >> 16u;
-		return static_cast<float>(H & 0x00ffffffu) / static_cast<float>(0x00ffffffu);
-	}
-
-	float TerraceShapeValue(float Value, int32 TerraceCount, float Uniformity, float Steepness, float Variation)
-	{
-		const float Steps = static_cast<float>(FMath::Max(2, TerraceCount));
-		const float Phase = Variation * (1.0f - Uniformity) / Steps;
-		const float Scaled = FMath::Clamp(Value + Phase, 0.0f, 1.0f) * Steps;
-		const float Base = FMath::FloorToFloat(Scaled);
-		const float Fraction = FMath::Frac(Scaled);
-		const float Sharpness = FMath::Lerp(1.0f, 12.0f, Steepness);
-		const float Edge = FMath::Pow(Fraction, Sharpness);
-		return FMath::Clamp((Base + Edge) / Steps, 0.0f, 1.0f);
-	}
-
-	bool TerraceProcessHeight(const FGaeaTerrainNode& Node, const FGaeaScalarField& Source, FGaeaScalarField& OutField, FString& Error)
-	{
-		if (!Source.IsValid())
-		{
-			Error = TEXT("Terraces received an invalid Height field.");
-			return false;
-		}
-
-		const int32 TerraceCount = FMath::Clamp(static_cast<int32>(Node.GetInteger(TEXT("Terraces"), 12)), 2, 256);
-		const float Uniformity = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Uniformity"), 1.0)), 0.0f, 1.0f);
-		const float Steepness = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Steepness"), 0.65)), 0.0f, 1.0f);
-		const float Intensity = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Intensity"), 1.0)), 0.0f, 1.0f);
-		const int32 Seed = static_cast<int32>(Node.GetInteger(TEXT("Seed"), 1337));
-
-		OutField = Source;
-		for (int32 Y = 0; Y < Source.Domain.Dimensions.Y; ++Y)
-		{
-			for (int32 X = 0; X < Source.Domain.Dimensions.X; ++X)
-			{
-				const float OriginalSigned = FMath::Clamp(Source.AtInterior(X, Y), -1.0f, 1.0f);
-				const float Original = OriginalSigned * 0.5f + 0.5f;
-				const float Variation = TerraceHash01(X, Y, Seed) - 0.5f;
-				const float Terraced = TerraceShapeValue(Original, TerraceCount, Uniformity, Steepness, Variation);
-				const float Result = FMath::Lerp(Original, Terraced, Intensity);
-				OutField.AtInterior(X, Y) = FMath::Clamp(Result * 2.0f - 1.0f, -1.0f, 1.0f);
-			}
-		}
-		return OutField.IsValid();
-	}
-
 	bool EvaluateTerraceNode(const FGaeaTerrainNode& Node, const FGaeaTerrainNodeInputs& Inputs, const FGaeaTerrainEvaluationContext&, FGaeaTerrainNodeEvaluation& Out, FString& Error)
 	{
 		const FGaeaTerrainValue* const* InputPtr = Inputs.Find(TEXT("Terrain"));
@@ -113,24 +62,33 @@ namespace
 			return false;
 		}
 
-		FGaeaScalarField ResultHeight;
-		if (!TerraceProcessHeight(Node, *Height, ResultHeight, Error)) return false;
-		ResultHeight.Descriptor.Name = GaeaTerrainFieldNames::Height;
+		const int32 TerraceCount = FMath::Clamp(static_cast<int32>(Node.GetInteger(TEXT("Terraces"), 10)), 3, 256);
+		const float Uniformity = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Uniformity"), 0.6)), 0.0f, 1.0f);
+		const float Steepness = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Steepness"), 0.2)), 0.0f, 1.0f);
+		const float Intensity = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Intensity"), 1.0)), 0.0f, 1.0f);
+		const int32 Seed = static_cast<int32>(Node.GetInteger(TEXT("Seed"), 1337));
+
+		FGaeaScalarField Source01 = *Height;
+		for (float& Value : Source01.Values)
+		{
+			Value = FMath::Clamp(Value * 0.5f + 0.5f, 0.0f, 1.0f);
+		}
+
+		FGaeaScalarField Result01;
+		if (!GaeaTerrainProceduralOps::ApplyTerrace(Source01, TerraceCount, Uniformity, Steepness, Intensity, Seed, false, Result01, &Error)) return false;
+		for (float& Value : Result01.Values)
+		{
+			Value = FMath::Clamp(Value * 2.0f - 1.0f, -1.0f, 1.0f);
+		}
+		Result01.Descriptor.Name = GaeaTerrainFieldNames::Height;
 
 		FGaeaTerrainDataset Dataset = Input->TerrainDataset;
-		if (!Dataset.SetScalarField(MoveTemp(ResultHeight)))
+		if (!Dataset.SetScalarField(MoveTemp(Result01)))
 		{
 			Error = TEXT("Terraces could not publish its Height field.");
 			return false;
 		}
-
-		FGaeaTerrainValue Result = FGaeaTerrainValue::MakeTerrain(MoveTemp(Dataset), Input->HeightScale);
-		if (!Result.IsValid())
-		{
-			Error = TEXT("Terraces produced an invalid terrain value.");
-			return false;
-		}
-		Out.Outputs.Add(TEXT("Out"), MoveTemp(Result));
+		Out.Outputs.Add(TEXT("Out"), FGaeaTerrainValue::MakeTerrain(MoveTemp(Dataset), Input->HeightScale));
 		return true;
 	}
 }
@@ -141,15 +99,14 @@ void RegisterGaeaTerraceNode()
 	Descriptor.Type = GaeaTerrainNodeTypes::Terrace;
 	Descriptor.DisplayName = TEXT("Terraces");
 	Descriptor.Category = TEXT("Surface");
-	Descriptor.Description = TEXT("Creates evenly controlled terrain terraces with adjustable uniformity, steepness, intensity, and seed.");
+	Descriptor.Description = TEXT("Creates randomized terrain terrace levels with adjustable uniformity, steepness, intensity, and seed.");
 	Descriptor.Inputs.Add(TerraceTerrainPort(TEXT("Terrain"), TEXT("Input")));
 	Descriptor.Outputs.Add(TerraceTerrainPort(TEXT("Out"), TEXT("Out")));
-	Descriptor.Parameters.Add(TerraceIntegerParameter(TEXT("Terraces"), TEXT("Terraces"), 12, 2, 256));
-	Descriptor.Parameters.Add(TerraceNumberParameter(TEXT("Uniformity"), TEXT("Uniformity"), 1.0, 0.0, 1.0));
-	Descriptor.Parameters.Add(TerraceNumberParameter(TEXT("Steepness"), TEXT("Steepness"), 0.65, 0.0, 1.0));
+	Descriptor.Parameters.Add(TerraceIntegerParameter(TEXT("Terraces"), TEXT("Terraces"), 10, 3, 256));
+	Descriptor.Parameters.Add(TerraceNumberParameter(TEXT("Uniformity"), TEXT("Uniformity"), 0.6, 0.0, 1.0));
+	Descriptor.Parameters.Add(TerraceNumberParameter(TEXT("Steepness"), TEXT("Steepness"), 0.2, 0.0, 1.0));
 	Descriptor.Parameters.Add(TerraceNumberParameter(TEXT("Intensity"), TEXT("Intensity"), 1.0, 0.0, 1.0));
 	Descriptor.Parameters.Add(TerraceIntegerParameter(TEXT("Seed"), TEXT("Seed"), 1337, -2147483647, 2147483647));
-
 	FGaeaTerrainNodeDescriptorRegistry::Register(Descriptor);
 	FGaeaTerrainNodeRegistry::Register(GaeaTerrainNodeTypes::Terrace, EvaluateTerraceNode);
 }
