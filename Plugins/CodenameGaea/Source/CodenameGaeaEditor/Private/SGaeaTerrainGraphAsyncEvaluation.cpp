@@ -41,8 +41,6 @@ namespace
 				GetTypeHash(SourceSnapshot.Revision));
 		}
 
-		// Load File-node dependencies while still on the game thread. File decoding
-		// itself may then execute inside the background evaluator.
 		const bool bUsesFileNode = Recipe.Nodes.ContainsByPredicate([](const FGaeaTerrainNode& Node)
 		{
 			return Node.Type == GaeaTerrainNodeTypes::File;
@@ -59,16 +57,20 @@ namespace
 		OutError.Reset();
 		return true;
 	}
+
+	void SetGraphActivity(const TSharedPtr<SGaeaTerrainGraphPanel>& Panel, EGaeaEditorGraphActivity Activity)
+	{
+		if (Panel.IsValid() && Panel->EditorGraph.IsValid())
+		{
+			Panel->EditorGraph->SetActivity(Activity);
+		}
+	}
 }
 
 void SGaeaTerrainGraphPanel::RequestFinalEvaluationAsync()
 {
 	++GraphEvaluationGeneration;
 	bFinalEvaluationPending = true;
-
-	// Keep the last valid snapshot visible while the new revision evaluates.
-	// Generate Terrain is prevented from consuming it by the readiness state below,
-	// so there is no reason to blank the inspector/preview during computation.
 	FGaeaTerrainOutputEditorState::Get().BeginAnalysis();
 
 	if (!bAutoPreviewEvaluating)
@@ -106,7 +108,11 @@ void SGaeaTerrainGraphPanel::StartNextAsyncEvaluation()
 	if (!bEvaluateFinal)
 	{
 		InspectionNodeId = PendingInspectionNodeId;
-		if (!InspectionNodeId.IsValid()) return;
+		if (!InspectionNodeId.IsValid())
+		{
+			if (EditorGraph.IsValid()) EditorGraph->SetActivity(EGaeaEditorGraphActivity::Idle);
+			return;
+		}
 	}
 
 	FGaeaTerrainRecipe Recipe;
@@ -122,6 +128,7 @@ void SGaeaTerrainGraphPanel::StartNextAsyncEvaluation()
 		{
 			PendingInspectionNodeId.Invalidate();
 		}
+		if (EditorGraph.IsValid()) EditorGraph->SetActivity(EGaeaEditorGraphActivity::Idle);
 		StatusText = FText::FromString(FString::Printf(TEXT("Graph is invalid: %s"), *Error));
 		return;
 	}
@@ -132,6 +139,7 @@ void SGaeaTerrainGraphPanel::StartNextAsyncEvaluation()
 		if (!Recipe.Validate(&Error))
 		{
 			PendingInspectionNodeId.Invalidate();
+			if (EditorGraph.IsValid()) EditorGraph->SetActivity(EGaeaEditorGraphActivity::Idle);
 			StatusText = FText::FromString(FString::Printf(TEXT("Inspection is invalid: %s"), *Error));
 			return;
 		}
@@ -149,6 +157,7 @@ void SGaeaTerrainGraphPanel::StartNextAsyncEvaluation()
 		{
 			PendingInspectionNodeId.Invalidate();
 		}
+		if (EditorGraph.IsValid()) EditorGraph->SetActivity(EGaeaEditorGraphActivity::Idle);
 		StatusText = FText::FromString(Error);
 		return;
 	}
@@ -167,6 +176,8 @@ void SGaeaTerrainGraphPanel::StartNextAsyncEvaluation()
 	}
 
 	bAutoPreviewEvaluating = true;
+	if (EditorGraph.IsValid()) EditorGraph->SetActivity(EGaeaEditorGraphActivity::Solving);
+
 	TWeakPtr<SGaeaTerrainGraphPanel> WeakPanel = SharedThis(this);
 	const TSharedPtr<FGaeaTerrainEvaluationCache, ESPMode::ThreadSafe> CapturedCache = IncrementalEvaluationCache;
 	Async(EAsyncExecution::ThreadPool,
@@ -202,6 +213,7 @@ void SGaeaTerrainGraphPanel::StartNextAsyncEvaluation()
 								bEvaluateFinal ? TEXT("Terrain evaluation") : TEXT("Node inspection"),
 								*Failure));
 						}
+						SetGraphActivity(Panel, EGaeaEditorGraphActivity::Idle);
 						Panel->StartNextAsyncEvaluation();
 					});
 				return;
@@ -240,6 +252,7 @@ void SGaeaTerrainGraphPanel::StartNextAsyncEvaluation()
 					if (bStale)
 					{
 						Panel->bAutoPreviewEvaluating = false;
+						SetGraphActivity(Panel, EGaeaEditorGraphActivity::Idle);
 						Panel->StartNextAsyncEvaluation();
 						return;
 					}
@@ -247,10 +260,7 @@ void SGaeaTerrainGraphPanel::StartNextAsyncEvaluation()
 					FGaeaTerrainDatasetMetadata Metadata;
 					Metadata.HeightScale = HeightScale;
 					const FName SourceId = bEvaluateFinal ? FinalTerrainSource : InspectionTerrainSource;
-					const uint64 BaseRevision = FGaeaTerrainDatasetRegistry::Publish(
-						SourceId,
-						MoveTemp(BaseDataset),
-						Metadata);
+					const uint64 BaseRevision = FGaeaTerrainDatasetRegistry::Publish(SourceId, MoveTemp(BaseDataset), Metadata);
 					if (BaseRevision == 0)
 					{
 						Panel->bAutoPreviewEvaluating = false;
@@ -258,6 +268,7 @@ void SGaeaTerrainGraphPanel::StartNextAsyncEvaluation()
 						{
 							FGaeaTerrainOutputEditorState::Get().FailAnalysis(TEXT("Publishing the evaluated terrain snapshot failed."));
 						}
+						SetGraphActivity(Panel, EGaeaEditorGraphActivity::Idle);
 						Panel->StatusText = FText::FromString(TEXT("Terrain evaluated successfully, but publishing the snapshot failed."));
 						Panel->StartNextAsyncEvaluation();
 						return;
@@ -266,6 +277,7 @@ void SGaeaTerrainGraphPanel::StartNextAsyncEvaluation()
 					if (!bEvaluateFinal)
 					{
 						Panel->bAutoPreviewEvaluating = false;
+						SetGraphActivity(Panel, EGaeaEditorGraphActivity::Idle);
 						Panel->StatusText = FText::FromString(FString::Printf(
 							TEXT("Inspected node %s -> revision %llu (%d fields)."),
 							*InspectionNodeId.ToString(EGuidFormats::Short),
@@ -277,6 +289,7 @@ void SGaeaTerrainGraphPanel::StartNextAsyncEvaluation()
 					}
 
 					FGaeaTerrainOutputEditorState::Get().PublishTerrain(BaseRevision);
+					SetGraphActivity(Panel, EGaeaEditorGraphActivity::Analyzing);
 					Panel->StatusText = FText::FromString(FString::Printf(
 						TEXT("Terrain %08X ready in %.1f ms: %d node%s recomputed, %d cached. Deriving hydrology..."),
 						RecipeHash,
@@ -286,8 +299,6 @@ void SGaeaTerrainGraphPanel::StartNextAsyncEvaluation()
 						CachedNodeCount));
 					Panel->OnEvaluated.ExecuteIfBound();
 
-					// The graph evaluator is free now. Hydrology is an independent enrichment
-					// job and must never hold newer graph edits behind an obsolete analysis pass.
 					Panel->bAutoPreviewEvaluating = false;
 					Panel->StartNextAsyncEvaluation();
 
@@ -317,17 +328,12 @@ void SGaeaTerrainGraphPanel::StartNextAsyncEvaluation()
 								{
 									const TSharedPtr<SGaeaTerrainGraphPanel> Panel = WeakPanel.Pin();
 									if (!Panel.IsValid()) return;
-
-									// A newer graph revision owns the final registry now. The obsolete
-									// hydrology job simply dies here and never touches editor queue state.
-									if (CapturedGraphGeneration != Panel->GraphEvaluationGeneration)
-									{
-										return;
-									}
+									if (CapturedGraphGeneration != Panel->GraphEvaluationGeneration) return;
 
 									if (!bHydrologyReady)
 									{
 										FGaeaTerrainOutputEditorState::Get().FailDerivedAnalysis(HydrologyError);
+										SetGraphActivity(Panel, EGaeaEditorGraphActivity::Idle);
 										Panel->StatusText = FText::FromString(FString::Printf(
 											TEXT("Terrain is ready, but hydrology analysis failed: %s"),
 											*HydrologyError));
@@ -344,11 +350,13 @@ void SGaeaTerrainGraphPanel::StartNextAsyncEvaluation()
 									if (AnalysisRevision == 0)
 									{
 										FGaeaTerrainOutputEditorState::Get().FailDerivedAnalysis(TEXT("Publishing hydrology analysis failed."));
+										SetGraphActivity(Panel, EGaeaEditorGraphActivity::Idle);
 										Panel->StatusText = FText::FromString(TEXT("Terrain is ready, but publishing hydrology analysis failed."));
 										return;
 									}
 
 									FGaeaTerrainOutputEditorState::Get().CompleteAnalysis(AnalysisRevision);
+									SetGraphActivity(Panel, EGaeaEditorGraphActivity::Idle);
 									Panel->StatusText = FText::FromString(FString::Printf(
 										TEXT("Analysis %08X -> revision %llu (%d fields, hydrology ready)."),
 										RecipeHash,
