@@ -1,6 +1,6 @@
 #include "GaeaEditorStyle.h"
 
-#include "Brushes/SlateVectorImageBrush.h"
+#include "Brushes/SlateImageBrush.h"
 #include "Interfaces/IPluginManager.h"
 #include "Misc/Paths.h"
 #include "Styling/SlateStyle.h"
@@ -18,7 +18,8 @@ namespace
 		return new FSlateVectorImageBrush(
 			Style->RootToContentDir(RelativePath, TEXT(".svg")),
 			Size,
-			FSlateColor::UseForeground());
+			FSlateColor::UseForeground(),
+			ESlateBrushTileType::NoTile);
 	}
 }
 
