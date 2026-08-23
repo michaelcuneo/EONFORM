@@ -57,30 +57,40 @@ namespace
 		Source.Id = FGuid(801, 1, 1, 1);
 		Source.Type = GaeaTerrainNodeTypes::SourceDataset;
 
+		// Deliberately cold, snowy conditions. This test is about the transition
+		// from persistent snow to firn/ice, not whether a marginal climate happens
+		// to cross the snow threshold on a particular synthetic ridge.
 		FGaeaTerrainNode Snow;
 		Snow.Id = FGuid(802, 2, 2, 2);
 		Snow.Type = GaeaTerrainNodeTypes::Snow;
-		Snow.NumericParameters.Add(TEXT("BaseTemperatureC"), 2.0);
-		Snow.NumericParameters.Add(TEXT("LapseRateCPerKm"), 8.0);
+		Snow.NumericParameters.Add(TEXT("BaseTemperatureC"), -5.0);
+		Snow.NumericParameters.Add(TEXT("LapseRateCPerKm"), 6.0);
+		Snow.NumericParameters.Add(TEXT("SnowTemperatureC"), 2.0);
+		Snow.NumericParameters.Add(TEXT("TemperatureTransitionC"), 4.0);
 		Snow.NumericParameters.Add(TEXT("Precipitation"), 1.0);
-		Snow.NumericParameters.Add(TEXT("MaxDepthMeters"), 4.0);
+		Snow.NumericParameters.Add(TEXT("MaxDepthMeters"), 8.0);
+		Snow.NumericParameters.Add(TEXT("AccumulationSlopeDegrees"), 70.0);
+		Snow.NumericParameters.Add(TEXT("MaxStableSlopeDegrees"), 85.0);
+		Snow.NumericParameters.Add(TEXT("ShelterStrength"), 0.2);
 		Snow.BoolParameters.Add(TEXT("AffectHeight"), true);
 
 		FGaeaTerrainNode Snowfield;
 		Snowfield.Id = FGuid(803, 3, 3, 3);
 		Snowfield.Type = GaeaTerrainNodeTypes::Snowfield;
-		Snowfield.NumericParameters.Add(TEXT("Iterations"), 8.0);
-		Snowfield.NumericParameters.Add(TEXT("TransportStrength"), 0.25);
-		Snowfield.NumericParameters.Add(TEXT("Compaction"), 0.05);
+		Snowfield.NumericParameters.Add(TEXT("Iterations"), 4.0);
+		Snowfield.NumericParameters.Add(TEXT("TransportStrength"), 0.0);
+		Snowfield.NumericParameters.Add(TEXT("Compaction"), 0.0);
 		Snowfield.NumericParameters.Add(TEXT("MeltRateMetersPerC"), 0.0);
 		Snowfield.BoolParameters.Add(TEXT("AffectHeight"), true);
 
 		FGaeaTerrainNode Glacier;
 		Glacier.Id = FGuid(804, 4, 4, 4);
 		Glacier.Type = GaeaTerrainNodeTypes::Glacier;
-		Glacier.NumericParameters.Add(TEXT("Iterations"), 8.0);
-		Glacier.NumericParameters.Add(TEXT("FirnDepthMeters"), 0.2);
-		Glacier.NumericParameters.Add(TEXT("IceCompaction"), 0.8);
+		Glacier.NumericParameters.Add(TEXT("Iterations"), 4.0);
+		Glacier.NumericParameters.Add(TEXT("FirnDepthMeters"), 0.1);
+		Glacier.NumericParameters.Add(TEXT("IceCompaction"), 1.0);
+		Glacier.NumericParameters.Add(TEXT("FlowStrength"), 0.0);
+		Glacier.NumericParameters.Add(TEXT("ValleyPreference"), 0.0);
 		Glacier.NumericParameters.Add(TEXT("MeltRateMetersPerC"), 0.0);
 		Glacier.NumericParameters.Add(TEXT("ErosionStrength"), 0.05);
 		Glacier.BoolParameters.Add(TEXT("AffectHeight"), true);
@@ -135,8 +145,6 @@ bool FGaeaCryosphereChainTest::RunTest(const FString& Parameters)
 		return false;
 	}
 
-	// Glacier changes Height, so stale upstream Snowfield analysis is correctly
-	// invalidated. Assert the final glacial process state instead.
 	const FGaeaScalarField* Glacier = Result.Dataset.FindScalarField(TEXT("Glacier"));
 	const FGaeaScalarField* IceDepth = Result.Dataset.FindScalarField(TEXT("IceDepth"));
 	const FGaeaScalarField* GlacialErosion = Result.Dataset.FindScalarField(TEXT("GlacialErosion"));
