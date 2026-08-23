@@ -31,12 +31,27 @@ namespace
 			&& Dataset.HasScalarField(GaeaTerrainFieldNames::Evaporation);
 	}
 
+	bool HasDrainageFields(const FGaeaTerrainDataset& Dataset)
+	{
+		return Dataset.HasScalarField(GaeaTerrainFieldNames::FlowDirection);
+	}
+
+	bool HasFlowAnalysisFields(const FGaeaTerrainDataset& Dataset)
+	{
+		return HasDrainageFields(Dataset)
+			&& Dataset.HasScalarField(GaeaTerrainFieldNames::FlowAccumulation)
+			&& Dataset.HasScalarField(GaeaTerrainFieldNames::CatchmentAreaKm2);
+	}
+
+	bool HasHydrologyNetworkFields(const FGaeaTerrainDataset& Dataset)
+	{
+		return HasFlowAnalysisFields(Dataset)
+			&& Dataset.HasScalarField(GaeaTerrainFieldNames::DistanceToOutletKm);
+	}
+
 	bool HasHydrologyFields(const FGaeaTerrainDataset& Dataset)
 	{
-		return Dataset.HasScalarField(GaeaTerrainFieldNames::FlowDirection)
-			&& Dataset.HasScalarField(GaeaTerrainFieldNames::FlowAccumulation)
-			&& Dataset.HasScalarField(GaeaTerrainFieldNames::CatchmentAreaKm2)
-			&& Dataset.HasScalarField(GaeaTerrainFieldNames::DistanceToOutletKm)
+		return HasHydrologyNetworkFields(Dataset)
 			&& Dataset.HasScalarField(GaeaTerrainFieldNames::StreamOrder);
 	}
 
@@ -94,14 +109,13 @@ namespace
 		return Field;
 	}
 
-	bool BuildHydrologyFields(
+	static const int32 HydrologyDX[8] = { 1, 1, 0, -1, -1, -1, 0, 1 };
+	static const int32 HydrologyDY[8] = { 0, 1, 1, 1, 0, -1, -1, -1 };
+
+	bool BuildDrainageDirection(
 		const FGaeaScalarField& Height,
 		const FGaeaTerrainPhysicalMetrics& PhysicalMetrics,
 		FGaeaScalarField& OutDirection,
-		FGaeaScalarField& OutAccumulation,
-		FGaeaScalarField& OutCatchmentArea,
-		FGaeaScalarField& OutDistanceToOutlet,
-		FGaeaScalarField& OutStreamOrder,
 		FString* OutError)
 	{
 		const FIntPoint Dimensions = Height.Domain.Dimensions;
@@ -114,7 +128,6 @@ namespace
 		}
 
 		const FVector2d SampleSpacingMeters = PhysicalMetrics.ResolveSampleSpacingMeters(Dimensions, Height.Domain.GetCellSize());
-		const double CellAreaSquareMeters = PhysicalMetrics.ResolveCellAreaSquareMeters(Dimensions, Height.Domain.GetCellSize());
 		if (SampleSpacingMeters.X <= UE_DOUBLE_SMALL_NUMBER || SampleSpacingMeters.Y <= UE_DOUBLE_SMALL_NUMBER)
 		{
 			if (OutError) *OutError = TEXT("Hydrology could not resolve physical sample spacing.");
@@ -154,9 +167,6 @@ namespace
 			PushBoundary(Width - 1, Y);
 		}
 
-		static const int32 DX[8] = { 1, 1, 0, -1, -1, -1, 0, 1 };
-		static const int32 DY[8] = { 0, 1, 1, 1, 0, -1, -1, -1 };
-
 		while (!Heap.IsEmpty())
 		{
 			FHydrologyCell Cell;
@@ -166,8 +176,8 @@ namespace
 
 			for (int32 Direction = 0; Direction < 8; ++Direction)
 			{
-				const int32 NX = X + DX[Direction];
-				const int32 NY = Y + DY[Direction];
+				const int32 NX = X + HydrologyDX[Direction];
+				const int32 NY = Y + HydrologyDY[Direction];
 				if (NX < 0 || NX >= Width || NY < 0 || NY >= HeightCount) continue;
 				const int32 NIndex = IndexOf(NX, NY);
 				if (Visited[NIndex]) continue;
@@ -178,8 +188,6 @@ namespace
 			}
 		}
 
-		// Stage 1: resolve genuine downhill flow from the depression-filled surface.
-		// Prefer the steepest physical descent so rectangular worlds do not bias D8.
 		TArray<int32> Receiver;
 		Receiver.Init(INDEX_NONE, Num);
 		TArray<uint8> HasStrictReceiver;
@@ -196,15 +204,15 @@ namespace
 
 				for (int32 Direction = 0; Direction < 8; ++Direction)
 				{
-					const int32 NX = X + DX[Direction];
-					const int32 NY = Y + DY[Direction];
+					const int32 NX = X + HydrologyDX[Direction];
+					const int32 NY = Y + HydrologyDY[Direction];
 					if (NX < 0 || NX >= Width || NY < 0 || NY >= HeightCount) continue;
 					const int32 NIndex = IndexOf(NX, NY);
 					const double Drop = static_cast<double>(CurrentElevation - Filled[NIndex]);
 					if (Drop <= static_cast<double>(UE_SMALL_NUMBER)) continue;
 
-					const double StepX = static_cast<double>(DX[Direction]) * SampleSpacingMeters.X;
-					const double StepY = static_cast<double>(DY[Direction]) * SampleSpacingMeters.Y;
+					const double StepX = static_cast<double>(HydrologyDX[Direction]) * SampleSpacingMeters.X;
+					const double StepY = static_cast<double>(HydrologyDY[Direction]) * SampleSpacingMeters.Y;
 					const double Distance = FMath::Sqrt(StepX * StepX + StepY * StepY);
 					const double Slope = Drop / FMath::Max(Distance, UE_DOUBLE_SMALL_NUMBER);
 					if (Slope > BestSlope)
@@ -222,9 +230,9 @@ namespace
 			}
 		}
 
-		// Stage 2: route only unresolved filled flats. Seeds are cells that already
-		// spill downhill plus domain-edge outlets. A multi-source physical-distance
-		// solve removes the old priority-flood pop-order / diagonal routing artifact.
+		// Route filled flats by physical distance to a genuine downhill spill or
+		// domain-edge outlet. This keeps broad depressions drainage-connected and
+		// avoids priority-flood pop-order artifacts.
 		const double InfiniteDistance = TNumericLimits<double>::Max();
 		TArray<double> FlatDistance;
 		FlatDistance.Init(InfiniteDistance, Num);
@@ -254,14 +262,14 @@ namespace
 			const int32 Y = Cell.Index / Width;
 			for (int32 Direction = 0; Direction < 8; ++Direction)
 			{
-				const int32 NX = X + DX[Direction];
-				const int32 NY = Y + DY[Direction];
+				const int32 NX = X + HydrologyDX[Direction];
+				const int32 NY = Y + HydrologyDY[Direction];
 				if (NX < 0 || NX >= Width || NY < 0 || NY >= HeightCount) continue;
 				const int32 NIndex = IndexOf(NX, NY);
 				if (!FMath::IsNearlyEqual(Filled[NIndex], Filled[Cell.Index])) continue;
 
-				const double StepX = static_cast<double>(DX[Direction]) * SampleSpacingMeters.X;
-				const double StepY = static_cast<double>(DY[Direction]) * SampleSpacingMeters.Y;
+				const double StepX = static_cast<double>(HydrologyDX[Direction]) * SampleSpacingMeters.X;
+				const double StepY = static_cast<double>(HydrologyDY[Direction]) * SampleSpacingMeters.Y;
 				const double StepDistance = FMath::Sqrt(StepX * StepX + StepY * StepY);
 				const double CandidateDistance = Cell.Distance + StepDistance;
 				if (CandidateDistance + UE_DOUBLE_SMALL_NUMBER < FlatDistance[NIndex])
@@ -283,8 +291,8 @@ namespace
 				int32 BestIndex = INDEX_NONE;
 				for (int32 Direction = 0; Direction < 8; ++Direction)
 				{
-					const int32 NX = X + DX[Direction];
-					const int32 NY = Y + DY[Direction];
+					const int32 NX = X + HydrologyDX[Direction];
+					const int32 NY = Y + HydrologyDY[Direction];
 					if (NX < 0 || NX >= Width || NY < 0 || NY >= HeightCount) continue;
 					const int32 NIndex = IndexOf(NX, NY);
 					if (!FMath::IsNearlyEqual(Filled[NIndex], Filled[Index])) continue;
@@ -298,71 +306,12 @@ namespace
 			}
 		}
 
-		TArray<int32> DrainageOrder;
-		DrainageOrder.Reserve(Num);
-		for (int32 Index = 0; Index < Num; ++Index) DrainageOrder.Add(Index);
-		DrainageOrder.Sort([&](int32 A, int32 B)
-		{
-			if (!FMath::IsNearlyEqual(Filled[A], Filled[B])) return Filled[A] > Filled[B];
-			return FlatDistance[A] > FlatDistance[B];
-		});
-
-		TArray<float> Accumulation;
-		Accumulation.Init(1.0f, Num);
-		TArray<int32> HighestUpstreamOrder;
-		HighestUpstreamOrder.Init(0, Num);
-		TArray<int32> HighestUpstreamCount;
-		HighestUpstreamCount.Init(0, Num);
-		TArray<int32> StrahlerOrder;
-		StrahlerOrder.Init(1, Num);
-
-		for (const int32 Index : DrainageOrder)
-		{
-			const int32 LocalHighest = HighestUpstreamOrder[Index];
-			const int32 LocalOrder = LocalHighest <= 0
-				? 1
-				: LocalHighest + (HighestUpstreamCount[Index] >= 2 ? 1 : 0);
-			StrahlerOrder[Index] = LocalOrder;
-
-			const int32 To = Receiver[Index];
-			if (To != INDEX_NONE)
-			{
-				Accumulation[To] += Accumulation[Index];
-				if (LocalOrder > HighestUpstreamOrder[To])
-				{
-					HighestUpstreamOrder[To] = LocalOrder;
-					HighestUpstreamCount[To] = 1;
-				}
-				else if (LocalOrder == HighestUpstreamOrder[To])
-				{
-					++HighestUpstreamCount[To];
-				}
-			}
-		}
-
-		TArray<float> DistanceToOutletKm;
-		DistanceToOutletKm.Init(0.0f, Num);
-		for (int32 OrderIndex = DrainageOrder.Num() - 1; OrderIndex >= 0; --OrderIndex)
-		{
-			const int32 Index = DrainageOrder[OrderIndex];
-			const int32 To = Receiver[Index];
-			if (To == INDEX_NONE) continue;
-
-			const int32 X = Index % Width;
-			const int32 Y = Index / Width;
-			const int32 TX = To % Width;
-			const int32 TY = To / Width;
-			const double StepX = static_cast<double>(TX - X) * SampleSpacingMeters.X;
-			const double StepY = static_cast<double>(TY - Y) * SampleSpacingMeters.Y;
-			const double StepKm = FMath::Sqrt(StepX * StepX + StepY * StepY) / 1000.0;
-			DistanceToOutletKm[Index] = static_cast<float>(StepKm + static_cast<double>(DistanceToOutletKm[To]));
-		}
-
-		OutDirection = MakeHydrologyField(Height.Domain, GaeaTerrainFieldNames::FlowDirection, EGaeaFieldUnit::Unitless, EGaeaInterpolation::Nearest, -1.0f);
-		OutAccumulation = MakeHydrologyField(Height.Domain, GaeaTerrainFieldNames::FlowAccumulation, EGaeaFieldUnit::Unitless, EGaeaInterpolation::Bilinear, 1.0f);
-		OutCatchmentArea = MakeHydrologyField(Height.Domain, GaeaTerrainFieldNames::CatchmentAreaKm2, EGaeaFieldUnit::SquareKilometers, EGaeaInterpolation::Bilinear, 0.0f);
-		OutDistanceToOutlet = MakeHydrologyField(Height.Domain, GaeaTerrainFieldNames::DistanceToOutletKm, EGaeaFieldUnit::Kilometers, EGaeaInterpolation::Bilinear, 0.0f);
-		OutStreamOrder = MakeHydrologyField(Height.Domain, GaeaTerrainFieldNames::StreamOrder, EGaeaFieldUnit::Unitless, EGaeaInterpolation::Nearest, 1.0f);
+		OutDirection = MakeHydrologyField(
+			Height.Domain,
+			GaeaTerrainFieldNames::FlowDirection,
+			EGaeaFieldUnit::Unitless,
+			EGaeaInterpolation::Nearest,
+			-1.0f);
 
 		for (int32 Y = 0; Y < HeightCount; ++Y)
 		{
@@ -379,26 +328,195 @@ namespace
 					const int32 StepY = FMath::Clamp(TY - Y, -1, 1);
 					for (int32 Direction = 0; Direction < 8; ++Direction)
 					{
-						if (DX[Direction] == StepX && DY[Direction] == StepY)
+						if (HydrologyDX[Direction] == StepX && HydrologyDY[Direction] == StepY)
 						{
 							DirectionCode = static_cast<float>(Direction);
 							break;
 						}
 					}
 				}
-
 				OutDirection.AtInterior(X, Y) = DirectionCode;
-				OutAccumulation.AtInterior(X, Y) = Accumulation[Index];
-				OutCatchmentArea.AtInterior(X, Y) = static_cast<float>(static_cast<double>(Accumulation[Index]) * CellAreaSquareMeters / 1000000.0);
-				OutDistanceToOutlet.AtInterior(X, Y) = DistanceToOutletKm[Index];
-				OutStreamOrder.AtInterior(X, Y) = static_cast<float>(StrahlerOrder[Index]);
 			}
 		}
 
-		if (!OutDirection.IsValid() || !OutAccumulation.IsValid() || !OutCatchmentArea.IsValid()
-			|| !OutDistanceToOutlet.IsValid() || !OutStreamOrder.IsValid())
+		if (!OutDirection.IsValid())
 		{
-			if (OutError) *OutError = TEXT("Hydrology produced invalid drainage fields.");
+			if (OutError) *OutError = TEXT("Hydrology produced an invalid drainage direction field.");
+			return false;
+		}
+		if (OutError) OutError->Reset();
+		return true;
+	}
+
+	bool BuildReceiverGraph(
+		const FGaeaScalarField& Direction,
+		TArray<int32>& OutReceiver,
+		TArray<int32>& OutUpstreamCount,
+		TArray<int32>& OutTopologicalOrder,
+		FString* OutError)
+	{
+		const int32 Width = Direction.Domain.Dimensions.X;
+		const int32 HeightCount = Direction.Domain.Dimensions.Y;
+		const int32 Num = Width * HeightCount;
+		OutReceiver.Init(INDEX_NONE, Num);
+		OutUpstreamCount.Init(0, Num);
+
+		for (int32 Y = 0; Y < HeightCount; ++Y)
+		{
+			for (int32 X = 0; X < Width; ++X)
+			{
+				const int32 Index = Y * Width + X;
+				const int32 Code = FMath::RoundToInt(Direction.AtInterior(X, Y));
+				if (Code < 0 || Code > 7) continue;
+				const int32 NX = X + HydrologyDX[Code];
+				const int32 NY = Y + HydrologyDY[Code];
+				if (NX < 0 || NX >= Width || NY < 0 || NY >= HeightCount) continue;
+				const int32 To = NY * Width + NX;
+				if (To == Index) continue;
+				OutReceiver[Index] = To;
+				++OutUpstreamCount[To];
+			}
+		}
+
+		TArray<int32> RemainingUpstream = OutUpstreamCount;
+		TArray<int32> Queue;
+		Queue.Reserve(Num);
+		for (int32 Index = 0; Index < Num; ++Index)
+		{
+			if (RemainingUpstream[Index] == 0) Queue.Add(Index);
+		}
+
+		OutTopologicalOrder.Reset(Num);
+		int32 Head = 0;
+		while (Head < Queue.Num())
+		{
+			const int32 Index = Queue[Head++];
+			OutTopologicalOrder.Add(Index);
+			const int32 To = OutReceiver[Index];
+			if (To != INDEX_NONE && --RemainingUpstream[To] == 0)
+			{
+				Queue.Add(To);
+			}
+		}
+
+		if (OutTopologicalOrder.Num() != Num)
+		{
+			if (OutError) *OutError = TEXT("Hydrology drainage graph contains a cycle.");
+			return false;
+		}
+		return true;
+	}
+
+	bool BuildFlowProducts(
+		const FGaeaScalarField& Direction,
+		const FGaeaTerrainPhysicalMetrics& PhysicalMetrics,
+		bool bNeedDistance,
+		bool bNeedStreamOrder,
+		FGaeaScalarField& OutAccumulation,
+		FGaeaScalarField& OutCatchmentArea,
+		FGaeaScalarField* OutDistanceToOutlet,
+		FGaeaScalarField* OutStreamOrder,
+		FString* OutError)
+	{
+		const int32 Width = Direction.Domain.Dimensions.X;
+		const int32 HeightCount = Direction.Domain.Dimensions.Y;
+		const int32 Num = Width * HeightCount;
+		const FVector2d SampleSpacingMeters = PhysicalMetrics.ResolveSampleSpacingMeters(Direction.Domain.Dimensions, Direction.Domain.GetCellSize());
+		const double CellAreaSquareMeters = PhysicalMetrics.ResolveCellAreaSquareMeters(Direction.Domain.Dimensions, Direction.Domain.GetCellSize());
+
+		TArray<int32> Receiver;
+		TArray<int32> UpstreamCount;
+		TArray<int32> TopologicalOrder;
+		if (!BuildReceiverGraph(Direction, Receiver, UpstreamCount, TopologicalOrder, OutError)) return false;
+
+		TArray<float> Accumulation;
+		Accumulation.Init(1.0f, Num);
+		TArray<int32> HighestUpstreamOrder;
+		TArray<int32> HighestUpstreamCount;
+		TArray<int32> StrahlerOrder;
+		if (bNeedStreamOrder)
+		{
+			HighestUpstreamOrder.Init(0, Num);
+			HighestUpstreamCount.Init(0, Num);
+			StrahlerOrder.Init(1, Num);
+		}
+
+		for (const int32 Index : TopologicalOrder)
+		{
+			int32 LocalOrder = 1;
+			if (bNeedStreamOrder)
+			{
+				const int32 LocalHighest = HighestUpstreamOrder[Index];
+				LocalOrder = LocalHighest <= 0 ? 1 : LocalHighest + (HighestUpstreamCount[Index] >= 2 ? 1 : 0);
+				StrahlerOrder[Index] = LocalOrder;
+			}
+
+			const int32 To = Receiver[Index];
+			if (To == INDEX_NONE) continue;
+			Accumulation[To] += Accumulation[Index];
+
+			if (bNeedStreamOrder)
+			{
+				if (LocalOrder > HighestUpstreamOrder[To])
+				{
+					HighestUpstreamOrder[To] = LocalOrder;
+					HighestUpstreamCount[To] = 1;
+				}
+				else if (LocalOrder == HighestUpstreamOrder[To])
+				{
+					++HighestUpstreamCount[To];
+				}
+			}
+		}
+
+		TArray<float> DistanceToOutletKm;
+		if (bNeedDistance)
+		{
+			DistanceToOutletKm.Init(0.0f, Num);
+			for (int32 OrderIndex = TopologicalOrder.Num() - 1; OrderIndex >= 0; --OrderIndex)
+			{
+				const int32 Index = TopologicalOrder[OrderIndex];
+				const int32 To = Receiver[Index];
+				if (To == INDEX_NONE) continue;
+				const int32 X = Index % Width;
+				const int32 Y = Index / Width;
+				const int32 TX = To % Width;
+				const int32 TY = To / Width;
+				const double StepX = static_cast<double>(TX - X) * SampleSpacingMeters.X;
+				const double StepY = static_cast<double>(TY - Y) * SampleSpacingMeters.Y;
+				const double StepKm = FMath::Sqrt(StepX * StepX + StepY * StepY) / 1000.0;
+				DistanceToOutletKm[Index] = static_cast<float>(StepKm + static_cast<double>(DistanceToOutletKm[To]));
+			}
+		}
+
+		OutAccumulation = MakeHydrologyField(Direction.Domain, GaeaTerrainFieldNames::FlowAccumulation, EGaeaFieldUnit::Unitless, EGaeaInterpolation::Bilinear, 1.0f);
+		OutCatchmentArea = MakeHydrologyField(Direction.Domain, GaeaTerrainFieldNames::CatchmentAreaKm2, EGaeaFieldUnit::SquareKilometers, EGaeaInterpolation::Bilinear, 0.0f);
+		if (bNeedDistance && OutDistanceToOutlet)
+		{
+			*OutDistanceToOutlet = MakeHydrologyField(Direction.Domain, GaeaTerrainFieldNames::DistanceToOutletKm, EGaeaFieldUnit::Kilometers, EGaeaInterpolation::Bilinear, 0.0f);
+		}
+		if (bNeedStreamOrder && OutStreamOrder)
+		{
+			*OutStreamOrder = MakeHydrologyField(Direction.Domain, GaeaTerrainFieldNames::StreamOrder, EGaeaFieldUnit::Unitless, EGaeaInterpolation::Nearest, 1.0f);
+		}
+
+		for (int32 Y = 0; Y < HeightCount; ++Y)
+		{
+			for (int32 X = 0; X < Width; ++X)
+			{
+				const int32 Index = Y * Width + X;
+				OutAccumulation.AtInterior(X, Y) = Accumulation[Index];
+				OutCatchmentArea.AtInterior(X, Y) = static_cast<float>(static_cast<double>(Accumulation[Index]) * CellAreaSquareMeters / 1000000.0);
+				if (bNeedDistance && OutDistanceToOutlet) OutDistanceToOutlet->AtInterior(X, Y) = DistanceToOutletKm[Index];
+				if (bNeedStreamOrder && OutStreamOrder) OutStreamOrder->AtInterior(X, Y) = static_cast<float>(StrahlerOrder[Index]);
+			}
+		}
+
+		if (!OutAccumulation.IsValid() || !OutCatchmentArea.IsValid()
+			|| (bNeedDistance && (!OutDistanceToOutlet || !OutDistanceToOutlet->IsValid()))
+			|| (bNeedStreamOrder && (!OutStreamOrder || !OutStreamOrder->IsValid())))
+		{
+			if (OutError) *OutError = TEXT("Hydrology produced invalid flow-analysis fields.");
 			return false;
 		}
 		if (OutError) OutError->Reset();
@@ -484,6 +602,112 @@ bool FGaeaTerrainDerivedData::EnsureProcessMasks(
 		OutError);
 }
 
+bool FGaeaTerrainDerivedData::EnsureDrainage(
+	FGaeaTerrainDataset& InOutDataset,
+	float HeightScale,
+	FString* OutError)
+{
+	return EnsureDrainage(InOutDataset, HeightScale, FGaeaTerrainPhysicalMetrics(), OutError);
+}
+
+bool FGaeaTerrainDerivedData::EnsureDrainage(
+	FGaeaTerrainDataset& InOutDataset,
+	float HeightScale,
+	const FGaeaTerrainPhysicalMetrics& PhysicalMetrics,
+	FString* OutError)
+{
+	(void)HeightScale;
+	if (HasDrainageFields(InOutDataset))
+	{
+		if (OutError) OutError->Reset();
+		return true;
+	}
+	const FGaeaScalarField* Height = RequireHeight(InOutDataset, OutError);
+	if (!Height || !Height->IsValid()) return false;
+
+	FGaeaScalarField Direction;
+	if (!BuildDrainageDirection(*Height, PhysicalMetrics, Direction, OutError)) return false;
+	if (!InOutDataset.SetHeightDerivedScalarField(MoveTemp(Direction)))
+	{
+		if (OutError) *OutError = TEXT("Could not publish EONFORM drainage direction.");
+		return false;
+	}
+	if (OutError) OutError->Reset();
+	return true;
+}
+
+bool FGaeaTerrainDerivedData::EnsureFlowAnalysis(
+	FGaeaTerrainDataset& InOutDataset,
+	float HeightScale,
+	FString* OutError)
+{
+	return EnsureFlowAnalysis(InOutDataset, HeightScale, FGaeaTerrainPhysicalMetrics(), OutError);
+}
+
+bool FGaeaTerrainDerivedData::EnsureFlowAnalysis(
+	FGaeaTerrainDataset& InOutDataset,
+	float HeightScale,
+	const FGaeaTerrainPhysicalMetrics& PhysicalMetrics,
+	FString* OutError)
+{
+	if (HasFlowAnalysisFields(InOutDataset))
+	{
+		if (OutError) OutError->Reset();
+		return true;
+	}
+	if (!EnsureDrainage(InOutDataset, HeightScale, PhysicalMetrics, OutError)) return false;
+	const FGaeaScalarField* Direction = InOutDataset.FindScalarField(GaeaTerrainFieldNames::FlowDirection);
+	if (!Direction) return false;
+
+	FGaeaScalarField Accumulation;
+	FGaeaScalarField Catchment;
+	if (!BuildFlowProducts(*Direction, PhysicalMetrics, false, false, Accumulation, Catchment, nullptr, nullptr, OutError)) return false;
+	if (!InOutDataset.SetHeightDerivedScalarField(MoveTemp(Accumulation))
+		|| !InOutDataset.SetHeightDerivedScalarField(MoveTemp(Catchment)))
+	{
+		if (OutError) *OutError = TEXT("Could not publish EONFORM flow-analysis fields.");
+		return false;
+	}
+	if (OutError) OutError->Reset();
+	return true;
+}
+
+bool FGaeaTerrainDerivedData::EnsureHydrologyNetwork(
+	FGaeaTerrainDataset& InOutDataset,
+	float HeightScale,
+	FString* OutError)
+{
+	return EnsureHydrologyNetwork(InOutDataset, HeightScale, FGaeaTerrainPhysicalMetrics(), OutError);
+}
+
+bool FGaeaTerrainDerivedData::EnsureHydrologyNetwork(
+	FGaeaTerrainDataset& InOutDataset,
+	float HeightScale,
+	const FGaeaTerrainPhysicalMetrics& PhysicalMetrics,
+	FString* OutError)
+{
+	if (HasHydrologyNetworkFields(InOutDataset))
+	{
+		if (OutError) OutError->Reset();
+		return true;
+	}
+	if (!EnsureFlowAnalysis(InOutDataset, HeightScale, PhysicalMetrics, OutError)) return false;
+	const FGaeaScalarField* Direction = InOutDataset.FindScalarField(GaeaTerrainFieldNames::FlowDirection);
+	if (!Direction) return false;
+
+	FGaeaScalarField Accumulation;
+	FGaeaScalarField Catchment;
+	FGaeaScalarField Distance;
+	if (!BuildFlowProducts(*Direction, PhysicalMetrics, true, false, Accumulation, Catchment, &Distance, nullptr, OutError)) return false;
+	if (!InOutDataset.SetHeightDerivedScalarField(MoveTemp(Distance)))
+	{
+		if (OutError) *OutError = TEXT("Could not publish EONFORM outlet-distance field.");
+		return false;
+	}
+	if (OutError) OutError->Reset();
+	return true;
+}
+
 bool FGaeaTerrainDerivedData::EnsureHydrology(
 	FGaeaTerrainDataset& InOutDataset,
 	float HeightScale,
@@ -498,44 +722,38 @@ bool FGaeaTerrainDerivedData::EnsureHydrology(
 	const FGaeaTerrainPhysicalMetrics& PhysicalMetrics,
 	FString* OutError)
 {
-	(void)HeightScale;
-	if (HasHydrologyFields(InOutDataset) && !PhysicalMetrics.IsConfigured())
+	if (HasHydrologyFields(InOutDataset))
 	{
 		if (OutError) OutError->Reset();
 		return true;
 	}
+	if (!EnsureFlowAnalysis(InOutDataset, HeightScale, PhysicalMetrics, OutError)) return false;
+	const FGaeaScalarField* Direction = InOutDataset.FindScalarField(GaeaTerrainFieldNames::FlowDirection);
+	if (!Direction) return false;
 
-	const FGaeaScalarField* Height = RequireHeight(InOutDataset, OutError);
-	if (!Height || !Height->IsValid()) return false;
-
-	FGaeaScalarField FlowDirection;
-	FGaeaScalarField FlowAccumulation;
-	FGaeaScalarField CatchmentArea;
-	FGaeaScalarField DistanceToOutlet;
+	const bool bNeedDistance = !InOutDataset.HasScalarField(GaeaTerrainFieldNames::DistanceToOutletKm);
+	const bool bNeedOrder = !InOutDataset.HasScalarField(GaeaTerrainFieldNames::StreamOrder);
+	FGaeaScalarField Accumulation;
+	FGaeaScalarField Catchment;
+	FGaeaScalarField Distance;
 	FGaeaScalarField StreamOrder;
-	if (!BuildHydrologyFields(
-		*Height,
+	if (!BuildFlowProducts(
+		*Direction,
 		PhysicalMetrics,
-		FlowDirection,
-		FlowAccumulation,
-		CatchmentArea,
-		DistanceToOutlet,
-		StreamOrder,
-		OutError))
+		bNeedDistance,
+		bNeedOrder,
+		Accumulation,
+		Catchment,
+		bNeedDistance ? &Distance : nullptr,
+		bNeedOrder ? &StreamOrder : nullptr,
+		OutError)) return false;
+
+	if ((bNeedDistance && !InOutDataset.SetHeightDerivedScalarField(MoveTemp(Distance)))
+		|| (bNeedOrder && !InOutDataset.SetHeightDerivedScalarField(MoveTemp(StreamOrder))))
 	{
+		if (OutError) *OutError = TEXT("Could not publish EONFORM hydrology network fields.");
 		return false;
 	}
-
-	if (!InOutDataset.SetScalarField(MoveTemp(FlowDirection))
-		|| !InOutDataset.SetScalarField(MoveTemp(FlowAccumulation))
-		|| !InOutDataset.SetScalarField(MoveTemp(CatchmentArea))
-		|| !InOutDataset.SetScalarField(MoveTemp(DistanceToOutlet))
-		|| !InOutDataset.SetScalarField(MoveTemp(StreamOrder)))
-	{
-		if (OutError) *OutError = TEXT("Could not publish EONFORM hydrology fields.");
-		return false;
-	}
-
 	if (OutError) OutError->Reset();
 	return true;
 }
@@ -557,6 +775,5 @@ bool FGaeaTerrainDerivedData::EnsureHydraulicInputs(
 	FString* OutError)
 {
 	if (!EnsureGeology(InOutDataset, HeightScale, Settings, OutError)) return false;
-	if (!EnsureHydrology(InOutDataset, HeightScale, PhysicalMetrics, OutError)) return false;
 	return EnsureProcessMasks(InOutDataset, HeightScale, Settings, OutError);
 }
