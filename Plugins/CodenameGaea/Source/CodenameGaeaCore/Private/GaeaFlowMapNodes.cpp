@@ -201,9 +201,21 @@ namespace
 			}
 		}
 
-		Out.Outputs.Add(TEXT("Out"), FGaeaTerrainValue::MakeScalarField(MoveTemp(Flow)));
-		Out.Outputs.Add(TEXT("Direction"), FGaeaTerrainValue::MakeScalarField(MoveTemp(DirectionOut)));
-		Out.Outputs.Add(TEXT("Accumulation"), FGaeaTerrainValue::MakeScalarField(MoveTemp(AccumulationOut)));
+		FGaeaScalarField FlowOutput = Flow;
+		FGaeaScalarField DirectionOutput = DirectionOut;
+		FGaeaScalarField AccumulationOutput = AccumulationOut;
+		if (!Dataset.SetHeightDerivedScalarField(MoveTemp(Flow))
+			|| !Dataset.SetHeightDerivedScalarField(MoveTemp(DirectionOut))
+			|| !Dataset.SetHeightDerivedScalarField(MoveTemp(AccumulationOut)))
+		{
+			Error = TEXT("FlowMap could not publish its derived flow fields.");
+			return false;
+		}
+
+		Out.Outputs.Add(TEXT("Terrain"), FGaeaTerrainValue::MakeTerrain(MoveTemp(Dataset), Input->HeightScale));
+		Out.Outputs.Add(TEXT("Out"), FGaeaTerrainValue::MakeScalarField(MoveTemp(FlowOutput)));
+		Out.Outputs.Add(TEXT("Direction"), FGaeaTerrainValue::MakeScalarField(MoveTemp(DirectionOutput)));
+		Out.Outputs.Add(TEXT("Accumulation"), FGaeaTerrainValue::MakeScalarField(MoveTemp(AccumulationOutput)));
 		Error.Reset();
 		return true;
 	}
@@ -329,8 +341,18 @@ namespace
 		if (bSimulate2X) QualityPasses *= 2;
 		RefineClassicMap(Flow, QualityPasses);
 
-		Out.Outputs.Add(TEXT("Out"), FGaeaTerrainValue::MakeScalarField(MoveTemp(Flow)));
-		Out.Outputs.Add(TEXT("Hierarchy"), FGaeaTerrainValue::MakeScalarField(MoveTemp(Hierarchy)));
+		FGaeaScalarField FlowOutput = Flow;
+		FGaeaScalarField HierarchyOutput = Hierarchy;
+		if (!Dataset.SetHeightDerivedScalarField(MoveTemp(Flow))
+			|| !Dataset.SetHeightDerivedScalarField(MoveTemp(Hierarchy)))
+		{
+			Error = TEXT("FlowMapClassic could not publish its derived flow fields.");
+			return false;
+		}
+
+		Out.Outputs.Add(TEXT("Terrain"), FGaeaTerrainValue::MakeTerrain(MoveTemp(Dataset), Input->HeightScale));
+		Out.Outputs.Add(TEXT("Out"), FGaeaTerrainValue::MakeScalarField(MoveTemp(FlowOutput)));
+		Out.Outputs.Add(TEXT("Hierarchy"), FGaeaTerrainValue::MakeScalarField(MoveTemp(HierarchyOutput)));
 		Error.Reset();
 		return true;
 	}
@@ -345,6 +367,7 @@ void RegisterGaeaFlowMapNodes()
 		Descriptor.Category = TEXT("Derive");
 		Descriptor.Description = TEXT("Builds a modern flow map from EONFORM's physically routed drainage network, exposing normalized D8 direction and physical catchment accumulation alongside the final map.");
 		Descriptor.Inputs.Add(FlowMapTerrainPort(TEXT("Terrain"), TEXT("Input")));
+		Descriptor.Outputs.Add(FlowMapTerrainPort(TEXT("Terrain"), TEXT("Terrain")));
 		Descriptor.Outputs.Add(FlowMapScalarPort(TEXT("Out"), TEXT("Flow Map")));
 		Descriptor.Outputs.Add(FlowMapScalarPort(TEXT("Direction"), TEXT("Direction")));
 		Descriptor.Outputs.Add(FlowMapScalarPort(TEXT("Accumulation"), TEXT("Accumulation")));
@@ -362,6 +385,7 @@ void RegisterGaeaFlowMapNodes()
 		Descriptor.Category = TEXT("Derive");
 		Descriptor.Description = TEXT("Builds a classic-style flow map from EONFORM hydrology, with rainfall coverage and explicit primary through quaternary Strahler-stream hierarchy controls.");
 		Descriptor.Inputs.Add(FlowMapTerrainPort(TEXT("Terrain"), TEXT("Input")));
+		Descriptor.Outputs.Add(FlowMapTerrainPort(TEXT("Terrain"), TEXT("Terrain")));
 		Descriptor.Outputs.Add(FlowMapScalarPort(TEXT("Out"), TEXT("Flow Map")));
 		Descriptor.Outputs.Add(FlowMapScalarPort(TEXT("Hierarchy"), TEXT("Hierarchy")));
 		Descriptor.Parameters.Add(FlowMapNumber(TEXT("Rainfall"), TEXT("Rainfall"), 0.62, 0.0, 1.0, TEXT("Flow")));
