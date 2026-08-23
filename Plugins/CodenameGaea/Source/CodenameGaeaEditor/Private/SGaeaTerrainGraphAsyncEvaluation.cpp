@@ -62,7 +62,9 @@ void SGaeaTerrainGraphPanel::RequestFinalEvaluationAsync()
 	++GraphEvaluationGeneration;
 	bFinalEvaluationPending = true;
 
-	FGaeaTerrainDatasetRegistry::Remove(FinalTerrainSource);
+	// Keep the last valid snapshot visible while the new revision evaluates.
+	// Generate Terrain is prevented from consuming it by the readiness state below,
+	// so there is no reason to blank the inspector/preview during computation.
 	FGaeaTerrainOutputEditorState::Get().BeginAnalysis();
 
 	if (!bAutoPreviewEvaluating)
@@ -260,8 +262,6 @@ void SGaeaTerrainGraphPanel::StartNextAsyncEvaluation()
 						return;
 					}
 
-					// The authored terrain is usable immediately. Preview and Generate Terrain
-					// must never wait for hydrology/derived analysis to finish.
 					FGaeaTerrainOutputEditorState::Get().PublishTerrain(BaseRevision);
 					Panel->StatusText = FText::FromString(FString::Printf(
 						TEXT("Terrain %08X -> revision %llu (%d fields). Deriving hydrology in background..."),
@@ -270,8 +270,11 @@ void SGaeaTerrainGraphPanel::StartNextAsyncEvaluation()
 						BaseFieldCount));
 					Panel->OnEvaluated.ExecuteIfBound();
 
-					// Continue derived analysis on a worker. The base terrain remains published
-					// and generation-safe throughout this stage.
+					// The graph evaluator is free now. Hydrology is an independent enrichment
+					// job and must never hold newer graph edits behind an obsolete analysis pass.
+					Panel->bAutoPreviewEvaluating = false;
+					Panel->StartNextAsyncEvaluation();
+
 					Async(EAsyncExecution::ThreadPool,
 						[WeakPanel,
 						 Context = MoveTemp(Context),
@@ -298,11 +301,11 @@ void SGaeaTerrainGraphPanel::StartNextAsyncEvaluation()
 								{
 									const TSharedPtr<SGaeaTerrainGraphPanel> Panel = WeakPanel.Pin();
 									if (!Panel.IsValid()) return;
-									Panel->bAutoPreviewEvaluating = false;
 
+									// A newer graph revision owns the final registry now. The obsolete
+									// hydrology job simply dies here and never touches editor queue state.
 									if (CapturedGraphGeneration != Panel->GraphEvaluationGeneration)
 									{
-										Panel->StartNextAsyncEvaluation();
 										return;
 									}
 
@@ -312,7 +315,6 @@ void SGaeaTerrainGraphPanel::StartNextAsyncEvaluation()
 										Panel->StatusText = FText::FromString(FString::Printf(
 											TEXT("Terrain is ready, but hydrology analysis failed: %s"),
 											*HydrologyError));
-										Panel->StartNextAsyncEvaluation();
 										return;
 									}
 
@@ -327,7 +329,6 @@ void SGaeaTerrainGraphPanel::StartNextAsyncEvaluation()
 									{
 										FGaeaTerrainOutputEditorState::Get().FailDerivedAnalysis(TEXT("Publishing hydrology analysis failed."));
 										Panel->StatusText = FText::FromString(TEXT("Terrain is ready, but publishing hydrology analysis failed."));
-										Panel->StartNextAsyncEvaluation();
 										return;
 									}
 
@@ -338,7 +339,6 @@ void SGaeaTerrainGraphPanel::StartNextAsyncEvaluation()
 										static_cast<unsigned long long>(AnalysisRevision),
 										FieldCount));
 									Panel->OnEvaluated.ExecuteIfBound();
-									Panel->StartNextAsyncEvaluation();
 								});
 						});
 				});
