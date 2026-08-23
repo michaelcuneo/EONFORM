@@ -46,17 +46,28 @@ public:
 
 	uint64 GetRevision() const { return Revision; }
 
-	/**
-	 * Automatic graph evaluation is asynchronous. Terrain Output uses this state
-	 * to distinguish a genuinely missing result from a result that is still being
-	 * calculated, and to prevent Generate Terrain from consuming an older snapshot.
-	 */
+	/** A new graph revision is being evaluated. No snapshot is generation-safe yet. */
 	void BeginAnalysis()
 	{
+		bAnalysisPending = true;
+		bAnalysisAvailable = false;
+		PublishedAnalysisRevision = 0;
+		AnalysisError.Reset();
+	}
+
+	/**
+	 * The graph evaluator has produced a valid terrain snapshot. It is immediately
+	 * safe for preview and Mesh Terrain generation while derived analysis continues.
+	 */
+	void PublishTerrain(uint64 InPublishedRevision)
+	{
+		bAnalysisAvailable = InPublishedRevision != 0;
+		PublishedAnalysisRevision = InPublishedRevision;
 		bAnalysisPending = true;
 		AnalysisError.Reset();
 	}
 
+	/** Derived analysis finished and republished the enriched terrain snapshot. */
 	void CompleteAnalysis(uint64 InPublishedRevision)
 	{
 		bAnalysisPending = false;
@@ -65,11 +76,19 @@ public:
 		AnalysisError.Reset();
 	}
 
+	/** Base graph evaluation/publication failed; there is no usable current terrain. */
 	void FailAnalysis(const FString& InError)
 	{
 		bAnalysisPending = false;
 		bAnalysisAvailable = false;
 		PublishedAnalysisRevision = 0;
+		AnalysisError = InError;
+	}
+
+	/** Derived analysis failed, but the already-published base terrain stays usable. */
+	void FailDerivedAnalysis(const FString& InError)
+	{
+		bAnalysisPending = false;
 		AnalysisError = InError;
 	}
 
