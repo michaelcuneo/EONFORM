@@ -245,16 +245,24 @@ namespace GaeaSnowfieldNode
 			}
 		}
 
+		// Temperature is a height-derived Snow semantic, so replacing Height above
+		// correctly invalidates the upstream copy. Snowfield still represents the
+		// same atmospheric event, however, and Glacier must inherit that climate
+		// rather than silently reverting to its standalone default temperature.
+		FGaeaScalarField TemperatureAfterSnowfield = TemperatureInput;
+		TemperatureAfterSnowfield.Descriptor.Name = TEXT("TemperatureC");
+
 		FGaeaScalarField SnowfieldOutput = Snowfield;
 		FGaeaScalarField DepthOutput = SnowfieldDepth;
 		FGaeaScalarField DriftOutput = Drift;
 		FGaeaScalarField MeltOutput = Melt;
-		if (!Dataset.SetHeightDerivedScalarField(MoveTemp(Snowfield))
+		if (!Dataset.SetHeightDerivedScalarField(MoveTemp(TemperatureAfterSnowfield))
+			|| !Dataset.SetHeightDerivedScalarField(MoveTemp(Snowfield))
 			|| !Dataset.SetHeightDerivedScalarField(MoveTemp(SnowfieldDepth))
 			|| !Dataset.SetHeightDerivedScalarField(MoveTemp(Drift))
 			|| !Dataset.SetHeightDerivedScalarField(MoveTemp(Melt)))
 		{
-			Error = TEXT("Snowfield could not publish redistributed snow fields.");
+			Error = TEXT("Snowfield could not publish redistributed snow and climate fields.");
 			return false;
 		}
 
