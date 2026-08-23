@@ -21,6 +21,10 @@
 		{
 			"Name": "CodenameGaea",
 			"Enabled": true
+		},
+		{
+			"Name": "MeshTerrainMode",
+			"Enabled": true
 		}
 	]
 }
