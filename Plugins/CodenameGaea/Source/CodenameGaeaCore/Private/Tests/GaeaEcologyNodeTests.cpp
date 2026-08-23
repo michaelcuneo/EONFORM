@@ -52,15 +52,29 @@ namespace
 		Source.Id = FGuid(1001, 1, 1, 1);
 		Source.Type = GaeaTerrainNodeTypes::SourceDataset;
 
+		// Explicit habitat ranges keep this regression test focused on ecological
+		// differentiation instead of relying on whichever defaults happen to match
+		// this small synthetic terrain. Trees prefer the gentler ground; shrubs are
+		// intentionally tolerant of much steeper and poorer habitat.
 		FGaeaTerrainNode Trees;
 		Trees.Id = FGuid(1002, 2, 2, 2);
 		Trees.Type = GaeaTerrainNodeTypes::Trees;
 		Trees.NumericParameters.Add(TEXT("Density"), 1.0);
+		Trees.NumericParameters.Add(TEXT("MoisturePreference"), 0.45);
+		Trees.NumericParameters.Add(TEXT("SoilPreference"), 0.15);
+		Trees.NumericParameters.Add(TEXT("MaxSlopeDegrees"), 18.0);
+		Trees.NumericParameters.Add(TEXT("ShelterStrength"), 0.25);
+		Trees.NumericParameters.Add(TEXT("RiparianStrength"), 0.35);
 
 		FGaeaTerrainNode Shrubs;
 		Shrubs.Id = FGuid(1003, 3, 3, 3);
 		Shrubs.Type = GaeaTerrainNodeTypes::Shrubs;
 		Shrubs.NumericParameters.Add(TEXT("Density"), 1.0);
+		Shrubs.NumericParameters.Add(TEXT("MoisturePreference"), 0.40);
+		Shrubs.NumericParameters.Add(TEXT("SoilPreference"), 0.08);
+		Shrubs.NumericParameters.Add(TEXT("MaxSlopeDegrees"), 65.0);
+		Shrubs.NumericParameters.Add(TEXT("ShelterStrength"), 0.10);
+		Shrubs.NumericParameters.Add(TEXT("RiparianStrength"), 0.20);
 
 		FGaeaTerrainConnection A;
 		A.FromNode = Source.Id;
