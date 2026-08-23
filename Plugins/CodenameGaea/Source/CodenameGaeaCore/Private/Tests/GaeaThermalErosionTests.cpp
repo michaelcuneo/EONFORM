@@ -55,19 +55,19 @@ bool FGaeaThermalErosionGraphTest::RunTest(const FString& Parameters)
 {
 	FGaeaTerrainNodeDescriptor ThermalDescriptor;
 	TestTrue(
-		TEXT("Thermal Erosion descriptor exists"),
+		TEXT("Thermal descriptor exists"),
 		FGaeaTerrainNodeDescriptorRegistry::Get(GaeaTerrainNodeTypes::ThermalErosion, ThermalDescriptor));
-	TestEqual(TEXT("Thermal Erosion display name"), ThermalDescriptor.DisplayName, FString(TEXT("Thermal Erosion")));
-	TestEqual(TEXT("Thermal Erosion has two inputs"), ThermalDescriptor.Inputs.Num(), 2);
-	TestEqual(TEXT("Thermal Erosion has one output"), ThermalDescriptor.Outputs.Num(), 1);
-	TestEqual(TEXT("Thermal Erosion has three parameters"), ThermalDescriptor.Parameters.Num(), 3);
+	TestEqual(TEXT("Thermal display name"), ThermalDescriptor.DisplayName, FString(TEXT("Thermal")));
+	TestEqual(TEXT("Thermal has one input"), ThermalDescriptor.Inputs.Num(), 1);
+	TestEqual(TEXT("Thermal has one output"), ThermalDescriptor.Outputs.Num(), 1);
+	TestEqual(TEXT("Thermal has eleven parameters"), ThermalDescriptor.Parameters.Num(), 11);
 
 	FGaeaTerrainEvaluationContext Context;
 	const FGaeaTerrainEvaluationResult Source = FGaeaTerrainEvaluator::Evaluate(MakeThermalRecipe(false), Context);
 	const FGaeaTerrainEvaluationResult Thermal = FGaeaTerrainEvaluator::Evaluate(MakeThermalRecipe(true), Context);
 
 	TestTrue(TEXT("Perlin source evaluates"), Source.bSuccess);
-	TestTrue(TEXT("Thermal Erosion evaluates"), Thermal.bSuccess);
+	TestTrue(TEXT("Thermal evaluates"), Thermal.bSuccess);
 	if (!Source.bSuccess || !Thermal.bSuccess)
 	{
 		if (!Source.bSuccess) AddError(Source.Error);
@@ -81,15 +81,15 @@ bool FGaeaThermalErosionGraphTest::RunTest(const FString& Parameters)
 	TestNotNull(TEXT("Thermal output has Height"), ThermalHeight);
 	if (!SourceHeight || !ThermalHeight) return false;
 
-	TestEqual(TEXT("Thermal Erosion preserves Height domain"), ThermalHeight->Domain, SourceHeight->Domain);
-	TestEqual(TEXT("Thermal Erosion preserves sample count"), ThermalHeight->Values.Num(), SourceHeight->Values.Num());
+	TestEqual(TEXT("Thermal preserves Height domain"), ThermalHeight->Domain, SourceHeight->Domain);
+	TestEqual(TEXT("Thermal preserves sample count"), ThermalHeight->Values.Num(), SourceHeight->Values.Num());
 
 	double Difference = 0.0;
 	for (int32 Index = 0; Index < ThermalHeight->Values.Num(); ++Index)
 	{
 		Difference += FMath::Abs(ThermalHeight->Values[Index] - SourceHeight->Values[Index]);
 	}
-	TestTrue(TEXT("Thermal Erosion changes the terrain"), Difference > 0.0001);
+	TestTrue(TEXT("Thermal changes the terrain"), Difference > 0.0001);
 
 	return true;
 }
