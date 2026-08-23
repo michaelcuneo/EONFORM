@@ -28,9 +28,10 @@ namespace
 			FGaeaTerrainNode Thermal;
 			Thermal.Id = FGuid(0x42000001, 0x42000002, 0x42000003, 0x42000004);
 			Thermal.Type = GaeaTerrainNodeTypes::ThermalErosion;
-			Thermal.IntegerParameters.Add(TEXT("Iterations"), 8);
-			Thermal.NumericParameters.Add(TEXT("TalusAngle"), 18.0);
+			Thermal.IntegerParameters.Add(TEXT("Duration"), 8);
+			Thermal.NumericParameters.Add(TEXT("Angle"), 18.0);
 			Thermal.NumericParameters.Add(TEXT("Strength"), 0.55);
+			Thermal.NumericParameters.Add(TEXT("FeatureScale"), 250.0);
 			Recipe.Nodes.Add(Thermal);
 
 			FGaeaTerrainConnection Connection;
@@ -59,7 +60,7 @@ bool FGaeaThermalErosionGraphTest::RunTest(const FString& Parameters)
 		FGaeaTerrainNodeDescriptorRegistry::Get(GaeaTerrainNodeTypes::ThermalErosion, ThermalDescriptor));
 	TestEqual(TEXT("Thermal display name"), ThermalDescriptor.DisplayName, FString(TEXT("Thermal")));
 	TestEqual(TEXT("Thermal has one input"), ThermalDescriptor.Inputs.Num(), 1);
-	TestEqual(TEXT("Thermal has one output"), ThermalDescriptor.Outputs.Num(), 1);
+	TestEqual(TEXT("Thermal has terrain and Talus outputs"), ThermalDescriptor.Outputs.Num(), 2);
 	TestEqual(TEXT("Thermal has eleven parameters"), ThermalDescriptor.Parameters.Num(), 11);
 
 	FGaeaTerrainEvaluationContext Context;
