@@ -1,6 +1,7 @@
 #include "SGaeaTerrainGraphPanel.h"
 
 #include "EdGraph/EdGraphPin.h"
+#include "GaeaTerrainOutputEditorState.h"
 #include "GaeaTerrainPhysicalMetrics.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Text/STextBlock.h"
@@ -169,6 +170,11 @@ uint32 SGaeaTerrainGraphPanel::ComputeAutoPreviewHash() const
 	Hash = HashCombineFast(Hash, GetTypeHash(Physical.WorldDepthMeters));
 	Hash = HashCombineFast(Hash, GetTypeHash(Physical.ElevationScaleMeters));
 	Hash = HashCombineFast(Hash, GetTypeHash(Physical.SeaLevelMeters));
+
+	// Resolution changes alter the actual source/simulation working grid, not just
+	// the final Mesh Terrain resample. They therefore must invalidate auto-preview.
+	const FGaeaTerrainGraphOutputSettings& OutputSettings = FGaeaTerrainOutputEditorState::Get().GetSettings();
+	Hash = HashCombineFast(Hash, GetTypeHash(OutputSettings.OutputResolution));
 	return Hash;
 }
 
