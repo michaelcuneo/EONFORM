@@ -2,6 +2,7 @@
 
 #include "GaeaTerrainEvaluator.h"
 #include "GaeaTerrainFieldNames.h"
+#include "GaeaTerrainFractalWarp.h"
 #include "GaeaTerrainNodeDescriptor.h"
 #include "GaeaTerrainProceduralOps.h"
 #include "GaeaTerrainRecipe.h"
@@ -231,7 +232,7 @@ namespace
 		Settings.Mode = Node.GetName(TEXT("Mode"), TEXT("Vector Field"));
 
 		FGaeaScalarField Result;
-		if (!GaeaTerrainProceduralOps::FractalWarp(*Source, Settings, Result, &Error)) return false;
+		if (!GaeaTerrainProceduralOps::FractalWarpFidelity(*Source, Settings, Result, &Error)) return false;
 		return PublishLike(*SourceValue, MoveTemp(Result), Out, Error);
 	}
 
