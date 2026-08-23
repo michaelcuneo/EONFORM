@@ -2,7 +2,6 @@
 
 #include "Async/Async.h"
 #include "GaeaTerrainDatasetRegistry.h"
-#include "GaeaTerrainDerivedData.h"
 #include "GaeaTerrainEvaluator.h"
 #include "GaeaTerrainOutputEditorState.h"
 #include "GaeaTerrainPhysicalMetrics.h"
@@ -219,7 +218,7 @@ void SGaeaTerrainGraphPanel::StartNextAsyncEvaluation()
 				return;
 			}
 
-			FGaeaTerrainDataset BaseDataset = Result.Dataset;
+			FGaeaTerrainDataset BaseDataset = MoveTemp(Result.Dataset);
 			const float HeightScale = Result.HeightScale;
 			const uint32 RecipeHash = Result.RecipeHash;
 			const int32 BaseFieldCount = BaseDataset.NumScalarFields();
@@ -233,8 +232,6 @@ void SGaeaTerrainGraphPanel::StartNextAsyncEvaluation()
 				 InspectionNodeId,
 				 CapturedGraphGeneration,
 				 CapturedInspectionGeneration,
-				 Context = MoveTemp(Context),
-				 Result = MoveTemp(Result),
 				 BaseDataset = MoveTemp(BaseDataset),
 				 HeightScale,
 				 RecipeHash,
@@ -288,83 +285,24 @@ void SGaeaTerrainGraphPanel::StartNextAsyncEvaluation()
 						return;
 					}
 
-					FGaeaTerrainOutputEditorState::Get().PublishTerrain(BaseRevision);
-					SetGraphActivity(Panel, EGaeaEditorGraphActivity::Analyzing);
+					// The evaluated dataset is the final editor snapshot. Expensive derived
+					// analysis such as drainage/hydrology is requested by graph nodes only
+					// when they actually consume it; the editor must never enrich every
+					// terrain implicitly after publication.
+					FGaeaTerrainOutputEditorState::Get().CompleteAnalysis(BaseRevision);
+					SetGraphActivity(Panel, EGaeaEditorGraphActivity::Idle);
 					Panel->StatusText = FText::FromString(FString::Printf(
-						TEXT("Terrain %08X ready in %.1f ms: %d node%s recomputed, %d cached. Deriving hydrology..."),
+						TEXT("Terrain %08X ready in %.1f ms: %d node%s recomputed, %d cached, %d fields. Derived analysis is demand-driven."),
 						RecipeHash,
 						EvaluationMilliseconds,
 						EvaluatedNodeCount,
 						EvaluatedNodeCount == 1 ? TEXT("") : TEXT("s"),
-						CachedNodeCount));
+						CachedNodeCount,
+						BaseFieldCount));
 					Panel->OnEvaluated.ExecuteIfBound();
 
 					Panel->bAutoPreviewEvaluating = false;
 					Panel->StartNextAsyncEvaluation();
-
-					Async(EAsyncExecution::ThreadPool,
-						[WeakPanel,
-						 Context = MoveTemp(Context),
-						 Dataset = MoveTemp(Result.Dataset),
-						 HeightScale,
-						 RecipeHash,
-						 CapturedGraphGeneration]() mutable
-						{
-							FString HydrologyError;
-							const bool bHydrologyReady = FGaeaTerrainDerivedData::EnsureHydrology(
-								Dataset,
-								HeightScale,
-								Context.PhysicalMetrics,
-								&HydrologyError);
-
-							AsyncTask(ENamedThreads::GameThread,
-								[WeakPanel,
-								 Dataset = MoveTemp(Dataset),
-								 HeightScale,
-								 RecipeHash,
-								 CapturedGraphGeneration,
-								 bHydrologyReady,
-								 HydrologyError = MoveTemp(HydrologyError)]() mutable
-								{
-									const TSharedPtr<SGaeaTerrainGraphPanel> Panel = WeakPanel.Pin();
-									if (!Panel.IsValid()) return;
-									if (CapturedGraphGeneration != Panel->GraphEvaluationGeneration) return;
-
-									if (!bHydrologyReady)
-									{
-										FGaeaTerrainOutputEditorState::Get().FailDerivedAnalysis(HydrologyError);
-										SetGraphActivity(Panel, EGaeaEditorGraphActivity::Idle);
-										Panel->StatusText = FText::FromString(FString::Printf(
-											TEXT("Terrain is ready, but hydrology analysis failed: %s"),
-											*HydrologyError));
-										return;
-									}
-
-									FGaeaTerrainDatasetMetadata Metadata;
-									Metadata.HeightScale = HeightScale;
-									const int32 FieldCount = Dataset.NumScalarFields();
-									const uint64 AnalysisRevision = FGaeaTerrainDatasetRegistry::Publish(
-										FinalTerrainSource,
-										MoveTemp(Dataset),
-										Metadata);
-									if (AnalysisRevision == 0)
-									{
-										FGaeaTerrainOutputEditorState::Get().FailDerivedAnalysis(TEXT("Publishing hydrology analysis failed."));
-										SetGraphActivity(Panel, EGaeaEditorGraphActivity::Idle);
-										Panel->StatusText = FText::FromString(TEXT("Terrain is ready, but publishing hydrology analysis failed."));
-										return;
-									}
-
-									FGaeaTerrainOutputEditorState::Get().CompleteAnalysis(AnalysisRevision);
-									SetGraphActivity(Panel, EGaeaEditorGraphActivity::Idle);
-									Panel->StatusText = FText::FromString(FString::Printf(
-										TEXT("Analysis %08X -> revision %llu (%d fields, hydrology ready)."),
-										RecipeHash,
-										static_cast<unsigned long long>(AnalysisRevision),
-										FieldCount));
-									Panel->OnEvaluated.ExecuteIfBound();
-								});
-						});
 				});
 		});
 }
