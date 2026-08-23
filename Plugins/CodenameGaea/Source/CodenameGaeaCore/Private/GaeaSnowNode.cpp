@@ -47,7 +47,7 @@ namespace GaeaSnowNode
 		P.Name = Name;
 		P.DisplayName = Label;
 		P.Type = EGaeaTerrainParameterType::Boolean;
-		P.DefaultBool = Default;
+		P.DefaultBoolean = Default;
 		P.Group = Group;
 		return P;
 	}
