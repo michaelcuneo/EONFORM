@@ -98,7 +98,7 @@ namespace
 		Settings.Scale = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Scale"), 0.75)), 0.0001f, 1.0f);
 		Settings.Height = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Height"), 0.6)), 0.0f, 3.0f);
 		Settings.Definition = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Definition"), 0.4)), 0.0f, 1.0f);
-		Settings.Seed = static_cast<int32>(Node.GetInteger(TEXT("Seed"), 1337));
+		Settings.Seed = static_cast<int32>(Node.GetInteger(TEXT("Seed"), 0));
 		Settings.ScaleX = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("ScaleX"), 1.0)), 0.0001f, 100.0f);
 		Settings.ScaleY = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("ScaleY"), 1.0)), 0.0001f, 100.0f);
 
@@ -140,32 +140,31 @@ bool FGaeaRidgeGenerator::Generate(
 	const float Scale = FMath::Clamp(Settings.Scale, 0.0001f, 1.0f);
 	const float Definition = FMath::Clamp(Settings.Definition, 0.0f, 1.0f);
 
-	// Packed Gaea constants still need to be decoded individually. Do not tune
-	// these values by eye; replace each with its e0003.e002(index) value as it is recovered.
-	constexpr float RidgeVoronoiScaleCoefficient = 0.72f;
-	constexpr float RidgePerlinScale = 0.75f;
-	constexpr int32 RidgePerlinOctaves = 12;
-	constexpr float RidgePerlinGain = 0.5f;
-	constexpr int32 RidgeTerraceCount = 67;
-	constexpr float RidgeTerraceUniformity = 0.6f;
-	constexpr float RidgeTerraceSteepness = 0.2f;
-	constexpr float RidgeTerraceIntensity = 0.85f;
-	constexpr float DirectionStrengthCoefficient = 1.25f;
-	constexpr float SecondaryWarpStrength = 0.35f;
+	constexpr float RidgeVoronoiScaleCoefficient = 1.05f; // e002(126)
+	constexpr float RidgePerlinScale = 0.75f;             // e002(69)
+	constexpr int32 RidgePerlinOctaves = 12;              // e000(13)
+	constexpr float RidgePerlinGain = 0.5f;               // e002(2)
+	constexpr int32 RidgeTerraceCount = 67;               // e000(29)
+	constexpr float RidgeTerraceUniformity = 0.6f;        // e002(72)
+	constexpr float RidgeTerraceSteepness = 0.2f;         // e002(82)
+	constexpr float RidgeTerraceIntensity = 0.8f;         // e002(19)
+	constexpr float GuideWarpDefinitionCoefficient = 0.99f; // e002(73)
+	constexpr float DirectionStrengthCoefficient = 1.25f; // e002(127)
+	constexpr float SecondaryWarpStrength = 0.65f;        // e002(102)
 
 	GaeaTerrainProceduralOps::FVoronoiSettings VoronoiSettings;
-	VoronoiSettings.Scale = FMath::Clamp(1.0f - Scale * RidgeVoronoiScaleCoefficient, 0.0001f, 1.0f);
+	VoronoiSettings.Scale = 1.0f - Scale * RidgeVoronoiScaleCoefficient;
 	VoronoiSettings.Function = TEXT("Euclidean");
 	VoronoiSettings.Form = TEXT("P");
 	VoronoiSettings.Gain = 0.5f;
 	VoronoiSettings.WarpType = TEXT("Complex");
-	VoronoiSettings.WarpFrequency = 0.1f;
-	VoronoiSettings.WarpAmplitude = 0.05f;
-	VoronoiSettings.WarpOctaves = 10;
+	VoronoiSettings.WarpFrequency = 0.1f; // e002(93)
+	VoronoiSettings.WarpAmplitude = 0.3f; // e002(83)
+	VoronoiSettings.WarpOctaves = 10;     // e000(11)
 	VoronoiSettings.Seed = Settings.Seed;
 	VoronoiSettings.ScaleX = Settings.ScaleX;
 	VoronoiSettings.ScaleY = Settings.ScaleY;
-	VoronoiSettings.Jitter = 0.45f;
+	VoronoiSettings.Jitter = 0.45f;       // e002(106)
 
 	FGaeaScalarField Structure;
 	if (!GaeaTerrainProceduralOps::GenerateVoronoi(Domain, VoronoiSettings, Structure, OutError)) return false;
@@ -198,7 +197,7 @@ bool FGaeaRidgeGenerator::Generate(
 		OutError)) return false;
 
 	GaeaTerrainProceduralOps::FFractalWarpSettings GuideWarpSettings;
-	GuideWarpSettings.Size = FMath::Clamp(1.0f - Definition * 0.55f, 0.05f, 1.0f);
+	GuideWarpSettings.Size = FMath::Max(1.0f - Definition * GuideWarpDefinitionCoefficient, 0.0001f);
 	GuideWarpSettings.Strength = 1.0f;
 	GuideWarpSettings.bPersistStrength = true;
 	GuideWarpSettings.ZScale = 0.0f;
@@ -232,12 +231,12 @@ bool FGaeaRidgeGenerator::Generate(
 		OutError)) return false;
 
 	GaeaTerrainProceduralOps::FFractalWarpSettings SecondaryWarpSettings;
-	SecondaryWarpSettings.Size = FMath::Max(Scale * 0.5f, 0.0001f);
+	SecondaryWarpSettings.Size = FMath::Max(Scale / 2.0f, 0.0001f);
 	SecondaryWarpSettings.Strength = SecondaryWarpStrength;
 	SecondaryWarpSettings.bPersistStrength = true;
 	SecondaryWarpSettings.ZScale = 0.0f;
 	SecondaryWarpSettings.NoiseType = TEXT("Voronoi R");
-	SecondaryWarpSettings.Perturbation = 0.4f;
+	SecondaryWarpSettings.Perturbation = 0.4f; // e002(74)
 	SecondaryWarpSettings.Octaves = 12;
 	SecondaryWarpSettings.Roughness = 0.5f;
 	SecondaryWarpSettings.bNormalized = false;
@@ -278,7 +277,7 @@ void RegisterGaeaRidgeNode()
 		RidgeNumber(TEXT("Scale"), TEXT("Scale"), 0.75, 0.0001, 1.0, TEXT("Ridge")),
 		RidgeNumber(TEXT("Height"), TEXT("Height"), 0.6, 0.0, 3.0, TEXT("Ridge")),
 		RidgeNumber(TEXT("Definition"), TEXT("Definition"), 0.4, 0.0, 1.0, TEXT("Ridge")),
-		RidgeInteger(TEXT("Seed"), TEXT("Seed"), 1337, -2147483647, 2147483647, TEXT("Ridge")),
+		RidgeInteger(TEXT("Seed"), TEXT("Seed"), 0, -2147483647, 2147483647, TEXT("Ridge")),
 		RidgeNumber(TEXT("ScaleX"), TEXT("Scale X"), 1.0, 0.0001, 100.0, TEXT("Transform")),
 		RidgeNumber(TEXT("ScaleY"), TEXT("Scale Y"), 1.0, 0.0001, 100.0, TEXT("Transform"))
 	};
