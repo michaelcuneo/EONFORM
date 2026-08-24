@@ -1,117 +1,19 @@
 #include "GaeaTerrainProceduralOps.h"
 
+#include "GaeaFastNoiseSIMDCompat.h"
 #include "GaeaTerrainFieldNames.h"
+#include "GaeaTerrainFractalWarp.h"
 #include "Math/RandomStream.h"
 
 namespace GaeaTerrainProceduralOps
 {
 	namespace
 	{
-		// Gaea's RawNoise implementation uses FastNoiseSIMD. Its packed constants
-		// still hide the exact product used by SetFrequency and its perturb amplitude.
-		// Keep those two unresolved calibration values isolated here; all surrounding
-		// coordinate, scale, cellular-return and 0..1 mapping semantics are now explicit.
-		constexpr float RawNoiseFeatureCycles = 12.0f;
-		constexpr float RawNoisePerturbFraction = 0.06f;
-
-		uint32 Hash(uint32 X)
-		{
-			X ^= X >> 16;
-			X *= 0x7feb352dU;
-			X ^= X >> 15;
-			X *= 0x846ca68bU;
-			X ^= X >> 16;
-			return X;
-		}
-
-		float Hash01(int32 X, int32 Y, int32 Seed, uint32 Salt = 0)
-		{
-			uint32 H = static_cast<uint32>(X) * 0x9e3779b9U;
-			H ^= static_cast<uint32>(Y) * 0x85ebca6bU;
-			H ^= static_cast<uint32>(Seed) * 0xc2b2ae35U;
-			H ^= Salt;
-			return static_cast<float>(Hash(H) & 0x00ffffffU) / 16777215.0f;
-		}
-
-		float Fade(float T)
-		{
-			return T * T * T * (T * (T * 6.0f - 15.0f) + 10.0f);
-		}
-
-		FVector2D Gradient(int32 X, int32 Y, int32 Seed, uint32 Salt)
-		{
-			const float Angle = Hash01(X, Y, Seed, Salt) * 2.0f * PI;
-			return FVector2D(FMath::Cos(Angle), FMath::Sin(Angle));
-		}
-
-		float Perlin(float X, float Y, int32 Seed, uint32 Salt)
-		{
-			const int32 X0 = FMath::FloorToInt(X);
-			const int32 Y0 = FMath::FloorToInt(Y);
-			const int32 X1 = X0 + 1;
-			const int32 Y1 = Y0 + 1;
-			const float TX = X - static_cast<float>(X0);
-			const float TY = Y - static_cast<float>(Y0);
-			const float U = Fade(TX);
-			const float V = Fade(TY);
-
-			auto Dot = [&](int32 GX, int32 GY, float DX, float DY)
-			{
-				const FVector2D G = Gradient(GX, GY, Seed, Salt);
-				return G.X * DX + G.Y * DY;
-			};
-
-			const float A = FMath::Lerp(Dot(X0, Y0, TX, TY), Dot(X1, Y0, TX - 1.0f, TY), U);
-			const float B = FMath::Lerp(Dot(X0, Y1, TX, TY - 1.0f), Dot(X1, Y1, TX - 1.0f, TY - 1.0f), U);
-			return FMath::Clamp(FMath::Lerp(A, B, V) * 1.41421356f, -1.0f, 1.0f);
-		}
-
-		float PerlinFractal(float X, float Y, int32 Octaves, float Gain, int32 Seed, uint32 Salt)
-		{
-			float Frequency = 1.0f;
-			float Amplitude = 1.0f;
-			float Sum = 0.0f;
-			float Weight = 0.0f;
-			for (int32 I = 0; I < FMath::Max(Octaves, 1); ++I)
-			{
-				Sum += Perlin(X * Frequency, Y * Frequency, Seed + I, Salt) * Amplitude;
-				Weight += Amplitude;
-				Frequency *= 2.0f;
-				Amplitude *= Gain;
-			}
-			return Weight > UE_SMALL_NUMBER ? Sum / Weight : 0.0f;
-		}
-
-		float PerlinBillow(float X, float Y, int32 Octaves, float Gain, int32 Seed, uint32 Salt)
-		{
-			float Frequency = 1.0f;
-			float Amplitude = 1.0f;
-			float Sum = 0.0f;
-			float Weight = 0.0f;
-			for (int32 I = 0; I < FMath::Max(Octaves, 1); ++I)
-			{
-				const float N = FMath::Abs(Perlin(X * Frequency, Y * Frequency, Seed + I, Salt)) * 2.0f - 1.0f;
-				Sum += N * Amplitude;
-				Weight += Amplitude;
-				Frequency *= 2.0f;
-				Amplitude *= Gain;
-			}
-			return Weight > UE_SMALL_NUMBER ? Sum / Weight : 0.0f;
-		}
-
-		float PerlinRigidMulti(float X, float Y, int32 Octaves, float Gain, int32 Seed, uint32 Salt)
-		{
-			float Frequency = 1.0f;
-			float Amplitude = 1.0f;
-			float Result = 1.0f - FMath::Abs(Perlin(X, Y, Seed, Salt));
-			for (int32 I = 1; I < FMath::Max(Octaves, 1); ++I)
-			{
-				Frequency *= 2.0f;
-				Amplitude *= Gain;
-				Result -= (1.0f - FMath::Abs(Perlin(X * Frequency, Y * Frequency, Seed + I, Salt))) * Amplitude;
-			}
-			return Result;
-		}
+		// These are the only two remaining RawNoise wrapper calibration values that
+		// have not yet been decoded from Gaea's packed constants. Keep them isolated;
+		// the noise, cellular and perturb algorithms below are FastNoiseSIMD semantics.
+		constexpr float UnresolvedRawNoiseFeatureCycles = 12.0f;
+		constexpr float UnresolvedRawNoisePerturbFraction = 0.06f;
 
 		float MirrorCoord(float V, int32 MaxIndex)
 		{
@@ -148,108 +50,137 @@ namespace GaeaTerrainProceduralOps
 				TY);
 		}
 
-		struct FVoronoiSample
+		GaeaFastNoiseSIMDCompat::ECellularDistance CellularDistanceType(FName Function)
 		{
-			float F1 = TNumericLimits<float>::Max();
-			float F2 = TNumericLimits<float>::Max();
-			float Cell = 0.0f;
-			float FeatureX = 0.0f;
-			float FeatureY = 0.0f;
-		};
-
-		float CellularDistance(float DX, float DY, FName Function)
-		{
-			const float Euclidean = DX * DX + DY * DY;
-			const float Manhattan = FMath::Abs(DX) + FMath::Abs(DY);
-			if (Function == TEXT("Manhattan")) return Manhattan;
-			if (Function == TEXT("Natural")) return Euclidean * Manhattan;
-			return Euclidean;
+			if (Function == TEXT("Manhattan")) return GaeaFastNoiseSIMDCompat::ECellularDistance::Manhattan;
+			if (Function == TEXT("Natural")) return GaeaFastNoiseSIMDCompat::ECellularDistance::Natural;
+			return GaeaFastNoiseSIMDCompat::ECellularDistance::Euclidean;
 		}
 
-		FVoronoiSample SampleVoronoi(float X, float Y, float Jitter, FName Function, int32 Seed)
+		float FastNoiseSimplex(float X, float Y, float Z, int32 Seed)
 		{
-			const int32 BX = FMath::FloorToInt(X);
-			const int32 BY = FMath::FloorToInt(Y);
-			FVoronoiSample S;
-			for (int32 CY = BY - 2; CY <= BY + 2; ++CY)
+			// Scalar transcription of FastNoiseSIMD::SimplexSingle. This is used by
+			// cellular NoiseLookup, whose FastNoiseSIMD default lookup type is Simplex.
+			constexpr float F3 = 1.0f / 3.0f;
+			constexpr float G3 = 1.0f / 6.0f;
+			constexpr float G33 = -0.5f;
+
+			const float F = (X + Y + Z) * F3;
+			const float IF = FMath::FloorToFloat(X + F);
+			const float JF = FMath::FloorToFloat(Y + F);
+			const float KF = FMath::FloorToFloat(Z + F);
+			const int32 I = GaeaFastNoiseSIMDCompat::PrimeCoordinate(static_cast<int32>(IF), GaeaFastNoiseSIMDCompat::XPrime);
+			const int32 J = GaeaFastNoiseSIMDCompat::PrimeCoordinate(static_cast<int32>(JF), GaeaFastNoiseSIMDCompat::YPrime);
+			const int32 K = GaeaFastNoiseSIMDCompat::PrimeCoordinate(static_cast<int32>(KF), GaeaFastNoiseSIMDCompat::ZPrime);
+
+			const float G = (IF + JF + KF) * G3;
+			const float X0 = X - (IF - G);
+			const float Y0 = Y - (JF - G);
+			const float Z0 = Z - (KF - G);
+
+			const bool XGeY = X0 >= Y0;
+			const bool YGeZ = Y0 >= Z0;
+			const bool XGeZ = X0 >= Z0;
+			const bool I1 = XGeY && XGeZ;
+			const bool J1 = !XGeY && YGeZ;
+			const bool K1 = !XGeZ && !YGeZ;
+			const bool I2 = XGeY || XGeZ;
+			const bool J2 = !XGeY || YGeZ;
+			const bool K2 = !(XGeZ && YGeZ);
+
+			const float X1 = X0 - (I1 ? 1.0f : 0.0f) + G3;
+			const float Y1 = Y0 - (J1 ? 1.0f : 0.0f) + G3;
+			const float Z1 = Z0 - (K1 ? 1.0f : 0.0f) + G3;
+			const float X2 = X0 - (I2 ? 1.0f : 0.0f) + F3;
+			const float Y2 = Y0 - (J2 ? 1.0f : 0.0f) + F3;
+			const float Z2 = Z0 - (K2 ? 1.0f : 0.0f) + F3;
+			const float X3 = X0 + G33;
+			const float Y3 = Y0 + G33;
+			const float Z3 = Z0 + G33;
+
+			auto Contribution = [Seed](float CX, float CY, float CZ, int32 PI, int32 PJ, int32 PK)
 			{
-				for (int32 CX = BX - 2; CX <= BX + 2; ++CX)
-				{
-					const float Angle = Hash01(CX, CY, Seed, 0x17u) * 2.0f * PI;
-					const float Radius = Jitter * (0.72f + Hash01(CY, CX, Seed, 0x91u) * 0.28f);
-					const float FeatureX = static_cast<float>(CX) + FMath::Cos(Angle) * Radius;
-					const float FeatureY = static_cast<float>(CY) + FMath::Sin(Angle) * Radius;
-					const float D = CellularDistance(X - FeatureX, Y - FeatureY, Function);
-					if (D < S.F1)
-					{
-						S.F2 = S.F1;
-						S.F1 = D;
-						S.Cell = Hash01(CX, CY, Seed, 0x71u) * 2.0f - 1.0f;
-						S.FeatureX = FeatureX;
-						S.FeatureY = FeatureY;
-					}
-					else if (D < S.F2)
-					{
-						S.F2 = D;
-					}
-				}
-			}
-			return S;
+				float T = 0.6f - CX * CX - CY * CY - CZ * CZ;
+				if (T < 0.0f) return 0.0f;
+				T *= T;
+				return T * T * GaeaFastNoiseSIMDCompat::GradientCoordinate(Seed, PI, PJ, PK, CX, CY, CZ);
+			};
+
+			const float V0 = Contribution(X0, Y0, Z0, I, J, K);
+			const float V1 = Contribution(
+				X1, Y1, Z1,
+				I1 ? GaeaFastNoiseSIMDCompat::WrapAdd(I, GaeaFastNoiseSIMDCompat::XPrime) : I,
+				J1 ? GaeaFastNoiseSIMDCompat::WrapAdd(J, GaeaFastNoiseSIMDCompat::YPrime) : J,
+				K1 ? GaeaFastNoiseSIMDCompat::WrapAdd(K, GaeaFastNoiseSIMDCompat::ZPrime) : K);
+			const float V2 = Contribution(
+				X2, Y2, Z2,
+				I2 ? GaeaFastNoiseSIMDCompat::WrapAdd(I, GaeaFastNoiseSIMDCompat::XPrime) : I,
+				J2 ? GaeaFastNoiseSIMDCompat::WrapAdd(J, GaeaFastNoiseSIMDCompat::YPrime) : J,
+				K2 ? GaeaFastNoiseSIMDCompat::WrapAdd(K, GaeaFastNoiseSIMDCompat::ZPrime) : K);
+			const float V3 = Contribution(
+				X3, Y3, Z3,
+				GaeaFastNoiseSIMDCompat::WrapAdd(I, GaeaFastNoiseSIMDCompat::XPrime),
+				GaeaFastNoiseSIMDCompat::WrapAdd(J, GaeaFastNoiseSIMDCompat::YPrime),
+				GaeaFastNoiseSIMDCompat::WrapAdd(K, GaeaFastNoiseSIMDCompat::ZPrime));
+			return 32.0f * (V0 + V1 + V2 + V3);
 		}
 
-		float VoronoiRawForm(float X, float Y, const FVoronoiSample& S, FName Form, float Jitter, FName Function, int32 Seed, float LookupFrequency)
+		float CellularRaw(float X, float Y, float Z, const FVoronoiSettings& Settings)
 		{
-			// RawNoise maps FastNoiseSIMD's signed/raw cellular result with
-			// 0.5 + value * 0.5. These letters are Gaea's enum-to-FNSIMD mapping:
-			// C=CellValue, R=Distance, A=Distance2, P=Distance2Add,
-			// S=Distance2Mul, M=Distance2Div, D=NoiseLookup, N=Distance2Cave.
-			if (Form == TEXT("C")) return S.Cell;
-			if (Form == TEXT("R")) return S.F1;
-			if (Form == TEXT("A")) return S.F2;
-			if (Form == TEXT("P")) return S.F1 + S.F2;
-			if (Form == TEXT("S")) return S.F1 * S.F2;
-			if (Form == TEXT("M")) return S.F1 / FMath::Max(S.F2, UE_SMALL_NUMBER);
-			if (Form == TEXT("D")) return Perlin(S.FeatureX * LookupFrequency, S.FeatureY * LookupFrequency, Seed, 0x4d31u);
-			if (Form == TEXT("N"))
+			const GaeaFastNoiseSIMDCompat::ECellularDistance DistanceType = CellularDistanceType(Settings.Function);
+			const bool bDistanceReturn = Settings.Form != TEXT("C") && Settings.Form != TEXT("D");
+			const GaeaFastNoiseSIMDCompat::FCellularSample S = GaeaFastNoiseSIMDCompat::Cellular(
+				X, Y, Z, Settings.Jitter, DistanceType, Settings.Seed, bDistanceReturn);
+
+			if (Settings.Form == TEXT("C")) return S.CellValue;
+			if (Settings.Form == TEXT("R")) return S.F1;
+			if (Settings.Form == TEXT("A")) return S.F2;
+			if (Settings.Form == TEXT("P")) return S.F1 + S.F2;
+			if (Settings.Form == TEXT("S")) return S.F1 * S.F2;
+			if (Settings.Form == TEXT("M")) return S.F1 / FMath::Max(S.F2, UE_SMALL_NUMBER);
+			if (Settings.Form == TEXT("D"))
+			{
+				return FastNoiseSimplex(S.Feature.X * 0.2f, S.Feature.Y * 0.2f, S.Feature.Z * 0.2f, Settings.Seed);
+			}
+			if (Settings.Form == TEXT("N"))
 			{
 				const float C0 = S.F1 / FMath::Max(S.F2, UE_SMALL_NUMBER);
-				const FVoronoiSample S1 = SampleVoronoi(X + 0.5f, Y + 0.5f, Jitter, Function, Seed + 1);
+				const GaeaFastNoiseSIMDCompat::FCellularSample S1 = GaeaFastNoiseSIMDCompat::Cellular(
+					X + 0.5f, Y + 0.5f, Z + 0.5f, Settings.Jitter, DistanceType, Settings.Seed + 1, true);
 				const float C1 = S1.F1 / FMath::Max(S1.F2, UE_SMALL_NUMBER);
 				return FMath::Min(C0, C1);
 			}
 			return S.F1 + S.F2;
 		}
 
-		FName CanonicalWarpType(FName Type)
+		void ApplyFastNoisePerturb(
+			float& X,
+			float& Y,
+			float& Z,
+			FName WarpType,
+			float PublicAmplitude,
+			float Frequency,
+			int32 Octaves,
+			int32 Seed,
+			float MainFractalBounding)
 		{
-			if (Type == TEXT("PerlinFBM")) return TEXT("Perlin FBM");
-			if (Type == TEXT("VoronoiR")) return TEXT("Voronoi R");
-			if (Type == TEXT("VoronoiP")) return TEXT("Voronoi P");
-			return Type;
-		}
-
-		float WarpNoise(float U, float V, FName Type, int32 Octaves, float Roughness, int32 Seed, uint32 Salt, float Jitter)
-		{
-			Type = CanonicalWarpType(Type);
-			if (Type == TEXT("Perlin FBM")) return PerlinFractal(U, V, Octaves, Roughness, Seed, Salt);
-			const FVoronoiSample S = SampleVoronoi(U, V, Jitter, TEXT("Euclidean"), Seed + static_cast<int32>(Salt));
-			const FName Form = Type == TEXT("Voronoi R") ? TEXT("R")
-				: Type == TEXT("Voronoi A") ? TEXT("A")
-				: Type == TEXT("Voronoi S") ? TEXT("S")
-				: Type == TEXT("Voronoi M") ? TEXT("M")
-				: Type == TEXT("Voronoi D") ? TEXT("D")
-				: TEXT("P");
-			const float Raw = VoronoiRawForm(U, V, S, Form, Jitter, TEXT("Euclidean"), Seed, 0.2f);
-			return FMath::Clamp(Raw, -1.0f, 1.0f);
-		}
-
-		float PerturbNoise(float RawX, float RawY, FName WarpType, float Frequency, int32 Octaves, int32 Seed, uint32 Salt)
-		{
-			if (WarpType == TEXT("None")) return 0.0f;
-			const float PX = RawX * Frequency;
-			const float PY = RawY * Frequency;
-			if (WarpType == TEXT("Simple")) return Perlin(PX, PY, Seed, Salt);
-			return PerlinFractal(PX, PY, FMath::Max(Octaves, 1), 0.5f, Seed, Salt);
+			if (WarpType == TEXT("None") || PublicAmplitude <= UE_SMALL_NUMBER) return;
+			if (WarpType == TEXT("Simple"))
+			{
+				GaeaFastNoiseSIMDCompat::GradientPerturb(X, Y, Z, Seed, PublicAmplitude, Frequency);
+				return;
+			}
+			GaeaFastNoiseSIMDCompat::GradientFractalPerturb(
+				X,
+				Y,
+				Z,
+				Seed,
+				PublicAmplitude,
+				Frequency,
+				FMath::Max(Octaves, 1),
+				2.0f,
+				0.5f,
+				MainFractalBounding);
 		}
 
 		void MakeHeightDescriptor(FGaeaFieldDescriptor& Descriptor)
@@ -275,34 +206,36 @@ namespace GaeaTerrainProceduralOps
 		const int32 H = Domain.Dimensions.Y;
 		const float Resolution = static_cast<float>(W);
 		const float Scale = FMath::Clamp(Settings.Scale, 0.0001f, 4.0f);
-		const float MainFrequency = Scale * RawNoiseFeatureCycles / FMath::Max(Resolution, 1.0f);
-		const float LookupFrequency = Scale;
-		const float PerturbPixels = Settings.WarpAmplitude * Resolution * RawNoisePerturbFraction;
+		const float MainFrequency = Scale * UnresolvedRawNoiseFeatureCycles / FMath::Max(Resolution, 1.0f);
+		const float PerturbAmplitude = Settings.WarpAmplitude * Resolution * UnresolvedRawNoisePerturbFraction;
+		const float DefaultFractalBounding = GaeaFastNoiseSIMDCompat::FractalBounding(3, 0.5f);
 
 		for (int32 Y = 0; Y < H; ++Y)
 		{
-			const float RawYBase = (H > 1 ? static_cast<float>(Y) / static_cast<float>(H - 1) - 0.5f : 0.0f) * Resolution;
+			const float RawY = (H > 1 ? static_cast<float>(Y) / static_cast<float>(H - 1) - 0.5f : 0.0f) * Resolution;
 			for (int32 X = 0; X < W; ++X)
 			{
-				const float RawXBase = (W > 1 ? static_cast<float>(X) / static_cast<float>(W - 1) - 0.5f : 0.0f) * Resolution;
-				float RawX = RawXBase;
-				float RawY = RawYBase;
+				const float RawX = (W > 1 ? static_cast<float>(X) / static_cast<float>(W - 1) - 0.5f : 0.0f) * Resolution;
 
-				if (Settings.WarpType != TEXT("None") && Settings.WarpAmplitude > UE_SMALL_NUMBER)
-				{
-					const float WX = PerturbNoise(RawXBase, RawYBase, Settings.WarpType, Settings.WarpFrequency, Settings.WarpOctaves, Settings.Seed + 1201, 0x31u);
-					const float WY = PerturbNoise(RawXBase, RawYBase, Settings.WarpType, Settings.WarpFrequency, Settings.WarpOctaves, Settings.Seed + 2707, 0x57u);
-					RawX += WX * PerturbPixels;
-					RawY += WY * PerturbPixels;
-				}
+				// FastNoiseSIMD applies perturbation to xF/yF/zF after the main noise
+				// frequency and axis scale have been applied. The previous implementation
+				// perturbed pixel coordinates first, which is not equivalent.
+				float PX = (RawX * MainFrequency + Settings.X) * Settings.ScaleX;
+				float PY = (RawY * MainFrequency + Settings.Y) * Settings.ScaleY;
+				float PZ = 0.0f;
+				ApplyFastNoisePerturb(
+					PX, PY, PZ,
+					Settings.WarpType,
+					PerturbAmplitude,
+					Settings.WarpFrequency,
+					Settings.WarpOctaves,
+					Settings.Seed,
+					DefaultFractalBounding);
 
-				const float PX = (RawX * MainFrequency + Settings.X) * Settings.ScaleX;
-				const float PY = (RawY * MainFrequency + Settings.Y) * Settings.ScaleY;
-				const FVoronoiSample S = SampleVoronoi(PX, PY, Settings.Jitter, Settings.Function, Settings.Seed);
-				const float Raw = VoronoiRawForm(PX, PY, S, Settings.Form, Settings.Jitter, Settings.Function, Settings.Seed, LookupFrequency);
-
-				// Noises.Voronoi exposes Gain, but the supplied implementation does not
-				// forward it to RawNoise.Voronoi. Preserve that behavior deliberately.
+				const float Raw = CellularRaw(PX, PY, PZ, Settings);
+				// Preserve the recovered RawNoise output mapping; importantly, Ridge now
+				// range-normalizes after its Min operation instead of clamping this
+				// positive Distance2Add field into a constant sheet.
 				OutField.AtInterior(X, Y) = 0.5f + Raw * 0.5f;
 			}
 		}
@@ -325,38 +258,44 @@ namespace GaeaTerrainProceduralOps
 		const int32 W = Domain.Dimensions.X;
 		const int32 H = Domain.Dimensions.Y;
 		const float Resolution = static_cast<float>(W);
-
-		// RawNoise.Perlin explicitly does Scale = 1 - Scale before SetFrequency.
 		const float ScaleTerm = FMath::Max(1.0f - FMath::Clamp(Settings.Scale, 0.0f, 1.0f), 0.0001f);
-		const float MainFrequency = ScaleTerm * RawNoiseFeatureCycles / FMath::Max(Resolution, 1.0f);
-		const float PerturbPixels = Settings.WarpAmplitude * Resolution * RawNoisePerturbFraction;
+		const float MainFrequency = ScaleTerm * UnresolvedRawNoiseFeatureCycles / FMath::Max(Resolution, 1.0f);
+		const float PerturbAmplitude = Settings.WarpAmplitude * Resolution * UnresolvedRawNoisePerturbFraction;
 		const int32 Octaves = FMath::Clamp(Settings.Octaves, 1, 14);
 		const float Gain = FMath::Clamp(Settings.Gain, 0.0f, 1.0f);
+		const float MainFractalBounding = GaeaFastNoiseSIMDCompat::FractalBounding(Octaves, Gain);
 
 		for (int32 Y = 0; Y < H; ++Y)
 		{
-			const float RawYBase = (H > 1 ? static_cast<float>(Y) / static_cast<float>(H - 1) - 0.5f : 0.0f) * Resolution;
+			const float RawY = (H > 1 ? static_cast<float>(Y) / static_cast<float>(H - 1) - 0.5f : 0.0f) * Resolution;
 			for (int32 X = 0; X < W; ++X)
 			{
-				const float RawXBase = (W > 1 ? static_cast<float>(X) / static_cast<float>(W - 1) - 0.5f : 0.0f) * Resolution;
-				float RawX = RawXBase;
-				float RawY = RawYBase;
+				const float RawX = (W > 1 ? static_cast<float>(X) / static_cast<float>(W - 1) - 0.5f : 0.0f) * Resolution;
+				float PX = (RawX * MainFrequency + Settings.X) * Settings.ScaleX;
+				float PY = (RawY * MainFrequency + Settings.Y) * Settings.ScaleY;
+				float PZ = 0.0f;
+				ApplyFastNoisePerturb(
+					PX, PY, PZ,
+					Settings.WarpType,
+					PerturbAmplitude,
+					Settings.WarpFrequency,
+					Settings.WarpOctaves,
+					Settings.Seed,
+					MainFractalBounding);
 
-				if (Settings.WarpType != TEXT("None") && Settings.WarpAmplitude > UE_SMALL_NUMBER)
+				float Raw = 0.0f;
+				if (Settings.Type == TEXT("Ridged"))
 				{
-					const float WX = PerturbNoise(RawXBase, RawYBase, Settings.WarpType, Settings.WarpFrequency, Settings.WarpOctaves, Settings.Seed + 1301, 0x51u);
-					const float WY = PerturbNoise(RawXBase, RawYBase, Settings.WarpType, Settings.WarpFrequency, Settings.WarpOctaves, Settings.Seed + 2903, 0x79u);
-					RawX += WX * PerturbPixels;
-					RawY += WY * PerturbPixels;
+					Raw = GaeaFastNoiseSIMDCompat::PerlinRigidMulti(PX, PY, PZ, Octaves, 2.0f, Gain, Settings.Seed);
 				}
-
-				const float PX = (RawX * MainFrequency + Settings.X) * Settings.ScaleX;
-				const float PY = (RawY * MainFrequency + Settings.Y) * Settings.ScaleY;
-				float Raw;
-				if (Settings.Type == TEXT("Ridged")) Raw = PerlinRigidMulti(PX, PY, Octaves, Gain, Settings.Seed, 0x151u);
-				else if (Settings.Type == TEXT("Billowy")) Raw = PerlinBillow(PX, PY, Octaves, Gain, Settings.Seed, 0x151u);
-				else Raw = PerlinFractal(PX, PY, Octaves, Gain, Settings.Seed, 0x151u);
-
+				else if (Settings.Type == TEXT("Billowy"))
+				{
+					Raw = GaeaFastNoiseSIMDCompat::PerlinBillow(PX, PY, PZ, Octaves, 2.0f, Gain, Settings.Seed);
+				}
+				else
+				{
+					Raw = GaeaFastNoiseSIMDCompat::PerlinFBM(PX, PY, PZ, Octaves, 2.0f, Gain, Settings.Seed);
+				}
 				OutField.AtInterior(X, Y) = 0.5f + Raw * 0.5f;
 			}
 		}
@@ -445,60 +384,7 @@ namespace GaeaTerrainProceduralOps
 
 	bool FractalWarp(const FGaeaScalarField& Source, const FFractalWarpSettings& Settings, FGaeaScalarField& OutField, FString* OutError)
 	{
-		if (!Source.IsValid())
-		{
-			if (OutError) *OutError = TEXT("Fractal warp requires a valid source field.");
-			return false;
-		}
-		if (Settings.Modulator && Settings.Modulator->Domain != Source.Domain)
-		{
-			if (OutError) *OutError = TEXT("Fractal warp modulator must share the source domain.");
-			return false;
-		}
-		FGaeaScalarField Current = Source;
-		const float MinDim = static_cast<float>(FMath::Min(Source.Domain.Dimensions.X, Source.Domain.Dimensions.Y));
-		const float BaseFrequency = 1.0f / FMath::Max(Settings.Size, 0.0001f);
-		const float ModDir = FMath::DegreesToRadians(Settings.ModulationDirectionDegrees);
-		for (int32 Iter = 0; Iter < FMath::Max(Settings.Iterations, 1); ++Iter)
-		{
-			FGaeaScalarField Next = Current;
-			const float IterStrength = Settings.bPersistStrength ? Settings.Strength : Settings.Strength / static_cast<float>(Iter + 1);
-			const float ModeScale = Settings.Mode == TEXT("Bitmap") ? 1.0f : (Settings.Mode == TEXT("Vector Field Integral") ? 1.15f : 0.9f);
-			for (int32 Y = 0; Y < Current.Domain.Dimensions.Y; ++Y)
-			{
-				const float V = Current.Domain.Dimensions.Y > 1 ? static_cast<float>(Y) / static_cast<float>(Current.Domain.Dimensions.Y - 1) - 0.5f : 0.0f;
-				for (int32 X = 0; X < Current.Domain.Dimensions.X; ++X)
-				{
-					const float U = Current.Domain.Dimensions.X > 1 ? static_cast<float>(X) / static_cast<float>(Current.Domain.Dimensions.X - 1) - 0.5f : 0.0f;
-					float WX = WarpNoise(U * BaseFrequency, V * BaseFrequency, Settings.NoiseType, Settings.Octaves, Settings.Roughness, Settings.Seed + Iter * 131, 0x211u, Settings.Jitter);
-					float WY = WarpNoise(U * BaseFrequency, V * BaseFrequency, Settings.NoiseType, Settings.Octaves, Settings.Roughness, Settings.Seed + Iter * 131, 0x917u, Settings.Jitter);
-					if (Settings.Perturbation > UE_SMALL_NUMBER)
-					{
-						WX += PerlinFractal(U * BaseFrequency * 3.0f, V * BaseFrequency * 3.0f, 3, 0.55f, Settings.Seed + 517, 0x53u) * Settings.Perturbation;
-						WY += PerlinFractal(U * BaseFrequency * 3.0f, V * BaseFrequency * 3.0f, 3, 0.55f, Settings.Seed + 911, 0x79u) * Settings.Perturbation;
-					}
-					if (Settings.bNormalized)
-					{
-						const float L = FMath::Sqrt(WX * WX + WY * WY);
-						if (L > UE_SMALL_NUMBER) { WX /= L; WY /= L; }
-					}
-					float LocalMod = 1.0f;
-					if (Settings.Modulator)
-					{
-						const float M = FMath::Clamp(Settings.Modulator->AtInterior(X, Y), 0.0f, 1.0f);
-						const float Directed = 0.5f + 0.5f * (WX * FMath::Cos(ModDir) + WY * FMath::Sin(ModDir));
-						LocalMod = FMath::Lerp(1.0f, M * Directed, Settings.Modulation);
-					}
-					const float HeightResponse = FMath::Lerp(1.0f, FMath::Abs(Current.AtInterior(X, Y)), FMath::Clamp(Settings.ZScale, 0.0f, 1.0f));
-					const float Displacement = IterStrength * MinDim * 0.05f * ModeScale * LocalMod * HeightResponse;
-					Next.AtInterior(X, Y) = Bilinear(Current, X - WX * Displacement, Y - WY * Displacement, Settings.EdgeBehaviour);
-				}
-			}
-			Current = MoveTemp(Next);
-		}
-		OutField = MoveTemp(Current);
-		if (OutError) OutError->Reset();
-		return OutField.IsValid();
+		return FractalWarpFidelity(Source, Settings, OutField, OutError);
 	}
 
 	void ApplyRadialGradientMultiply(FGaeaScalarField& Field, float CenterX, float CenterY, float RadiusPixels, float Height)
