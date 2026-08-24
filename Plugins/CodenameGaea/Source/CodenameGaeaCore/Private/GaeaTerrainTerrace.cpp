@@ -10,9 +10,6 @@ namespace GaeaTerrainProceduralOps
 			explicit FXorShift64Star(int32 Seed)
 				: State(static_cast<uint64>(static_cast<int64>(Seed)))
 			{
-				// xorshift64* has an all-zero lock state. Gaea normally supplies a
-				// non-zero node seed here; keep zero deterministic rather than using
-				// platform entropy.
 				if (State == 0)
 				{
 					State = 0x9E3779B97F4A7C15ull;
@@ -31,9 +28,6 @@ namespace GaeaTerrainProceduralOps
 
 			float NextFloat01()
 			{
-				// Use the complete 64-bit result and round once to float. The exact
-				// Gaea Engine float conversion is isolated here so it can be replaced
-				// verbatim if its tiny XorShift64Star method differs.
 				constexpr double InvTwoTo64 = 1.0 / 18446744073709551616.0;
 				return static_cast<float>(static_cast<double>(NextUInt64()) * InvTwoTo64);
 			}
@@ -64,9 +58,6 @@ namespace GaeaTerrainProceduralOps
 			return false;
 		}
 
-		// QuadSpinner.Gaea.Nodes.Profiles.Terrace, forceZero=false path.
-		// Do not clamp Uniformity/Steepness/Intensity or source samples here:
-		// the decompiled Gaea 2.3.0.1 implementation does not do so.
 		TArray<float> Terraces;
 		Terraces.SetNumZeroed(NumTerraces);
 
@@ -82,8 +73,7 @@ namespace GaeaTerrainProceduralOps
 			for (int32 K = 1; K < NumTerraces - 1; ++K)
 			{
 				const float Span = Terraces[K + 1] - Terraces[K - 1];
-				const float Random01 = Random.NextFloat01();
-				const float Candidate = Terraces[K - 1] + Span * Random01;
+				const float Candidate = Terraces[K - 1] + Span * Random.NextFloat01();
 				Terraces[K] = Terraces[K] * Uniformity + Candidate * (1.0f - Uniformity);
 			}
 		}
@@ -92,10 +82,7 @@ namespace GaeaTerrainProceduralOps
 		for (int32 I = 0; I < OutField.Values.Num(); ++I)
 		{
 			const float Original = Source.Values[I];
-
-			// The source only enters the terrace interpolation path below the top
-			// of the normalized domain. Values >= 1 are preserved unchanged.
-			if (Original < 1.0f)
+			if (Original < 0.999f) // e002(168)
 			{
 				int32 Level = 0;
 				for (int32 L = 0; L < NumTerraces - 1; ++L)
@@ -111,8 +98,6 @@ namespace GaeaTerrainProceduralOps
 					++Level;
 				}
 
-				// The source algorithm performs these operations literally, including
-				// the apparently redundant sign round-trip and without input clamping.
 				const float Range = Terraces[Level + 1] - Terraces[Level];
 				const float T = (Original - Terraces[Level]) / Range;
 				float Curve = 3.0f * T * T - 2.0f * T * T * T;
