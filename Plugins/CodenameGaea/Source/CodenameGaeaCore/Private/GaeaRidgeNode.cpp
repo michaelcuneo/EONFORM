@@ -6,6 +6,7 @@
 #include "GaeaTerrainNodeDescriptor.h"
 #include "GaeaTerrainProceduralOps.h"
 #include "GaeaTerrainRecipe.h"
+#include "GaeaTerrainTerrace.h"
 
 namespace GaeaTerrainNodeTypes
 {
@@ -139,9 +140,8 @@ bool FGaeaRidgeGenerator::Generate(
 	const float Scale = FMath::Clamp(Settings.Scale, 0.0001f, 1.0f);
 	const float Definition = FMath::Clamp(Settings.Definition, 0.0f, 1.0f);
 
-	// Values below are kept isolated while the remaining packed Ridge constants
-	// are audited. TerraceCount=67 is recovered; do not describe every coefficient
-	// in this block as source-recovered until its packed value has been verified.
+	// Packed Gaea constants still need to be decoded individually. Do not tune
+	// these values by eye; replace each with its e0003.e002(index) value as it is recovered.
 	constexpr float RidgeVoronoiScaleCoefficient = 0.72f;
 	constexpr float RidgePerlinScale = 0.75f;
 	constexpr int32 RidgePerlinOctaves = 12;
@@ -187,14 +187,13 @@ bool FGaeaRidgeGenerator::Generate(
 	if (!GaeaTerrainProceduralOps::GeneratePerlin(Domain, PerlinSettings, Control, OutError)) return false;
 
 	FGaeaScalarField Terraced;
-	if (!GaeaTerrainProceduralOps::ApplyTerrace(
+	if (!GaeaTerrainProceduralOps::TerraceFidelity(
 		Control,
 		RidgeTerraceCount,
 		RidgeTerraceUniformity,
 		RidgeTerraceSteepness,
 		RidgeTerraceIntensity,
 		Settings.Seed + 3,
-		false,
 		Terraced,
 		OutError)) return false;
 
@@ -250,9 +249,6 @@ bool FGaeaRidgeGenerator::Generate(
 	FGaeaScalarField SecondaryWarped;
 	if (!GaeaTerrainProceduralOps::FractalWarpFidelity(Directed, SecondaryWarpSettings, SecondaryWarped, OutError)) return false;
 
-	// Preserve the source-style Ridge amplitude chain. The previous full-span
-	// min/max normalization forced every Ridge field to occupy 0..Height, which
-	// exaggerated mild relief and promoted isolated extrema into visible spikes.
 	OutHeight = Directed;
 	for (int32 I = 0; I < OutHeight.Values.Num(); ++I)
 	{
