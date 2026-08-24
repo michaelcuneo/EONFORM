@@ -139,7 +139,9 @@ bool FGaeaRidgeGenerator::Generate(
 	const float Scale = FMath::Clamp(Settings.Scale, 0.0001f, 1.0f);
 	const float Definition = FMath::Clamp(Settings.Definition, 0.0f, 1.0f);
 
-	// Keep the recovered Landscapes.Ridge operation chain and constants intact.
+	// Values below are kept isolated while the remaining packed Ridge constants
+	// are audited. TerraceCount=67 is recovered; do not describe every coefficient
+	// in this block as source-recovered until its packed value has been verified.
 	constexpr float RidgeVoronoiScaleCoefficient = 0.72f;
 	constexpr float RidgePerlinScale = 0.75f;
 	constexpr int32 RidgePerlinOctaves = 12;
@@ -249,15 +251,32 @@ bool FGaeaRidgeGenerator::Generate(
 	if (!GaeaTerrainProceduralOps::FractalWarpFidelity(Directed, SecondaryWarpSettings, SecondaryWarped, OutError)) return false;
 
 	OutHeight = Directed;
+	float MinValue = TNumericLimits<float>::Max();
+	float MaxValue = TNumericLimits<float>::Lowest();
 	for (int32 I = 0; I < OutHeight.Values.Num(); ++I)
 	{
-		OutHeight.Values[I] = FMath::Min(Directed.Values[I], SecondaryWarped.Values[I]);
-		OutHeight.Values[I] = FMath::Clamp(OutHeight.Values[I], 0.0f, Scale);
+		const float Value = FMath::Min(Directed.Values[I], SecondaryWarped.Values[I]);
+		OutHeight.Values[I] = Value;
+		MinValue = FMath::Min(MinValue, Value);
+		MaxValue = FMath::Max(MaxValue, Value);
 	}
-	GaeaTerrainProceduralOps::NormalizePositive(OutHeight);
-	for (float& Value : OutHeight.Values)
+
+	// Distance2Add is a positive cellular field. Clamping it to [0, Scale]
+	// before normalization is mathematically destructive for Mountain's smaller
+	// child Ridge scales: when Scale <= 0.5, the 0.5-biased RawNoise field becomes
+	// a constant sheet. Preserve the field's range instead of erasing it.
+	const float Span = MaxValue - MinValue;
+	if (Span > UE_SMALL_NUMBER)
 	{
-		Value *= Settings.Height;
+		const float InvSpan = 1.0f / Span;
+		for (float& Value : OutHeight.Values)
+		{
+			Value = FMath::Clamp((Value - MinValue) * InvSpan, 0.0f, 1.0f) * Settings.Height;
+		}
+	}
+	else
+	{
+		for (float& Value : OutHeight.Values) Value = 0.0f;
 	}
 	OutHeight.Descriptor.Name = GaeaTerrainFieldNames::Height;
 
