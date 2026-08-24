@@ -98,12 +98,12 @@ namespace GaeaTerrainProceduralOps
 			const float Y3 = Y0 + G33;
 			const float Z3 = Z0 + G33;
 
-			auto Contribution = [Seed](float CX, float CY, float CZ, int32 PI, int32 PJ, int32 PK)
+			auto Contribution = [Seed](float CX, float CY, float CZ, int32 PrimeI, int32 PrimeJ, int32 PrimeK)
 			{
 				float T = 0.6f - CX * CX - CY * CY - CZ * CZ;
 				if (T < 0.0f) return 0.0f;
 				T *= T;
-				return T * T * GaeaFastNoiseSIMDCompat::GradientCoordinate(Seed, PI, PJ, PK, CX, CY, CZ);
+				return T * T * GaeaFastNoiseSIMDCompat::GradientCoordinate(Seed, PrimeI, PrimeJ, PrimeK, CX, CY, CZ);
 			};
 
 			const float V0 = Contribution(X0, Y0, Z0, I, J, K);
