@@ -5,6 +5,7 @@
 #include "GaeaTerrainFractalWarp.h"
 #include "GaeaTerrainNodeDescriptor.h"
 #include "GaeaTerrainProceduralOps.h"
+#include "GaeaTerrainRawNoise.h"
 #include "GaeaTerrainRecipe.h"
 #include "GaeaTerrainTerrace.h"
 
@@ -167,7 +168,7 @@ bool FGaeaRidgeGenerator::Generate(
 	VoronoiSettings.Jitter = 0.45f;       // e002(106)
 
 	FGaeaScalarField Structure;
-	if (!GaeaTerrainProceduralOps::GenerateVoronoi(Domain, VoronoiSettings, Structure, OutError)) return false;
+	if (!GaeaTerrainRawNoise::Voronoi(Domain, VoronoiSettings, Structure, OutError)) return false;
 
 	GaeaTerrainProceduralOps::FPerlinSettings PerlinSettings;
 	PerlinSettings.Scale = RidgePerlinScale;
@@ -183,7 +184,7 @@ bool FGaeaRidgeGenerator::Generate(
 	PerlinSettings.ScaleY = 1.0f;
 
 	FGaeaScalarField Control;
-	if (!GaeaTerrainProceduralOps::GeneratePerlin(Domain, PerlinSettings, Control, OutError)) return false;
+	if (!GaeaTerrainRawNoise::Perlin(Domain, PerlinSettings, Control, OutError)) return false;
 
 	FGaeaScalarField Terraced;
 	if (!GaeaTerrainProceduralOps::TerraceFidelity(
