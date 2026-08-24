@@ -250,12 +250,31 @@ bool FGaeaRidgeGenerator::Generate(
 	if (!GaeaTerrainProceduralOps::FractalWarpFidelity(Directed, SecondaryWarpSettings, SecondaryWarped, OutError)) return false;
 
 	OutHeight = Directed;
+	float MinValue = 1.0f;
 	for (int32 I = 0; I < OutHeight.Values.Num(); ++I)
 	{
 		OutHeight.Values[I] = FMath::Min(Directed.Values[I], SecondaryWarped.Values[I]);
 		OutHeight.Values[I] = FMath::Clamp(OutHeight.Values[I], 0.0f, Scale);
+		MinValue = FMath::Min(MinValue, OutHeight.Values[I]);
 	}
-	GaeaTerrainProceduralOps::NormalizePositive(OutHeight);
+
+	// Gaea f1a7 finds the field minimum and delegates to f1a8 with that minimum
+	// and 1.0 as the normalization range. This is a standard [min, 1] -> [0, 1]
+	// remap, not the previous divide-by-current-maximum implementation.
+	const float Range = 1.0f - MinValue;
+	if (Range > UE_SMALL_NUMBER)
+	{
+		const float InvRange = 1.0f / Range;
+		for (float& Value : OutHeight.Values)
+		{
+			Value = (Value - MinValue) * InvRange;
+		}
+	}
+	else
+	{
+		for (float& Value : OutHeight.Values) Value = 0.0f;
+	}
+
 	for (float& Value : OutHeight.Values)
 	{
 		Value *= Settings.Height;
