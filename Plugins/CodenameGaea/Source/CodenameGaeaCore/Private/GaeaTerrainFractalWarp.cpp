@@ -6,6 +6,12 @@ namespace GaeaTerrainProceduralOps
 {
 	namespace
 	{
+		constexpr float GaeaMinWarpSize = 0.0001f;                    // e002(101)
+		constexpr float GaeaNormalizedWarpEpsilon = 0.1f;             // e002(93)
+		constexpr float GaeaFinalPerturbFrequencyMultiplier = 4.0f;    // e002(4)
+		constexpr float GaeaFinalPerturbWarpMultiplier = 0.25f;        // e002(76)
+		constexpr float GaeaDirectionCycleDegrees = 360.0f;            // e002(128)
+
 		float MirrorCoord(float V, int32 MaxIndex)
 		{
 			if (MaxIndex <= 0) return 0.0f;
@@ -172,10 +178,7 @@ namespace GaeaTerrainProceduralOps
 
 			if (Settings.bNormalized)
 			{
-				// Not exercised by the Mountain/Ridge fidelity path. Keep the existing
-				// behavior isolated until the packed Gaea normalization constants are
-				// independently recovered.
-				const float LenSq = OutX * OutX + OutY * OutY + 0.1f;
+				const float LenSq = OutX * OutX + OutY * OutY + GaeaNormalizedWarpEpsilon;
 				const float InvLen = 0.5f / FMath::Sqrt(LenSq);
 				OutX *= InvLen;
 				OutY *= InvLen;
@@ -203,27 +206,23 @@ namespace GaeaTerrainProceduralOps
 		const int32 W = Source.Domain.Dimensions.X;
 		const int32 H = Source.Domain.Dimensions.Y;
 		const float Resolution = static_cast<float>(W);
-		const float Size = FMath::Max(Settings.Size, 0.0001f);
+		const float Size = FMath::Max(Settings.Size, GaeaMinWarpSize);
 
 		const float Frequency = 1.0f / (Size * FMath::Max(Resolution, 1.0f));
 		const float Warp = Settings.Strength * Resolution * (Settings.bPersistStrength ? Size : 1.0f);
 		const int32 RequestedIterations = FMath::Max(Settings.Iterations, 1);
 		const bool bPerlin = CanonicalWarpNoiseType(Settings.NoiseType) == TEXT("Perlin FBM");
-		const bool bNeedsPerturbationPass = !bPerlin && Settings.Perturbation > 0.0f;
-
-		// Gaea adds a final Perlin pass for cellular sources. Its two packed scalar
-		// constants (frequency multiplier and displacement multiplier) are not
-		// present in the supplied decompilation as literal values. Do not invent
-		// replacements for them.
-		const int32 Iterations = RequestedIterations;
-		(void)bNeedsPerturbationPass;
+		const bool bNeedsPerturbationPass = !bPerlin && Settings.Perturbation != 0.0f;
 
 		float DirectionDegrees = Settings.ModulationDirectionDegrees;
-		const float DirectionStep = 360.0f / static_cast<float>(RequestedIterations);
+		const float DirectionStep = GaeaDirectionCycleDegrees / static_cast<float>(RequestedIterations);
 		int32 SeedCursor = Settings.Seed;
 
 		if (Settings.Mode == TEXT("Vector Field"))
 		{
+			// Gaea's Virtual mode appends one final Perlin FBM iteration when the
+			// requested warp noise is cellular and perturbation is non-zero.
+			const int32 Iterations = RequestedIterations + (bNeedsPerturbationPass ? 1 : 0);
 			TArray<FVector2D> Coordinates;
 			TArray<FVector2D> NextCoordinates;
 			Coordinates.SetNumUninitialized(W * H);
@@ -238,10 +237,23 @@ namespace GaeaTerrainProceduralOps
 
 			for (int32 Iter = 0; Iter < Iterations; ++Iter)
 			{
+				const bool bFinalPerturbPass = bNeedsPerturbationPass && Iter == Iterations - 1;
+				FFractalWarpSettings IterSettings = Settings;
+				float IterFrequency = Frequency;
+				float IterWarp = Warp;
+				float Sign = (Iter & 1) == 0 ? 1.0f : -1.0f;
+				if (bFinalPerturbPass)
+				{
+					IterSettings.NoiseType = TEXT("Perlin FBM");
+					IterSettings.bNormalized = false;
+					IterFrequency = Frequency * GaeaFinalPerturbFrequencyMultiplier;
+					IterWarp = Settings.Perturbation * Resolution * Size * GaeaFinalPerturbWarpMultiplier;
+					Sign = 1.0f;
+				}
+
 				const float Radians = FMath::DegreesToRadians(DirectionDegrees);
 				const FVector2D ModAxis(-FMath::Cos(Radians), FMath::Sin(Radians));
 				DirectionDegrees += DirectionStep;
-				const float Sign = (Iter & 1) == 0 ? 1.0f : -1.0f;
 				const int32 SeedX = SeedCursor++;
 				const int32 SeedY = SeedCursor++;
 
@@ -250,9 +262,7 @@ namespace GaeaTerrainProceduralOps
 					for (int32 X = 0; X < W; ++X)
 					{
 						const FVector2D CurrentCoord = Coordinates[Y * W + X];
-						// This apparent asymmetry is intentional: in Gaea's Virtual branch
-						// zCoeff is only used as an enable gate. The sampled Z is not multiplied
-						// by zCoeff before the FNSIMD VectorSet is built.
+						// In Gaea's Virtual branch zCoeff is only used as an enable gate.
 						const float Z = Settings.ZScale > 0.0f
 							? Sample(Source, static_cast<float>(CurrentCoord.X), static_cast<float>(CurrentCoord.Y), Settings.EdgeBehaviour)
 							: 0.0f;
@@ -263,8 +273,8 @@ namespace GaeaTerrainProceduralOps
 							static_cast<float>(X),
 							static_cast<float>(Y),
 							Z,
-							Frequency,
-							Settings,
+							IterFrequency,
+							IterSettings,
 							SeedX,
 							SeedY,
 							Sign,
@@ -283,8 +293,8 @@ namespace GaeaTerrainProceduralOps
 							Coordinates,
 							W,
 							H,
-							static_cast<float>(X) + WX * Warp + static_cast<float>(ModAxis.X) * ModOffset,
-							static_cast<float>(Y) + WY * Warp + static_cast<float>(ModAxis.Y) * ModOffset,
+							static_cast<float>(X) + WX * IterWarp + static_cast<float>(ModAxis.X) * ModOffset,
+							static_cast<float>(Y) + WY * IterWarp + static_cast<float>(ModAxis.Y) * ModOffset,
 							Settings.EdgeBehaviour);
 					}
 				}
@@ -303,6 +313,7 @@ namespace GaeaTerrainProceduralOps
 		}
 		else if (Settings.Mode == TEXT("Bitmap"))
 		{
+			const int32 Iterations = RequestedIterations;
 			FGaeaScalarField Current = Source;
 			for (int32 Iter = 0; Iter < Iterations; ++Iter)
 			{
@@ -353,6 +364,7 @@ namespace GaeaTerrainProceduralOps
 		}
 		else
 		{
+			const int32 Iterations = RequestedIterations;
 			TArray<FVector2D> Coordinates;
 			Coordinates.SetNumUninitialized(W * H);
 			for (int32 Y = 0; Y < H; ++Y)
