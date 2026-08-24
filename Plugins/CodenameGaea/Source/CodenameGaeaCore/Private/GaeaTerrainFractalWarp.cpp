@@ -97,9 +97,6 @@ namespace GaeaTerrainProceduralOps
 
 			if (NoiseType == TEXT("Perlin FBM"))
 			{
-				// Gaea's FractalWarp configures FastNoiseSIMD as PerlinFractal/FBM,
-				// sets the requested octave count and gain, and leaves FastNoiseSIMD's
-				// default lacunarity at 2.0.
 				return GaeaFastNoiseSIMDCompat::PerlinFBM(
 					NX,
 					NY,
@@ -128,11 +125,9 @@ namespace GaeaTerrainProceduralOps
 
 			if (NoiseType == TEXT("Voronoi D"))
 			{
-				// FastNoiseSIMD's default cellular NoiseLookup is Simplex at frequency
-				// 0.2. The current Mountain/Ridge path does not request Voronoi D, so
-				// do not invent a substitute for it here. Returning the nearest-distance
-				// field keeps the unsupported branch deterministic until the supplied
-				// NoiseLookup path is ported.
+				// Gaea maps this to FastNoiseSIMD NoiseLookup. The current Mountain/Ridge
+				// dependency chain does not request Voronoi D, so do not substitute a
+				// different noise algorithm here.
 				return Cellular.F1;
 			}
 
@@ -161,6 +156,9 @@ namespace GaeaTerrainProceduralOps
 				Settings.Roughness,
 				Settings.Jitter,
 				SeedX) * Sign;
+
+			// The supplied Gaea implementation calls SetCellularJitter(jitter) on nx
+			// only. ny retains FastNoiseSIMD's default cellular jitter of 0.45.
 			OutY = SampleFastNoiseWarp(
 				X,
 				Y,
@@ -169,14 +167,14 @@ namespace GaeaTerrainProceduralOps
 				Settings.NoiseType,
 				Settings.Octaves,
 				Settings.Roughness,
-				Settings.Jitter,
+				0.45f,
 				SeedY) * Sign;
 
 			if (Settings.bNormalized)
 			{
-				// This normalization is not exercised by Mountain/Ridge fidelity paths,
-				// but preserve the recovered shape of the operation until the remaining
-				// obfuscated scalar is named from the supplied assembly.
+				// Not exercised by the Mountain/Ridge fidelity path. Keep the existing
+				// behavior isolated until the packed Gaea normalization constants are
+				// independently recovered.
 				const float LenSq = OutX * OutX + OutY * OutY + 0.1f;
 				const float InvLen = 0.5f / FMath::Sqrt(LenSq);
 				OutX *= InvLen;
@@ -207,22 +205,16 @@ namespace GaeaTerrainProceduralOps
 		const float Resolution = static_cast<float>(W);
 		const float Size = FMath::Max(Settings.Size, 0.0001f);
 
-		// Directly recovered from QuadSpinner.Gaea.Nodes.Warps.FractalWarp:
-		//   num  = size * resolution
-		//   num2 = 1 / num
-		//   warp = strength * resolution * (persistStrength ? size : 1)
 		const float Frequency = 1.0f / (Size * FMath::Max(Resolution, 1.0f));
 		const float Warp = Settings.Strength * Resolution * (Settings.bPersistStrength ? Size : 1.0f);
 		const int32 RequestedIterations = FMath::Max(Settings.Iterations, 1);
 		const bool bPerlin = CanonicalWarpNoiseType(Settings.NoiseType) == TEXT("Perlin FBM");
 		const bool bNeedsPerturbationPass = !bPerlin && Settings.Perturbation > 0.0f;
 
-		// The supplied implementation adds one final Perlin perturbation iteration
-		// for cellular warp modes (except its special fourth iterative mode). The
-		// exact perturbation amplitude scalar is still obfuscated in the supplied
-		// assembly, so the source-certain Mountain/Perlin path is kept exact while
-		// cellular secondary perturbation remains deliberately disabled rather than
-		// replaced with another guessed coefficient.
+		// Gaea adds a final Perlin pass for cellular sources. Its two packed scalar
+		// constants (frequency multiplier and displacement multiplier) are not
+		// present in the supplied decompilation as literal values. Do not invent
+		// replacements for them.
 		const int32 Iterations = RequestedIterations;
 		(void)bNeedsPerturbationPass;
 
@@ -232,8 +224,6 @@ namespace GaeaTerrainProceduralOps
 
 		if (Settings.Mode == TEXT("Vector Field"))
 		{
-			// Gaea IterativeWarpMode.Virtual: compose a coordinate field, then sample
-			// the original map once at the final coordinates.
 			TArray<FVector2D> Coordinates;
 			TArray<FVector2D> NextCoordinates;
 			Coordinates.SetNumUninitialized(W * H);
@@ -260,13 +250,13 @@ namespace GaeaTerrainProceduralOps
 					for (int32 X = 0; X < W; ++X)
 					{
 						const FVector2D CurrentCoord = Coordinates[Y * W + X];
+						// This apparent asymmetry is intentional: in Gaea's Virtual branch
+						// zCoeff is only used as an enable gate. The sampled Z is not multiplied
+						// by zCoeff before the FNSIMD VectorSet is built.
 						const float Z = Settings.ZScale > 0.0f
-							? Sample(Source, static_cast<float>(CurrentCoord.X), static_cast<float>(CurrentCoord.Y), Settings.EdgeBehaviour) * Settings.ZScale
+							? Sample(Source, static_cast<float>(CurrentCoord.X), static_cast<float>(CurrentCoord.Y), Settings.EdgeBehaviour)
 							: 0.0f;
 
-						// The decompiled Gaea code feeds the original pixel X/Y into FNSIMD
-						// on every Virtual iteration; only Z follows the composed coordinate
-						// field when zCoeff is enabled.
 						float WX = 0.0f;
 						float WY = 0.0f;
 						SampleWarpVector(
@@ -313,8 +303,6 @@ namespace GaeaTerrainProceduralOps
 		}
 		else if (Settings.Mode == TEXT("Bitmap"))
 		{
-			// Gaea IterativeWarpMode.Real: each iteration samples the current bitmap
-			// into the next bitmap, then makes that result the source of the next pass.
 			FGaeaScalarField Current = Source;
 			for (int32 Iter = 0; Iter < Iterations; ++Iter)
 			{
@@ -365,9 +353,6 @@ namespace GaeaTerrainProceduralOps
 		}
 		else
 		{
-			// Gaea IterativeWarpMode.Integral: accumulate displacement directly in
-			// coordinate vectors, then sample the source once. This path is included
-			// for contract completeness; Mountain itself uses Virtual mode.
 			TArray<FVector2D> Coordinates;
 			Coordinates.SetNumUninitialized(W * H);
 			for (int32 Y = 0; Y < H; ++Y)
