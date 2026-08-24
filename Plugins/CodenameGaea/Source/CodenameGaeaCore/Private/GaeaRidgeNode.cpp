@@ -250,33 +250,19 @@ bool FGaeaRidgeGenerator::Generate(
 	FGaeaScalarField SecondaryWarped;
 	if (!GaeaTerrainProceduralOps::FractalWarpFidelity(Directed, SecondaryWarpSettings, SecondaryWarped, OutError)) return false;
 
+	// Preserve the source-style Ridge amplitude chain. The previous full-span
+	// min/max normalization forced every Ridge field to occupy 0..Height, which
+	// exaggerated mild relief and promoted isolated extrema into visible spikes.
 	OutHeight = Directed;
-	float MinValue = TNumericLimits<float>::Max();
-	float MaxValue = TNumericLimits<float>::Lowest();
 	for (int32 I = 0; I < OutHeight.Values.Num(); ++I)
 	{
-		const float Value = FMath::Min(Directed.Values[I], SecondaryWarped.Values[I]);
-		OutHeight.Values[I] = Value;
-		MinValue = FMath::Min(MinValue, Value);
-		MaxValue = FMath::Max(MaxValue, Value);
+		OutHeight.Values[I] = FMath::Min(Directed.Values[I], SecondaryWarped.Values[I]);
+		OutHeight.Values[I] = FMath::Clamp(OutHeight.Values[I], 0.0f, Scale);
 	}
-
-	// Distance2Add is a positive cellular field. Clamping it to [0, Scale]
-	// before normalization is mathematically destructive for Mountain's smaller
-	// child Ridge scales: when Scale <= 0.5, the 0.5-biased RawNoise field becomes
-	// a constant sheet. Preserve the field's range instead of erasing it.
-	const float Span = MaxValue - MinValue;
-	if (Span > UE_SMALL_NUMBER)
+	GaeaTerrainProceduralOps::NormalizePositive(OutHeight);
+	for (float& Value : OutHeight.Values)
 	{
-		const float InvSpan = 1.0f / Span;
-		for (float& Value : OutHeight.Values)
-		{
-			Value = FMath::Clamp((Value - MinValue) * InvSpan, 0.0f, 1.0f) * Settings.Height;
-		}
-	}
-	else
-	{
-		for (float& Value : OutHeight.Values) Value = 0.0f;
+		Value *= Settings.Height;
 	}
 	OutHeight.Descriptor.Name = GaeaTerrainFieldNames::Height;
 
