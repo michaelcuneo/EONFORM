@@ -1,13 +1,13 @@
-# Codename Gaea Architecture
+# EONFORM Architecture
 
 ## Purpose
 
-Codename Gaea is being built for two simultaneous goals:
+EONFORM is being built for two simultaneous goals:
 
 1. Serve as the terrain/world-generation foundation for Orakai.
 2. Ship independently as a reusable Unreal Engine plugin.
 
-The commercial plugin must remain generic. Orakai may depend on Codename Gaea, but Codename Gaea must never depend on Orakai.
+The commercial plugin must remain generic. Orakai may depend on EONFORM, but EONFORM must never depend on Orakai.
 
 A critical Orakai requirement is that terrain generation is not only an offline authoring step. Orakai players will create their own islands in the packaged game and then play on those generated islands. Therefore the terrain recipe, graph evaluator, simulation core, caching model, and at least one geometry materialization backend must be runtime-capable.
 
@@ -28,24 +28,24 @@ New architecture work proceeds on `agent/mesh-terrain-foundation`. The baseline 
 - Spatial fields carry domain, resolution, bounds, units, and interpolation semantics.
 - Node evaluation is deterministic where practical and cacheable by dependencies, parameters, domain, and version.
 - Completed node results are treated as immutable values.
-- Runtime gameplay queries use Codename Gaea's own generated/baked runtime data, not Mesh Terrain channels as the source of truth.
-- Orakai-specific systems consume public Codename Gaea APIs through a separate Orakai integration layer.
+- Runtime gameplay queries use EONFORM's own generated/baked runtime data, not Mesh Terrain channels as the source of truth.
+- Orakai-specific systems consume public EONFORM APIs through a separate Orakai integration layer.
 - A saved island should be representable primarily by its deterministic recipe/seed/parameters plus any explicit user edits, rather than requiring the entire generated terrain to be the canonical save format.
 
 ## Plugin module layout
 
-The repository remains a development host project, while reusable product code lives under `Plugins/CodenameGaea`.
+The repository remains a development host project, while reusable product code lives under `Plugins/Eonform`.
 
 ```text
-Plugins/CodenameGaea/
-  CodenameGaea.uplugin
+Plugins/Eonform/
+  Eonform.uplugin
   Source/
-    CodenameGaeaCore/
-    CodenameGaeaRuntime/
-    CodenameGaeaEditor/
+    EonformCore/
+    EonformRuntime/
+    EonformEditor/
 ```
 
-### CodenameGaeaCore
+### EonformCore
 
 Pure terrain technology and runtime-safe graph-domain primitives:
 
@@ -65,7 +65,7 @@ Pure terrain technology and runtime-safe graph-domain primitives:
 
 This module must not depend on Mesh Terrain, Slate, UnrealEd, GraphEditor, or editor-only APIs.
 
-### CodenameGaeaRuntime
+### EonformRuntime
 
 Unreal runtime-facing integration:
 
@@ -80,7 +80,7 @@ Unreal runtime-facing integration:
 
 The first stock-engine runtime geometry backend will build on Unreal's runtime `UDynamicMesh` / `UDynamicMeshComponent` APIs. It is a correctness and vertical-slice backend, not a permanent assumption that one monolithic Dynamic Mesh is the final large-island rendering architecture. Chunking, streaming, collision, LOD, and higher-performance runtime representation remain separate scalability work.
 
-### CodenameGaeaEditor
+### EonformEditor
 
 Authoring-only functionality:
 
@@ -101,11 +101,11 @@ The original foundation used `FTerrainHeightField` and many subsystem-specific `
 Planned core types:
 
 ```text
-FGaeaGridDomain
-FGaeaScalarField
-FGaeaVectorField
-FGaeaCategoryField
-FGaeaTerrainDataset
+FEonformGridDomain
+FEonformScalarField
+FEonformVectorField
+FEonformCategoryField
+FEonformTerrainDataset
 ```
 
 A domain must eventually describe:
@@ -162,7 +162,7 @@ Player choices / seed / presets / edits
           Graph evaluation
                  |
                  v
-        FGaeaTerrainDataset
+        FEonformTerrainDataset
           /             \
          v               v
 Runtime geometry      Gameplay fields
@@ -182,7 +182,7 @@ This means a commercial plugin customer can use the professional editor graph, w
 
 UE 5.8 Mesh Terrain remains the preferred high-end authored terrain representation for editor workflows. The editor integration will eventually:
 
-- deform Mesh Terrain geometry from Codename Gaea datasets
+- deform Mesh Terrain geometry from EONFORM datasets
 - publish selected terrain fields into Mesh Partition weight channels
 - preserve editor-only intermediate channels where runtime compilation is unnecessary
 - keep the compute core independent from MeshPartition APIs
@@ -191,7 +191,7 @@ Mesh Terrain's modifier authoring API is editor-only in UE 5.8, so it cannot be 
 
 ### Runtime Dynamic Mesh backend
 
-Unreal's `UDynamicMesh` and `UDynamicMeshComponent` are runtime GeometryFramework types. Codename Gaea will use them as the first runtime materialization backend so a generated dataset can become playable geometry in a packaged game.
+Unreal's `UDynamicMesh` and `UDynamicMeshComponent` are runtime GeometryFramework types. EONFORM will use them as the first runtime materialization backend so a generated dataset can become playable geometry in a packaged game.
 
 This backend must eventually address:
 
@@ -207,12 +207,12 @@ Dynamic Mesh is therefore both a runtime vertical-slice backend and a useful pre
 
 ## Runtime/Orakai strategy
 
-Orakai should query Codename Gaea through generic runtime APIs rather than Mesh Terrain internals.
+Orakai should query EONFORM through generic runtime APIs rather than Mesh Terrain internals.
 
 Conceptual usage:
 
 ```cpp
-FGaeaTerrainSample Sample = TerrainSubsystem->Sample(WorldPosition);
+FEonformTerrainSample Sample = TerrainSubsystem->Sample(WorldPosition);
 ```
 
 A sample may eventually expose data such as height, slope, flow, wetness, geology, soil, climate, and biome values.
@@ -225,12 +225,12 @@ For generated islands, the same terrain dataset used to create geometry should r
 
 Each step is intentionally small and should compile/validate before the next one begins.
 
-1. Establish `Plugins/CodenameGaea` and Core/Runtime/Editor module boundaries. **Done.**
+1. Establish `Plugins/Eonform` and Core/Runtime/Editor module boundaries. **Done.**
 2. Introduce grid/domain and scalar-field primitives. **Done.**
 3. Migrate `FTerrainHeightField` onto the new field/domain model without changing behavior. **Done.**
 4. Migrate context, process-mask, and geology outputs into first-class fields. **Current.**
 5. Introduce a named typed terrain dataset.
-6. Build the first visible Codename Gaea editor window and field inspector using the real dataset.
+6. Build the first visible EONFORM editor window and field inspector using the real dataset.
 7. Change erosion to expose first-class multi-output results, especially Height/Wear/Deposits/Flow.
 8. Introduce the runtime-safe terrain recipe/graph evaluator and deterministic cache identity.
 9. Build the minimal professional node graph UI as an editor view over the runtime evaluator.
@@ -244,4 +244,4 @@ Each step is intentionally small and should compile/validate before the next one
 
 The module boundary, spatial primitives, and shared-backed legacy heightfield are verified compiling in UE 5.8.
 
-The current implementation milestone is to convert context, process-mask, and geology output maps from anonymous arrays into `FGaeaScalarField` instances with stable names, units, domain metadata, and sampling behavior, while keeping the existing terrain pipeline behavior unchanged.
+The current implementation milestone is to convert context, process-mask, and geology output maps from anonymous arrays into `FEonformScalarField` instances with stable names, units, domain metadata, and sampling behavior, while keeping the existing terrain pipeline behavior unchanged.

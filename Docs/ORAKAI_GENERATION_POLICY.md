@@ -1,6 +1,6 @@
 # Orakai Island Generation Policy
 
-Orakai uses Codename Gaea as its terrain-generation engine, but players do not receive the unrestricted commercial authoring surface.
+Orakai uses EONFORM as its terrain-generation engine, but players do not receive the unrestricted commercial authoring surface.
 
 The Orakai island creator will submit a runtime-safe terrain recipe through a strict generation policy before evaluation.
 
@@ -17,7 +17,7 @@ The policy is responsible for constraining at least:
 - allowed runtime output backends
 - any gameplay-specific requirements such as mandatory coastline, spawnable land area, or navigation viability
 
-The policy belongs above the generic Codename Gaea evaluator. Codename Gaea remains capable of unrestricted professional authoring for commercial plugin customers, while Orakai supplies a curated policy/profile and a simpler player-facing UI.
+The policy belongs above the generic EONFORM evaluator. EONFORM remains capable of unrestricted professional authoring for commercial plugin customers, while Orakai supplies a curated policy/profile and a simpler player-facing UI.
 
 Conceptually:
 
@@ -32,10 +32,10 @@ Orakai Generation Policy
   validate / clamp / reject
         |
         v
-Codename Gaea Runtime Evaluator
+EONFORM Runtime Evaluator
         |
         v
-FGaeaTerrainDataset
+FEonformTerrainDataset
         |
         +--> Runtime geometry
         +--> Gameplay terrain fields

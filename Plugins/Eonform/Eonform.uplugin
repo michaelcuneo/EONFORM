@@ -1,0 +1,40 @@
+{
+  "FileVersion": 3,
+  "Version": 1,
+  "VersionName": "0.1.0",
+  "FriendlyName": "EONFORM",
+  "Description": "Procedural terrain generation and world data framework.",
+  "Category": "World Creation",
+  "CreatedBy": "Michael Cuneo",
+  "CanContainContent": true,
+  "IsBetaVersion": true,
+  "Installed": false,
+  "Plugins": [
+    {
+      "Name": "MeshPartition",
+      "Enabled": true
+    }
+  ],
+  "Modules": [
+    {
+      "Name": "EonformCore",
+      "Type": "Runtime",
+      "LoadingPhase": "Default"
+    },
+    {
+      "Name": "EonformRuntime",
+      "Type": "Runtime",
+      "LoadingPhase": "Default"
+    },
+    {
+      "Name": "EonformEditor",
+      "Type": "Editor",
+      "LoadingPhase": "Default"
+    },
+    {
+      "Name": "EonformMeshTerrainEditor",
+      "Type": "Editor",
+      "LoadingPhase": "Default"
+    }
+  ]
+}

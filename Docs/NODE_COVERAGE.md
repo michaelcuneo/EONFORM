@@ -56,7 +56,7 @@ Bomber, Bulbous, Contours, Craggy, Distress, FractalTerraces, Grid, GroundTextur
 
 The Surface implementations share reusable deterministic operations for scatter/stamping, layered noise, ridged rock breakup, cellular crack structure, strata, slope/curvature bias, directional sand, and spatial resampling. These operations are intended to become building blocks for later Terrain composites rather than duplicated secret algorithms.
 
-`CodenameGaea.Core.Graph.SurfaceNodeCoverage` enforces that all 21 Surface nodes have descriptors and runtime evaluators, can evaluate from a real Perlin terrain source, publish a valid Height field, and contain finite samples.
+`Eonform.Core.Graph.SurfaceNodeCoverage` enforces that all 21 Surface nodes have descriptors and runtime evaluators, can evaluate from a real Perlin terrain source, publish a valid Height field, and contain finite samples.
 
 Surface fidelity remains an iterative product task: coverage here means the nodes are real executable EONFORM operations, not a claim of byte-for-byte equivalence with QuadSpinner's proprietary implementations.
 
@@ -82,13 +82,13 @@ Erosion-evolution batch now represented:
 
 The `Rivers` implementation deliberately sits on EONFORM's physical hydrology rather than introducing a parallel river solver. Catchment area, drainage direction, distance-to-outlet, physical elevation scale and world dimensions are the reusable engine beneath the graph node.
 
-`CodenameGaea.Core.Graph.SimulateFoundationChain` evaluates:
+`Eonform.Core.Graph.SimulateFoundationChain` evaluates:
 
 ```text
 Perlin -> HydroFix -> Rivers -> Sediments -> Debris -> Scree
 ```
 
-`CodenameGaea.Core.Graph.SimulateEvolutionChain` evaluates:
+`Eonform.Core.Graph.SimulateEvolutionChain` evaluates:
 
 ```text
 Perlin -> EasyErosion -> Erosion2 -> Thermal2 -> Crumble -> Hillify

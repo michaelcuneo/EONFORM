@@ -1,4 +1,4 @@
-# Codename Gaea Implementation Status
+# EONFORM Implementation Status
 
 ## Branches
 
@@ -12,12 +12,12 @@ The protected baseline must remain unchanged.
 Compiled and exercised successfully in Unreal Engine 5.8 by the project owner:
 
 - commercial plugin/module boundary
-- `FGaeaGridDomain` / `FGaeaScalarField`
+- `FEonformGridDomain` / `FEonformScalarField`
 - shared-backed legacy `FTerrainHeightField`
 - semantic context/process/geology fields
-- `FGaeaTerrainDataset` and canonical field names
-- runtime `FGaeaTerrainDatasetRegistry`
-- first visible `Tools -> Codename Gaea` dataset inspector
+- `FEonformTerrainDataset` and canonical field names
+- runtime `FEonformTerrainDatasetRegistry`
+- first visible `Tools -> EONFORM` dataset inspector
 - first-class hydraulic erosion Height/Wear/Deposits/Flow outputs
 - runtime-safe recipe/evaluator foundation
 - first professional GraphEditor surface
@@ -25,9 +25,9 @@ Compiled and exercised successfully in Unreal Engine 5.8 by the project owner:
 
 The project owner has run these runtime graph automation tests successfully:
 
-- `CodenameGaea.Core.Graph.RecipeValidation`
-- `CodenameGaea.Core.Graph.SourceToHydraulicErosion`
-- `CodenameGaea.Core.Graph.CycleDetection`
+- `Eonform.Core.Graph.RecipeValidation`
+- `Eonform.Core.Graph.SourceToHydraulicErosion`
+- `Eonform.Core.Graph.CycleDetection`
 
 ## Runtime island requirement
 
@@ -37,7 +37,7 @@ The recipe/evaluator therefore remains runtime-safe and editor-independent. Orak
 
 ## Verified runtime graph foundation
 
-Hydraulic erosion is Core-owned and the legacy project API delegates to the same implementation. `FGaeaTerrainEvaluator` consumes `FGaeaTerrainRecipe`, resolves dependencies, detects cycles, memoizes one graph run, invokes runtime node evaluators, and returns `FGaeaTerrainDataset`.
+Hydraulic erosion is Core-owned and the legacy project API delegates to the same implementation. `FEonformTerrainEvaluator` consumes `FEonformTerrainRecipe`, resolves dependencies, detects cycles, memoizes one graph run, invokes runtime node evaluators, and returns `FEonformTerrainDataset`.
 
 The first proven runtime graph remains:
 
@@ -51,7 +51,7 @@ Runtime node descriptors provide the shared metadata contract for professional e
 
 ## Verified editable graph authoring
 
-`CodenameGaeaEditor` uses Unreal's native GraphEditor stack. The current workbench supports:
+`EonformEditor` uses Unreal's native GraphEditor stack. The current workbench supports:
 
 - descriptor-driven right-click node creation
 - normal terrain pin wiring/rewiring
@@ -68,11 +68,11 @@ The editor graph still performs no terrain simulation itself. Runtime evaluation
 
 ## Current checkpoint: saveable graph assets
 
-This checkpoint adds persistent Codename Gaea graph assets without introducing a second execution model.
+This checkpoint adds persistent EONFORM graph assets without introducing a second execution model.
 
 ### Serializable runtime recipe
 
-`FGaeaTerrainNode`, `FGaeaTerrainConnection`, and `FGaeaTerrainRecipe` are now Unreal-reflected serializable structs in `CodenameGaeaCore`.
+`FEonformTerrainNode`, `FEonformTerrainConnection`, and `FEonformTerrainRecipe` are now Unreal-reflected serializable structs in `EonformCore`.
 
 The same recipe type is therefore suitable for:
 
@@ -81,20 +81,20 @@ The same recipe type is therefore suitable for:
 - deterministic graph evaluation
 - future Orakai island recipe storage/validation
 
-`CodenameGaeaCore` now depends on `CoreUObject` only to support reflection/serialization; it remains editor-independent.
+`EonformCore` now depends on `CoreUObject` only to support reflection/serialization; it remains editor-independent.
 
-### `UGaeaTerrainGraphAsset`
+### `UEonformTerrainGraphAsset`
 
-`CodenameGaeaRuntime` now provides a `UDataAsset`-based graph asset containing:
+`EonformRuntime` now provides a `UDataAsset`-based graph asset containing:
 
-- the exact runtime `FGaeaTerrainRecipe`
+- the exact runtime `FEonformTerrainRecipe`
 - editor node layout metadata keyed by stable recipe node id
 
 Editor positions are authoring metadata only. Runtime execution consumes the persisted recipe.
 
 ### Workbench New / Open / Save
 
-The Codename Gaea graph toolbar now contains:
+The EONFORM graph toolbar now contains:
 
 ```text
 New   Open   Save   Evaluate Graph
@@ -103,7 +103,7 @@ New   Open   Save   Evaluate Graph
 Behavior:
 
 - `New` uses Unreal AssetTools to create a real graph asset in the Content Browser, then initializes the default Source Dataset -> Hydraulic Erosion graph and saves it.
-- `Open` uses Unreal's modal Content Browser asset picker filtered to `UGaeaTerrainGraphAsset`, then reconstructs a fresh transient editor graph from the persisted recipe and layout.
+- `Open` uses Unreal's modal Content Browser asset picker filtered to `UEonformTerrainGraphAsset`, then reconstructs a fresh transient editor graph from the persisted recipe and layout.
 - `Save` serializes the current live nodes, typed parameters, connections, terminal output, and node positions back into the current asset.
 - `Save` on an unsaved graph acts as Save As and opens the normal Unreal asset creation dialog.
 - package saving uses Unreal's normal checkout/save path so source-control behavior remains conventional.
@@ -112,20 +112,20 @@ Opening an asset rebuilds the native `SGraphEditor` around a new transient `UEdG
 
 ### Asset factory
 
-`UGaeaTerrainGraphAssetFactory` creates graph assets through Unreal's normal asset creation system. The workbench drives it directly; a dedicated double-click asset editor is intentionally deferred until the persistence round-trip is proven.
+`UEonformTerrainGraphAssetFactory` creates graph assets through Unreal's normal asset creation system. The workbench drives it directly; a dedicated double-click asset editor is intentionally deferred until the persistence round-trip is proven.
 
 ## Automated coverage
 
 Existing Core graph tests remain in place, including:
 
 ```text
-CodenameGaea.Core.Graph.NodeDescriptors
+Eonform.Core.Graph.NodeDescriptors
 ```
 
 A new Runtime asset-model test is added:
 
 ```text
-CodenameGaea.Runtime.GraphAsset.Model
+Eonform.Runtime.GraphAsset.Model
 ```
 
 It verifies that a graph asset owns a valid runtime recipe, stable node ids/parameters, and one updateable layout record per node.
@@ -136,8 +136,8 @@ This checkpoint changes Core UHT/reflection state, adds a Runtime `UDataAsset`, 
 
 1. Pull `agent/mesh-terrain-foundation`.
 2. Close Unreal Editor.
-3. Build `CodenameGaeaEditor` / Development Editor / Win64.
-4. Open `Tools -> Codename Gaea`.
+3. Build `EonformEditor` / Development Editor / Win64.
+4. Open `Tools -> EONFORM`.
 5. Confirm the toolbar shows `New`, `Open`, `Save`, and `Evaluate Graph`.
 6. Edit the graph: add a second Hydraulic Erosion node, wire it, change parameters, and move the nodes to obvious positions.
 7. Press `Save`. For an unsaved graph, choose an asset name/path in the normal Unreal dialog.
@@ -145,8 +145,8 @@ This checkpoint changes Core UHT/reflection state, adds a Runtime `UDataAsset`, 
 9. Change the graph after saving, then press `Open` and choose the saved asset.
 10. Confirm node ids/topology, parameter values, and node positions return to the saved state.
 11. Evaluate the reopened graph and confirm the recipe hash/output are consistent with the saved graph.
-12. Close/reopen the Codename Gaea tool and use `Open` again to confirm persistence is independent of the transient editor canvas.
-13. Run `CodenameGaea.Runtime.GraphAsset.Model` if convenient.
+12. Close/reopen the EONFORM tool and use `Open` again to confirm persistence is independent of the transient editor canvas.
+13. Run `Eonform.Runtime.GraphAsset.Model` if convenient.
 14. Confirm the existing terrain actor remains visually unchanged.
 
 ## Next implementation step
@@ -163,4 +163,4 @@ The next node migration should establish reusable foundational generation nodes 
 6. hydrology node
 7. runtime Dynamic Mesh materialization node/orchestrator
 
-At that point a saved Codename Gaea asset can become the actual source of a complete generated island rather than a graph layered on top of the legacy actor dataset.
+At that point a saved EONFORM asset can become the actual source of a complete generated island rather than a graph layered on top of the legacy actor dataset.
