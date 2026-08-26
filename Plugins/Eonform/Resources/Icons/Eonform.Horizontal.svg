@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 300">
+  <g transform="translate(25,20) scale(.72)"><path fill="none" stroke="#000" stroke-width="24" stroke-linejoin="miter" stroke-linecap="square" d="M65 235 L175 135 L225 175 L320 75 L415 180 L455 145 L575 235 M155 235 L225 175 M415 180 L485 235"/></g>
+  <text x="520" y="185" font-family="Arial, Helvetica, sans-serif" font-size="92" letter-spacing="24" fill="#000">EONFORM</text>
+</svg>
