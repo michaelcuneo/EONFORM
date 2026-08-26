@@ -255,7 +255,20 @@ bool FGaeaRidgeGenerator::Generate(
 		OutHeight.Values[I] = FMath::Min(Directed.Values[I], SecondaryWarped.Values[I]);
 		OutHeight.Values[I] = FMath::Clamp(OutHeight.Values[I], 0.0f, Scale);
 	}
-	GaeaTerrainProceduralOps::NormalizePositive(OutHeight);
+
+	// Gaea 2.3.0.1 f1a7: find the minimum, then f1a8 subtracts that minimum
+	// from every sample and clamps the shifted value to [0,1]. It does not divide
+	// by either the current maximum or by (1-minimum).
+	float MinValue = 1.0f;
+	for (const float Value : OutHeight.Values)
+	{
+		MinValue = FMath::Min(Value, MinValue);
+	}
+	for (float& Value : OutHeight.Values)
+	{
+		Value = FMath::Clamp(Value - MinValue, 0.0f, 1.0f);
+	}
+
 	for (float& Value : OutHeight.Values)
 	{
 		Value *= Settings.Height;
