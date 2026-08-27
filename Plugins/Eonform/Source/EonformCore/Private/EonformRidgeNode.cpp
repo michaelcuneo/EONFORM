@@ -142,17 +142,17 @@ bool FEonformRidgeGenerator::Generate(
 	const float Scale = FMath::Clamp(Settings.Scale, 0.0001f, 1.0f);
 	const float Definition = FMath::Clamp(Settings.Definition, 0.0f, 1.0f);
 
-	constexpr float RidgeVoronoiScaleCoefficient = 1.05f;
-	constexpr float RidgePerlinScale = 0.75f;
-	constexpr int32 RidgePerlinOctaves = 12;
-	constexpr float RidgePerlinGain = 0.5f;
-	constexpr int32 RidgeTerraceCount = 67;
-	constexpr float RidgeTerraceUniformity = 0.6f;
-	constexpr float RidgeTerraceSteepness = 0.2f;
-	constexpr float RidgeTerraceIntensity = 0.8f;
-	constexpr float GuideWarpDefinitionCoefficient = 0.99f;
-	constexpr float DirectionStrengthCoefficient = 1.25f;
-	constexpr float SecondaryWarpStrength = 0.65f;
+	constexpr float RidgeVoronoiScaleCoefficient = 1.05f; // e002(126)
+	constexpr float RidgePerlinScale = 0.75f;             // e002(69)
+	constexpr int32 RidgePerlinOctaves = 12;              // e000(13)
+	constexpr float RidgePerlinGain = 0.5f;               // e002(2)
+	constexpr int32 RidgeTerraceCount = 67;               // e000(29)
+	constexpr float RidgeTerraceUniformity = 0.6f;        // e002(72)
+	constexpr float RidgeTerraceSteepness = 0.2f;         // e002(82)
+	constexpr float RidgeTerraceIntensity = 0.8f;         // e002(19)
+	constexpr float GuideWarpDefinitionCoefficient = 0.99f; // e002(73)
+	constexpr float DirectionStrengthCoefficient = 1.25f; // e002(127)
+	constexpr float SecondaryWarpStrength = 0.65f;        // e002(102)
 
 	EonformTerrainProceduralOps::FVoronoiSettings VoronoiSettings;
 	VoronoiSettings.Scale = 1.0f - Scale * RidgeVoronoiScaleCoefficient;
@@ -160,13 +160,13 @@ bool FEonformRidgeGenerator::Generate(
 	VoronoiSettings.Form = TEXT("P");
 	VoronoiSettings.Gain = 0.5f;
 	VoronoiSettings.WarpType = TEXT("Complex");
-	VoronoiSettings.WarpFrequency = 0.1f;
-	VoronoiSettings.WarpAmplitude = 0.3f;
-	VoronoiSettings.WarpOctaves = 10;
+	VoronoiSettings.WarpFrequency = 0.1f; // e002(93)
+	VoronoiSettings.WarpAmplitude = 0.3f; // e002(83)
+	VoronoiSettings.WarpOctaves = 10;     // e000(11)
 	VoronoiSettings.Seed = Settings.Seed;
 	VoronoiSettings.ScaleX = Settings.ScaleX;
 	VoronoiSettings.ScaleY = Settings.ScaleY;
-	VoronoiSettings.Jitter = 0.45f;
+	VoronoiSettings.Jitter = 0.45f;       // e002(106)
 
 	FEonformScalarField Structure;
 	if (!EonformTerrainRawNoise::Voronoi(Domain, VoronoiSettings, Structure, OutError)) return false;
@@ -238,7 +238,7 @@ bool FEonformRidgeGenerator::Generate(
 	SecondaryWarpSettings.bPersistStrength = true;
 	SecondaryWarpSettings.ZScale = 0.0f;
 	SecondaryWarpSettings.NoiseType = TEXT("Voronoi R");
-	SecondaryWarpSettings.Perturbation = 0.4f;
+	SecondaryWarpSettings.Perturbation = 0.4f; // e002(74)
 	SecondaryWarpSettings.Octaves = 12;
 	SecondaryWarpSettings.Roughness = 0.5f;
 	SecondaryWarpSettings.bNormalized = false;
@@ -254,9 +254,10 @@ bool FEonformRidgeGenerator::Generate(
 	for (int32 I = 0; I < OutHeight.Values.Num(); ++I)
 	{
 		OutHeight.Values[I] = FMath::Min(Directed.Values[I], SecondaryWarped.Values[I]);
+		OutHeight.Values[I] = FMath::Clamp(OutHeight.Values[I], 0.0f, Scale);
 	}
 
-	float MinValue = TNumericLimits<float>::Max();
+	float MinValue = 1.0f;
 	for (const float Value : OutHeight.Values)
 	{
 		MinValue = FMath::Min(Value, MinValue);
@@ -264,6 +265,10 @@ bool FEonformRidgeGenerator::Generate(
 	for (float& Value : OutHeight.Values)
 	{
 		Value = FMath::Clamp(Value - MinValue, 0.0f, 1.0f);
+	}
+
+	for (float& Value : OutHeight.Values)
+	{
 		Value *= Settings.Height;
 	}
 	OutHeight.Descriptor.Name = EonformTerrainFieldNames::Height;
