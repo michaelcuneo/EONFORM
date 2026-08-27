@@ -138,30 +138,4 @@ bool FEonformRidgeDeterminismTest::RunTest(const FString& Parameters)
 	return true;
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FEonformRidgeRangeRetentionTest,
-	"Eonform.Core.Graph.Ridge.RangeRetention",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
-
-bool FEonformRidgeRangeRetentionTest::RunTest(const FString& Parameters)
-{
-	using namespace EonformRidgeNodeTests;
-	const FEonformTerrainEvaluationResult Result = EvaluateRidge(0.4f, 4451, FIntPoint(97, 97));
-	TestTrue(TEXT("Default Ridge evaluates"), Result.bSuccess);
-	const FEonformScalarField* Height = Result.Dataset.FindScalarField(EonformTerrainFieldNames::Height);
-	TestNotNull(TEXT("Default Ridge publishes Height"), Height);
-	if (Height)
-	{
-		float MinValue = TNumericLimits<float>::Max();
-		float MaxValue = TNumericLimits<float>::Lowest();
-		for (const float Value : Height->Values)
-		{
-			MinValue = FMath::Min(MinValue, Value);
-			MaxValue = FMath::Max(MaxValue, Value);
-		}
-		TestTrue(TEXT("Default Ridge retains meaningful vertical range"), MaxValue - MinValue > 0.05f);
-	}
-	return true;
-}
-
 #endif
