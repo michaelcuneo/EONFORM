@@ -7,55 +7,6 @@
 
 namespace EonformTerrainProceduralOps
 {
-	namespace
-	{
-		constexpr float GaeaDirectionDegreesToRadians = 0.017453292f; // e002(95)
-
-		int32 MirrorIndex(int32 Index, int32 Resolution)
-		{
-			if (Resolution <= 0) return 0;
-			Index = FMath::Abs(Index);
-			const int32 Period = Resolution * 2;
-			Index %= Period;
-			return Index < Resolution ? Index : (Period - 1 - Index);
-		}
-
-		float Bilinear(const FEonformScalarField& Field, float X, float Y, EEdgeBehaviour Edge)
-		{
-			const int32 W = Field.Domain.Dimensions.X;
-			const int32 H = Field.Domain.Dimensions.Y;
-
-			// Match Gaea Warps.InterpolateBilinear exactly: integer conversion happens
-			// before boundary handling, the +1 neighbours are formed before clamping or
-			// mirroring, and the fractional weights are retained from those raw indices.
-			int32 X0 = static_cast<int32>(X);
-			int32 Y0 = static_cast<int32>(Y);
-			int32 X1 = X0 + 1;
-			int32 Y1 = Y0 + 1;
-			const float TX = X - static_cast<float>(X0);
-			const float TY = Y - static_cast<float>(Y0);
-
-			if (Edge == EEdgeBehaviour::Edge)
-			{
-				X0 = FMath::Clamp(X0, 0, W - 1);
-				Y0 = FMath::Clamp(Y0, 0, H - 1);
-				X1 = FMath::Clamp(X1, 0, W - 1);
-				Y1 = FMath::Clamp(Y1, 0, H - 1);
-			}
-			else
-			{
-				X0 = MirrorIndex(X0, W);
-				X1 = MirrorIndex(X1, W);
-				Y0 = MirrorIndex(Y0, H);
-				Y1 = MirrorIndex(Y1, H);
-			}
-
-			const float Top = Field.AtInterior(X0, Y0) * (1.0f - TX) + Field.AtInterior(X1, Y0) * TX;
-			const float Bottom = Field.AtInterior(X0, Y1) * (1.0f - TX) + Field.AtInterior(X1, Y1) * TX;
-			return Top * (1.0f - TY) + Bottom * TY;
-		}
-	}
-
 	bool GenerateVoronoi(const FEonformGridDomain& Domain, const FVoronoiSettings& Settings, FEonformScalarField& OutField, FString* OutError)
 	{
 		return EonformTerrainRawNoise::Voronoi(Domain, Settings, OutField, OutError);
@@ -68,17 +19,11 @@ namespace EonformTerrainProceduralOps
 
 	bool ApplyTerrace(const FEonformScalarField& Source, int32 NumTerraces, float Uniformity, float Steepness, float Intensity, int32 Seed, bool bForceZero, FEonformScalarField& OutField, FString* OutError)
 	{
-		// The recovered Gaea Profiles.Terrace implementation used by Ridge is the
-		// authoritative forceZero=false path. Keep all ordinary Terrace callers on
-		// that implementation rather than the older FRandomStream approximation.
 		if (!bForceZero)
 		{
 			return TerraceFidelity(Source, NumTerraces, Uniformity, Steepness, Intensity, Seed, OutField, OutError);
 		}
 
-		// forceZero=true has additional source behavior (.001 insertion and shifted
-		// level initialization) that is not yet represented by TerraceFidelity.
-		// Retain the legacy path here until that exact variant is ported.
 		if (!Source.IsValid())
 		{
 			if (OutError) *OutError = TEXT("Terrace requires a valid source field.");
@@ -126,33 +71,6 @@ namespace EonformTerrainProceduralOps
 		}
 		if (OutError) OutError->Reset();
 		return OutField.IsValid();
-	}
-
-	bool DirectionWarpPixels(const FEonformScalarField& Source, const FEonformScalarField& Custom, float StrengthPixels, float DirectionDegrees, EEdgeBehaviour EdgeBehaviour, FEonformScalarField& OutField, FString* OutError)
-	{
-		if (!Source.IsValid() || !Custom.IsValid() || Source.Domain != Custom.Domain)
-		{
-			if (OutError) *OutError = TEXT("Directional warp requires matching valid source/custom fields.");
-			return false;
-		}
-		const float Radians = DirectionDegrees * GaeaDirectionDegreesToRadians;
-		const FVector2D Direction(-FMath::Cos(Radians) * StrengthPixels, FMath::Sin(Radians) * StrengthPixels);
-		OutField = Source;
-		for (int32 Y = 0; Y < Source.Domain.Dimensions.Y; ++Y)
-		{
-			for (int32 X = 0; X < Source.Domain.Dimensions.X; ++X)
-			{
-				const FVector2D Offset = Direction * (Custom.AtInterior(X, Y) - 0.5f);
-				OutField.AtInterior(X, Y) = Bilinear(Source, X + Offset.X, Y + Offset.Y, EdgeBehaviour);
-			}
-		}
-		if (OutError) OutError->Reset();
-		return OutField.IsValid();
-	}
-
-	bool DirectionWarpNormalized(const FEonformScalarField& Source, const FEonformScalarField& Custom, float Strength, float DirectionDegrees, EEdgeBehaviour EdgeBehaviour, FEonformScalarField& OutField, FString* OutError)
-	{
-		return DirectionWarpPixels(Source, Custom, Strength * static_cast<float>(Source.Domain.Dimensions.X), DirectionDegrees, EdgeBehaviour, OutField, OutError);
 	}
 
 	bool FractalWarp(const FEonformScalarField& Source, const FFractalWarpSettings& Settings, FEonformScalarField& OutField, FString* OutError)

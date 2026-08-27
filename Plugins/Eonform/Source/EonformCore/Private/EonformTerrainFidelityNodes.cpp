@@ -168,38 +168,6 @@ namespace
 		return true;
 	}
 
-	bool EvaluateDirectionalWarp(const FEonformTerrainNode& Node, const FEonformTerrainNodeInputs& Inputs, const FEonformTerrainEvaluationContext&, FEonformTerrainNodeEvaluation& Out, FString& Error)
-	{
-		const FEonformTerrainValue* SourceValue = Input(Inputs, TEXT("Input"));
-		const FEonformScalarField* Source = AsField(SourceValue);
-		const FEonformScalarField* Custom = AsField(Input(Inputs, TEXT("Custom")));
-		if (!Custom) Custom = AsField(Input(Inputs, TEXT("Guide")));
-		if (!SourceValue || !Source)
-		{
-			Error = TEXT("DirectionalWarp requires Input.");
-			return false;
-		}
-		if (!Custom || Custom->Domain != Source->Domain)
-		{
-			Error = TEXT("DirectionalWarp requires a matching Custom guide field.");
-			return false;
-		}
-
-		const float Strength = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Strength"), 0.25)), 0.0f, 5.0f);
-		const float Direction = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Direction"), 45.0)), 0.0f, 360.0f);
-		const FName Edge = Node.GetName(TEXT("EdgeBehaviour"), TEXT("Mirror"));
-		FEonformScalarField Result;
-		if (!EonformTerrainProceduralOps::DirectionWarpNormalized(
-			*Source,
-			*Custom,
-			Strength,
-			Direction,
-			Edge == TEXT("Mirror") ? EonformTerrainProceduralOps::EEdgeBehaviour::Mirror : EonformTerrainProceduralOps::EEdgeBehaviour::Edge,
-			Result,
-			&Error)) return false;
-		return PublishLike(*SourceValue, MoveTemp(Result), Out, Error);
-	}
-
 	bool EvaluateWarp(const FEonformTerrainNode& Node, const FEonformTerrainNodeInputs& Inputs, const FEonformTerrainEvaluationContext&, FEonformTerrainNodeEvaluation& Out, FString& Error)
 	{
 		const FEonformTerrainValue* SourceValue = Input(Inputs, TEXT("Input"));
@@ -265,25 +233,6 @@ namespace
 		FEonformTerrainNodeRegistry::Register(D.Type, EvaluateVoronoi);
 	}
 
-	void RegisterDirectionalWarp()
-	{
-		FEonformTerrainNodeDescriptor D;
-		D.Type = EonformTerrainNodeTypes::DirectionalWarp;
-		D.DisplayName = TEXT("DirectionalWarp");
-		D.Category = TEXT("Modify");
-		D.Description = TEXT("Warps Input along a fixed direction using a Custom scalar guide centered at 0.5.");
-		D.Inputs.Add(Port(TEXT("Input"), TEXT("Input"), TEXT("Any")));
-		D.Inputs.Add(Port(TEXT("Custom"), TEXT("Custom"), TEXT("Any")));
-		D.Outputs.Add(Port(TEXT("Out"), TEXT("Out"), TEXT("Any")));
-		D.Parameters = {
-			Num(TEXT("Strength"), TEXT("Strength"), 0.25, 0.0, 5.0),
-			Num(TEXT("Direction"), TEXT("Direction"), 45.0, 0.0, 360.0),
-			Choice(TEXT("EdgeBehaviour"), TEXT("Edge Behaviour"), TEXT("Mirror"), { TEXT("Edge"), TEXT("Mirror") })
-		};
-		FEonformTerrainNodeDescriptorRegistry::Register(D);
-		FEonformTerrainNodeRegistry::Register(D.Type, EvaluateDirectionalWarp);
-	}
-
 	void RegisterWarp()
 	{
 		FEonformTerrainNodeDescriptor D;
@@ -318,6 +267,5 @@ namespace
 void RegisterEonformTerrainFidelityNodes()
 {
 	RegisterVoronoi();
-	RegisterDirectionalWarp();
 	RegisterWarp();
 }

@@ -1,5 +1,6 @@
 #include "EonformRidgeNode.h"
 
+#include "EonformDirectionalWarpNode.h"
 #include "EonformTerrainEvaluator.h"
 #include "EonformTerrainFieldNames.h"
 #include "EonformTerrainFractalWarp.h"
@@ -222,12 +223,12 @@ bool FEonformRidgeGenerator::Generate(
 
 	FEonformScalarField Directed;
 	const float DirectionStrengthPixels = Definition * DirectionStrengthCoefficient * static_cast<float>(Domain.Dimensions.X);
-	if (!EonformTerrainProceduralOps::DirectionWarpPixels(
+	if (!EonformDirectionalWarp::ApplyPixels(
 		Structure,
 		Guide,
 		DirectionStrengthPixels,
 		45.0f,
-		EonformTerrainProceduralOps::EEdgeBehaviour::Mirror,
+		EonformDirectionalWarp::EEdgeBehaviour::Mirror,
 		Directed,
 		OutError)) return false;
 

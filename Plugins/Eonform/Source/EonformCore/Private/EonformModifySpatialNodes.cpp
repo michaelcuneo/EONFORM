@@ -130,23 +130,6 @@ namespace EonformModifySpatialNodesPrivate
 		return true;
 	}
 
-	bool DirectionalWarpField(const FEonformTerrainNode& Node, const FEonformScalarField& Source, const FEonformScalarField* Guide, FEonformScalarField& Out, FString& Error)
-	{
-		if (!Source.IsValid()) { Error = TEXT("DirectionalWarp received an invalid field."); return false; }
-		const float Strength = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Strength"), 0.15)), 0.0f, 1.0f) * FMath::Min(Source.Domain.Dimensions.X, Source.Domain.Dimensions.Y) * 0.12f;
-		const float R = FMath::DegreesToRadians(static_cast<float>(Node.GetNumber(TEXT("Direction"), 0.0)));
-		const bool bMirror = Node.GetBool(TEXT("EdgeMirror"), true);
-		const FVector2D Axis(FMath::Cos(R), FMath::Sin(R));
-		Out = Source;
-		for (int32 Y = 0; Y < Source.Domain.Dimensions.Y; ++Y) for (int32 X = 0; X < Source.Domain.Dimensions.X; ++X)
-		{
-			const float G = Guide ? SampleGridBilinear(*Guide, static_cast<float>(X), static_cast<float>(Y), true) : SmoothNoise(X, Y, 9173, 32);
-			const float D = G * Strength;
-			Out.AtInterior(X, Y) = SampleGridBilinear(Source, X - Axis.X * D, Y - Axis.Y * D, bMirror);
-		}
-		return true;
-	}
-
 	bool FoldField(const FEonformTerrainNode& Node, const FEonformScalarField& Source, const FEonformScalarField*, FEonformScalarField& Out, FString& Error)
 	{
 		if (!Source.IsValid()) { Error = TEXT("Fold received an invalid field."); return false; }
@@ -400,7 +383,6 @@ namespace EonformModifySpatialNodesPrivate
 	}
 }
 
-void RegisterEonformDirectionalWarpNode(){ using namespace EonformModifySpatialNodesPrivate; RegisterSpatialSimple(EonformTerrainNodeTypes::DirectionalWarp,TEXT("DirectionalWarp"),TEXT("Warps an input along a uniform direction using an optional guide field."),{SpatialNumber(TEXT("Strength"),TEXT("Strength"),0.15,0.0,1.0),SpatialNumber(TEXT("Direction"),TEXT("Direction"),0.0,-360.0,360.0),SpatialBool(TEXT("EdgeMirror"),TEXT("Edge Mirror"),true)},DirectionalWarpField,true); }
 void RegisterEonformFoldNode(){ using namespace EonformModifySpatialNodesPrivate; RegisterSpatialSimple(EonformTerrainNodeTypes::Fold,TEXT("Fold"),TEXT("Introduces slanted folds and breaks into terrain structure."),{SpatialNumber(TEXT("Amount"),TEXT("Amount"),0.5,0.0,1.0),SpatialNumber(TEXT("Angle"),TEXT("Angle"),35.0,-180.0,180.0),SpatialNumber(TEXT("Frequency"),TEXT("Frequency"),4.0,1.0,32.0)},FoldField); }
 void RegisterEonformMeshifyNode(){ using namespace EonformModifySpatialNodesPrivate; RegisterSpatialSimple(EonformTerrainNodeTypes::Meshify,TEXT("Meshify"),TEXT("Facets terrain into coarse planar cells while retaining the source silhouette."),{SpatialInteger(TEXT("CellSize"),TEXT("Cell Size"),4,1,64),SpatialNumber(TEXT("Facet"),TEXT("Facet"),0.75,0.0,1.0)},MeshifyField); }
 void RegisterEonformOrigamiNode(){ using namespace EonformModifySpatialNodesPrivate; RegisterSpatialSimple(EonformTerrainNodeTypes::Origami,TEXT("Origami"),TEXT("Creates diagonal multifold structure for stylized or erosion-ready terrain."),{SpatialNumber(TEXT("Amount"),TEXT("Amount"),0.5,0.0,1.0),SpatialInteger(TEXT("Seed"),TEXT("Seed"),1337,0,2147483647)},OrigamiField); }

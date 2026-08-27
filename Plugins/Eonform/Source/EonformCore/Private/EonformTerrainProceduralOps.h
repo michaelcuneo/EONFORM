@@ -71,8 +71,6 @@ namespace EonformTerrainProceduralOps
 	bool GenerateVoronoi(const FEonformGridDomain& Domain, const FVoronoiSettings& Settings, FEonformScalarField& OutField, FString* OutError = nullptr);
 	bool GeneratePerlin(const FEonformGridDomain& Domain, const FPerlinSettings& Settings, FEonformScalarField& OutField, FString* OutError = nullptr);
 	bool ApplyTerrace(const FEonformScalarField& Source, int32 NumTerraces, float Uniformity, float Steepness, float Intensity, int32 Seed, bool bForceZero, FEonformScalarField& OutField, FString* OutError = nullptr);
-	bool DirectionWarpPixels(const FEonformScalarField& Source, const FEonformScalarField& Custom, float StrengthPixels, float DirectionDegrees, EEdgeBehaviour EdgeBehaviour, FEonformScalarField& OutField, FString* OutError = nullptr);
-	bool DirectionWarpNormalized(const FEonformScalarField& Source, const FEonformScalarField& Custom, float Strength, float DirectionDegrees, EEdgeBehaviour EdgeBehaviour, FEonformScalarField& OutField, FString* OutError = nullptr);
 	bool FractalWarp(const FEonformScalarField& Source, const FFractalWarpSettings& Settings, FEonformScalarField& OutField, FString* OutError = nullptr);
 
 	void ApplyRadialGradientMultiply(FEonformScalarField& Field, float CenterX, float CenterY, float RadiusPixels, float Height = 1.0f);

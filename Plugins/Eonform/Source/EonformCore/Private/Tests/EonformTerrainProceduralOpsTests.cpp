@@ -1,5 +1,6 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
+#include "EonformDirectionalWarpNode.h"
 #include "EonformTerrainProceduralOps.h"
 #include "EonformTerrainFieldNames.h"
 #include "Misc/AutomationTest.h"
@@ -78,7 +79,7 @@ bool FEonformTerraceGlobalLevelsTest::RunTest(const FString& Parameters)
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FEonformDirectionalWarpMidpointTest,
-	"Eonform.Core.ProceduralOps.DirectionalWarpMidpoint",
+	"Eonform.Core.DirectionalWarp.Midpoint",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 bool FEonformDirectionalWarpMidpointTest::RunTest(const FString& Parameters)
@@ -95,7 +96,7 @@ bool FEonformDirectionalWarpMidpointTest::RunTest(const FString& Parameters)
 	}
 	FEonformScalarField Result;
 	FString Error;
-	TestTrue(TEXT("Directional warp evaluates"), EonformTerrainProceduralOps::DirectionWarpPixels(Source, Guide, 20.0f, 45.0f, EonformTerrainProceduralOps::EEdgeBehaviour::Mirror, Result, &Error));
+	TestTrue(TEXT("Directional warp evaluates"), EonformDirectionalWarp::ApplyPixels(Source, Guide, 20.0f, 45.0f, EonformDirectionalWarp::EEdgeBehaviour::Mirror, Result, &Error));
 	for (int32 I = 0; I < Source.Values.Num(); ++I)
 	{
 		TestTrue(TEXT("A 0.5 Custom guide produces zero displacement"), FMath::IsNearlyEqual(Source.Values[I], Result.Values[I], 1.e-6f));
