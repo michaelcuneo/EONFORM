@@ -7,11 +7,11 @@ namespace EonformTerrainRawNoise
 {
 	namespace
 	{
-		constexpr float RawNoiseResolutionReference = 512.0f; // e002(142)
-		constexpr float RawNoiseFrequencyScale = 0.01f;       // e002(97)
-		constexpr float RawNoisePerturbScale = 10.0f;        // e002(81)
-		constexpr float Half = 0.5f;                         // e002(2)
-		constexpr float One = 1.0f;                          // e002(5)
+		constexpr float RawNoiseResolutionReference = 512.0f;
+		constexpr float RawNoiseFrequencyScale = 0.01f;
+		constexpr float RawNoisePerturbScale = 10.0f;
+		constexpr float Half = 0.5f;
+		constexpr float One = 1.0f;
 
 		void MakeHeightDescriptor(FEonformFieldDescriptor& Descriptor)
 		{
@@ -25,6 +25,16 @@ namespace EonformTerrainRawNoise
 			if (Function == TEXT("Manhattan")) return EonformFastNoiseSIMDCompat::ECellularDistance::Manhattan;
 			if (Function == TEXT("Natural")) return EonformFastNoiseSIMDCompat::ECellularDistance::Natural;
 			return EonformFastNoiseSIMDCompat::ECellularDistance::Euclidean;
+		}
+
+		FVector2d WorldToReferenceInterior(
+			const FVector2d& World,
+			const FEonformGridDomain& ReferenceDomain)
+		{
+			const FVector2d Size = ReferenceDomain.WorldSize();
+			return FVector2d(
+				(World.X - ReferenceDomain.WorldMin.X) / Size.X * static_cast<double>(ReferenceDomain.Dimensions.X - 1),
+				(World.Y - ReferenceDomain.WorldMin.Y) / Size.Y * static_cast<double>(ReferenceDomain.Dimensions.Y - 1));
 		}
 
 		float Simplex(float X, float Y, float Z, int32 Seed)
@@ -177,7 +187,8 @@ namespace EonformTerrainRawNoise
 		const FEonformGridDomain& Domain,
 		const EonformTerrainProceduralOps::FVoronoiSettings& Settings,
 		FEonformScalarField& OutField,
-		FString* OutError)
+		FString* OutError,
+		const FEonformGridDomain* ReferenceDomain)
 	{
 		if (!Domain.IsValid())
 		{
@@ -185,13 +196,13 @@ namespace EonformTerrainRawNoise
 			return false;
 		}
 
+		const FEonformGridDomain& Reference = ReferenceDomain && ReferenceDomain->IsValid() ? *ReferenceDomain : Domain;
 		FEonformFieldDescriptor Descriptor;
 		MakeHeightDescriptor(Descriptor);
 		OutField.Initialize(Domain, Descriptor, 0.0f);
 
-		const int32 W = Domain.Dimensions.X;
-		const int32 H = Domain.Dimensions.Y;
-		const float Resolution = static_cast<float>(W);
+		const int32 ResolutionX = Reference.Dimensions.X;
+		const float Resolution = static_cast<float>(ResolutionX);
 		const float ResolutionFactor = RawNoiseResolutionReference / Resolution;
 		const float Frequency = Settings.Scale * RawNoiseFrequencyScale * ResolutionFactor;
 		const float LookupFrequency = Settings.Scale * ResolutionFactor;
@@ -199,13 +210,25 @@ namespace EonformTerrainRawNoise
 		const float PerturbAmplitude = Settings.WarpAmplitude * RawNoisePerturbScale;
 		const float DefaultFractalBounding = EonformFastNoiseSIMDCompat::FractalBounding(3, 0.5f);
 		const float ResolutionInv = One / Resolution;
+		const FIntPoint Storage = Domain.GetStorageDimensions();
+		const bool bLegacyCoordinates = Domain.BorderSamples == 0 && Domain == Reference;
 
-		for (int32 Y = 0; Y < H; ++Y)
+		for (int32 Y = 0; Y < Storage.Y; ++Y)
 		{
-			for (int32 X = 0; X < W; ++X)
+			for (int32 X = 0; X < Storage.X; ++X)
 			{
-				float U = static_cast<float>(X) * ResolutionInv;
-				float V = static_cast<float>(Y) * ResolutionInv;
+				FVector2d ReferenceCoord;
+				if (bLegacyCoordinates)
+				{
+					ReferenceCoord = FVector2d(X, Y);
+				}
+				else
+				{
+					ReferenceCoord = WorldToReferenceInterior(Domain.StorageSampleToWorld(X, Y), Reference);
+				}
+
+				float U = static_cast<float>(ReferenceCoord.X) * ResolutionInv;
+				float V = static_cast<float>(ReferenceCoord.Y) * ResolutionInv;
 				U += Settings.X * Wavelength * ResolutionInv;
 				V += Settings.Y * Wavelength * ResolutionInv;
 				U -= Half;
@@ -228,7 +251,7 @@ namespace EonformTerrainRawNoise
 					DefaultFractalBounding);
 
 				const float Raw = CellularRaw(PX, PY, PZ, LookupFrequency, Settings);
-				OutField.AtInterior(X, Y) = IsSignedCellularOutput(Settings.Form)
+				OutField.AtStorage(X, Y) = IsSignedCellularOutput(Settings.Form)
 					? Half + Raw * Half
 					: Raw * Half;
 			}
@@ -242,7 +265,8 @@ namespace EonformTerrainRawNoise
 		const FEonformGridDomain& Domain,
 		const EonformTerrainProceduralOps::FPerlinSettings& Settings,
 		FEonformScalarField& OutField,
-		FString* OutError)
+		FString* OutError,
+		const FEonformGridDomain* ReferenceDomain)
 	{
 		if (!Domain.IsValid())
 		{
@@ -250,13 +274,12 @@ namespace EonformTerrainRawNoise
 			return false;
 		}
 
+		const FEonformGridDomain& Reference = ReferenceDomain && ReferenceDomain->IsValid() ? *ReferenceDomain : Domain;
 		FEonformFieldDescriptor Descriptor;
 		MakeHeightDescriptor(Descriptor);
 		OutField.Initialize(Domain, Descriptor, 0.0f);
 
-		const int32 W = Domain.Dimensions.X;
-		const int32 H = Domain.Dimensions.Y;
-		const float Resolution = static_cast<float>(W);
+		const float Resolution = static_cast<float>(Reference.Dimensions.X);
 		const float Scale = One - Settings.Scale;
 		const float ResolutionFactor = RawNoiseResolutionReference / Resolution;
 		const float MainFrequency = Scale * RawNoiseFrequencyScale * ResolutionFactor;
@@ -266,13 +289,25 @@ namespace EonformTerrainRawNoise
 		const int32 Octaves = Settings.Octaves;
 		const float Gain = Settings.Gain;
 		const float MainFractalBounding = EonformFastNoiseSIMDCompat::FractalBounding(Octaves, Gain);
+		const FIntPoint Storage = Domain.GetStorageDimensions();
+		const bool bLegacyCoordinates = Domain.BorderSamples == 0 && Domain == Reference;
 
-		for (int32 Y = 0; Y < H; ++Y)
+		for (int32 Y = 0; Y < Storage.Y; ++Y)
 		{
-			for (int32 X = 0; X < W; ++X)
+			for (int32 X = 0; X < Storage.X; ++X)
 			{
-				float U = static_cast<float>(X) * ResolutionInv;
-				float V = static_cast<float>(Y) * ResolutionInv;
+				FVector2d ReferenceCoord;
+				if (bLegacyCoordinates)
+				{
+					ReferenceCoord = FVector2d(X, Y);
+				}
+				else
+				{
+					ReferenceCoord = WorldToReferenceInterior(Domain.StorageSampleToWorld(X, Y), Reference);
+				}
+
+				float U = static_cast<float>(ReferenceCoord.X) * ResolutionInv;
+				float V = static_cast<float>(ReferenceCoord.Y) * ResolutionInv;
 				U += Settings.X * Wavelength * ResolutionInv;
 				V += Settings.Y * Wavelength * ResolutionInv;
 				U -= Half;
@@ -308,7 +343,7 @@ namespace EonformTerrainRawNoise
 					Raw = EonformFastNoiseSIMDCompat::PerlinFBM(PX, PY, PZ, Octaves, 2.0f, Gain, Settings.Seed);
 				}
 
-				OutField.AtInterior(X, Y) = Half + Raw * Half;
+				OutField.AtStorage(X, Y) = Half + Raw * Half;
 			}
 		}
 
