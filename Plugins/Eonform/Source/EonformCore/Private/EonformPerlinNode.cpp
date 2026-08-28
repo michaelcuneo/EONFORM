@@ -3,7 +3,7 @@
 #include "EonformTerrainEvaluator.h"
 #include "EonformTerrainFieldNames.h"
 #include "EonformTerrainNodeDescriptor.h"
-#include "EonformTerrainProceduralOps.h"
+#include "EonformTerrainRawNoise.h"
 #include "EonformTerrainRecipe.h"
 
 namespace
@@ -85,7 +85,12 @@ namespace
 		return FMath::Max(Context.HeightScale, 1.0f);
 	}
 
-	bool EvaluatePerlinNodeCurrent(const FEonformTerrainNode& Node, const FEonformTerrainNodeInputs&, const FEonformTerrainEvaluationContext& Context, FEonformTerrainNodeEvaluation& Out, FString& Error)
+	bool EvaluatePerlinNode(
+		const FEonformTerrainNode& Node,
+		const FEonformTerrainNodeInputs&,
+		const FEonformTerrainEvaluationContext& Context,
+		FEonformTerrainNodeEvaluation& Out,
+		FString& Error)
 	{
 		const FEonformGridDomain Domain = BuildPerlinDomain(Context);
 		if (!Domain.IsValid())
@@ -110,10 +115,8 @@ namespace
 		Settings.Y = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Y"), 0.5)), 0.0f, 1.0f);
 
 		FEonformScalarField HeightField;
-		if (!EonformTerrainProceduralOps::GeneratePerlin(Domain, Settings, HeightField, &Error)) return false;
-
 		const float HeightAmount = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Height"), 1.0)), 0.0f, 1.0f);
-		for (float& Value : HeightField.Values) Value *= HeightAmount;
+		if (!EonformPerlin::Generate(Domain, Settings, HeightAmount, HeightField, &Error)) return false;
 
 		FEonformTerrainDataset Dataset;
 		if (!Dataset.SetScalarField(MoveTemp(HeightField)))
@@ -132,13 +135,27 @@ namespace
 	}
 }
 
+bool EonformPerlin::Generate(
+	const FEonformGridDomain& Domain,
+	const EonformTerrainProceduralOps::FPerlinSettings& Settings,
+	float HeightAmount,
+	FEonformScalarField& OutField,
+	FString* OutError)
+{
+	if (!EonformTerrainRawNoise::Perlin(Domain, Settings, OutField, OutError)) return false;
+	const float Amount = FMath::Clamp(HeightAmount, 0.0f, 1.0f);
+	for (float& Value : OutField.Values) Value *= Amount;
+	if (OutError) OutError->Reset();
+	return OutField.IsValid();
+}
+
 void RegisterEonformPerlinNode()
 {
 	FEonformTerrainNodeDescriptor Descriptor;
 	Descriptor.Type = EonformTerrainNodeTypes::PerlinNoise;
 	Descriptor.DisplayName = TEXT("Perlin");
 	Descriptor.Category = TEXT("Primitive");
-	Descriptor.Description = TEXT("Generates Perlin FBM terrain at the active graph resolution with the documented warp and transform controls.");
+	Descriptor.Description = TEXT("Generates Perlin terrain at the active graph resolution with warp and transform controls.");
 	Descriptor.Outputs.Add(PerlinTerrainPort(TEXT("Out"), TEXT("Out")));
 	Descriptor.Parameters.Add(PerlinNameParameter(TEXT("Type"), TEXT("Type"), TEXT("FBM"), { TEXT("FBM"), TEXT("Ridged"), TEXT("Billowy") }, TEXT("Noise")));
 	Descriptor.Parameters.Add(PerlinNumberParameter(TEXT("Scale"), TEXT("Scale"), 0.5, 0.0, 1.0, TEXT("Noise")));
@@ -155,5 +172,5 @@ void RegisterEonformPerlinNode()
 	Descriptor.Parameters.Add(PerlinNumberParameter(TEXT("X"), TEXT("X"), 0.5, 0.0, 1.0, TEXT("Transform")));
 	Descriptor.Parameters.Add(PerlinNumberParameter(TEXT("Y"), TEXT("Y"), 0.5, 0.0, 1.0, TEXT("Transform")));
 	FEonformTerrainNodeDescriptorRegistry::Register(Descriptor);
-	FEonformTerrainNodeRegistry::Register(EonformTerrainNodeTypes::PerlinNoise, EvaluatePerlinNodeCurrent);
+	FEonformTerrainNodeRegistry::Register(EonformTerrainNodeTypes::PerlinNoise, EvaluatePerlinNode);
 }
