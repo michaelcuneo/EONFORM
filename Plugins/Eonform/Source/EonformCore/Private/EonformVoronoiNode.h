@@ -10,7 +10,8 @@ namespace EonformVoronoi
 		const EonformTerrainProceduralOps::FVoronoiSettings& Settings,
 		float ClampValue,
 		FEonformScalarField& OutField,
-		FString* OutError = nullptr);
+		FString* OutError = nullptr,
+		const FEonformGridDomain* ReferenceDomain = nullptr);
 }
 
 void RegisterEonformVoronoiNode();
