@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "EonformTerrainEvaluator.h"
+#include "EonformTerrainGenerationPlan.h"
 #include "EonformTerrainGraphAsset.h"
 #include "EonformTerrainPhysicalMetrics.h"
 
@@ -64,6 +65,17 @@ public:
 		GenerationContext = InContext;
 		GenerationGraphGeneration = InGraphGeneration;
 		bGenerationPlanAvailable = GenerationRecipe.Validate(nullptr);
+		if (bGenerationPlanAvailable)
+		{
+			FEonformTerrainGenerationPlanRegistry::Publish(
+				GenerationRecipe,
+				GenerationContext,
+				FMath::Max<uint64>(GenerationGraphGeneration, 1));
+		}
+		else
+		{
+			FEonformTerrainGenerationPlanRegistry::Reset();
+		}
 	}
 
 	bool GetGenerationPlan(
@@ -86,6 +98,7 @@ public:
 		GenerationRecipe = FEonformTerrainRecipe();
 		GenerationContext = FEonformTerrainEvaluationContext();
 		GenerationGraphGeneration = 0;
+		FEonformTerrainGenerationPlanRegistry::Reset();
 	}
 
 	/** A new graph revision is being evaluated. No snapshot is generation-safe yet. */
