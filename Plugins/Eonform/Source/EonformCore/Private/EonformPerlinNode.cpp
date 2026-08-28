@@ -61,19 +61,18 @@ namespace
 
 	FEonformGridDomain BuildPerlinDomain(const FEonformTerrainEvaluationContext& Context)
 	{
-		const int32 Width = FMath::Clamp(Context.TargetResolution.X > 1 ? Context.TargetResolution.X : 257, 2, 4097);
-		const int32 Height = FMath::Clamp(Context.TargetResolution.Y > 1 ? Context.TargetResolution.Y : Width, 2, 4097);
-		double WorldWidthCm = 100000.0;
-		double WorldDepthCm = 100000.0;
-		if (Context.PhysicalMetrics.HasWorldDimensions())
-		{
-			WorldWidthCm = Context.PhysicalMetrics.WorldWidthMeters * 100.0;
-			WorldDepthCm = Context.PhysicalMetrics.WorldDepthMeters * 100.0;
-		}
-		return FEonformGridDomain::Make(
-			FIntPoint(Width, Height),
-			FVector2d(-WorldWidthCm * 0.5, -WorldDepthCm * 0.5),
-			FVector2d(WorldWidthCm * 0.5, WorldDepthCm * 0.5));
+		return Context.ResolveTargetDomain(
+			FIntPoint(257, 257),
+			FVector2d(-50000.0, -50000.0),
+			FVector2d(50000.0, 50000.0));
+	}
+
+	FEonformGridDomain BuildPerlinReferenceDomain(const FEonformTerrainEvaluationContext& Context)
+	{
+		return Context.ResolveReferenceDomain(
+			FIntPoint(257, 257),
+			FVector2d(-50000.0, -50000.0),
+			FVector2d(50000.0, 50000.0));
 	}
 
 	float ResolveHeightScale(const FEonformTerrainEvaluationContext& Context)
@@ -93,7 +92,8 @@ namespace
 		FString& Error)
 	{
 		const FEonformGridDomain Domain = BuildPerlinDomain(Context);
-		if (!Domain.IsValid())
+		const FEonformGridDomain ReferenceDomain = BuildPerlinReferenceDomain(Context);
+		if (!Domain.IsValid() || !ReferenceDomain.IsValid())
 		{
 			Error = TEXT("Perlin produced an invalid grid domain.");
 			return false;
@@ -116,7 +116,7 @@ namespace
 
 		FEonformScalarField HeightField;
 		const float HeightAmount = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Height"), 1.0)), 0.0f, 1.0f);
-		if (!EonformPerlin::Generate(Domain, Settings, HeightAmount, HeightField, &Error)) return false;
+		if (!EonformPerlin::Generate(Domain, Settings, HeightAmount, HeightField, &Error, &ReferenceDomain)) return false;
 
 		FEonformTerrainDataset Dataset;
 		if (!Dataset.SetScalarField(MoveTemp(HeightField)))
@@ -140,9 +140,10 @@ bool EonformPerlin::Generate(
 	const EonformTerrainProceduralOps::FPerlinSettings& Settings,
 	float HeightAmount,
 	FEonformScalarField& OutField,
-	FString* OutError)
+	FString* OutError,
+	const FEonformGridDomain* ReferenceDomain)
 {
-	if (!EonformTerrainRawNoise::Perlin(Domain, Settings, OutField, OutError)) return false;
+	if (!EonformTerrainRawNoise::Perlin(Domain, Settings, OutField, OutError, ReferenceDomain)) return false;
 	const float Amount = FMath::Clamp(HeightAmount, 0.0f, 1.0f);
 	for (float& Value : OutField.Values) Value *= Amount;
 	if (OutError) OutError->Reset();
