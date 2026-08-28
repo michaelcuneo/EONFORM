@@ -1,11 +1,13 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
-#include "EonformReferenceFidelityNodes.h"
+#include "EonformCombineNode.h"
+#include "EonformRadialGradientNode.h"
 #include "EonformTerrainEvaluator.h"
 #include "EonformTerrainFieldNames.h"
 #include "EonformTerrainNodeDescriptor.h"
 #include "EonformTerrainRecipe.h"
 #include "EonformUtilityNodes.h"
+#include "EonformVoronoiNode.h"
 #include "Misc/AutomationTest.h"
 
 namespace EonformReferenceFidelityTests
@@ -67,7 +69,8 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FEonformReferencePrimitiveFidelityTest::RunTest(const FString& Parameters)
 {
 	using namespace EonformReferenceFidelityTests;
-	RegisterEonformReferenceFidelityNodes();
+	RegisterEonformRadialGradientNode();
+	RegisterEonformVoronoiNode();
 
 	FEonformTerrainNodeDescriptor RadialDescriptor;
 	TestTrue(TEXT("RadialGradient descriptor exists"), FEonformTerrainNodeDescriptorRegistry::Get(EonformTerrainNodeTypes::RadialGradient, RadialDescriptor));
@@ -140,7 +143,7 @@ bool FEonformReferenceCombineMaskFidelityTest::RunTest(const FString& Parameters
 {
 	using namespace EonformReferenceFidelityTests;
 	RegisterEonformUtilityNodes();
-	RegisterEonformReferenceFidelityNodes();
+	RegisterEonformCombineNode();
 
 	FEonformTerrainNode A = MakeConstant(FGuid(0xA1, 1, 1, 1), 0.8);
 	FEonformTerrainNode B = MakeConstant(FGuid(0xB1, 1, 1, 1), -0.8);
@@ -177,10 +180,7 @@ bool FEonformReferenceCombineMaskFidelityTest::RunTest(const FString& Parameters
 	const FEonformTerrainEvaluationResult WhiteMask = FEonformTerrainEvaluator::Evaluate(Recipe, Context);
 	TestTrue(TEXT("Combine white-mask graph evaluates"), WhiteMask.bSuccess);
 	const FEonformScalarField* White = WhiteMask.Dataset.FindScalarField(EonformTerrainFieldNames::Height);
-	if (White)
-	{
-		TestTrue(TEXT("White Combine mask selects Input1"), White->AtInterior(16, 16) > 0.70f);
-	}
+	if (White) TestTrue(TEXT("White Combine mask selects Input1"), White->AtInterior(16, 16) > 0.70f);
 
 	for (FEonformTerrainNode& N : Recipe.Nodes)
 	{
@@ -189,10 +189,7 @@ bool FEonformReferenceCombineMaskFidelityTest::RunTest(const FString& Parameters
 	const FEonformTerrainEvaluationResult BlackMask = FEonformTerrainEvaluator::Evaluate(Recipe, Context);
 	TestTrue(TEXT("Combine black-mask graph evaluates"), BlackMask.bSuccess);
 	const FEonformScalarField* Black = BlackMask.Dataset.FindScalarField(EonformTerrainFieldNames::Height);
-	if (Black)
-	{
-		TestTrue(TEXT("Black Combine mask selects Input2"), Black->AtInterior(16, 16) < -0.70f);
-	}
+	if (Black) TestTrue(TEXT("Black Combine mask selects Input2"), Black->AtInterior(16, 16) < -0.70f);
 	return true;
 }
 
