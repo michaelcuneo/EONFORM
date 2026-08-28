@@ -12,4 +12,4 @@ namespace EonformWarp
 		FString* OutError = nullptr);
 }
 
-void RegisterEonformWarpNode();
+void RegisterEonformAuthoritativeWarpNode();
