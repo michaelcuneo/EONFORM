@@ -9,11 +9,13 @@ namespace EonformTerrainRawNoise
 		const FEonformGridDomain& Domain,
 		const EonformTerrainProceduralOps::FVoronoiSettings& Settings,
 		FEonformScalarField& OutField,
-		FString* OutError = nullptr);
+		FString* OutError = nullptr,
+		const FEonformGridDomain* ReferenceDomain = nullptr);
 
 	bool Perlin(
 		const FEonformGridDomain& Domain,
 		const EonformTerrainProceduralOps::FPerlinSettings& Settings,
 		FEonformScalarField& OutField,
-		FString* OutError = nullptr);
+		FString* OutError = nullptr,
+		const FEonformGridDomain* ReferenceDomain = nullptr);
 }
