@@ -63,24 +63,40 @@ namespace
 		return FLinearColor::FromSRGBColor(SRGB);
 	}
 
+	FIntPoint ResolveGlobalSample(const FEonformGridDomain& ReferenceDomain, const FVector2d& World)
+	{
+		const FVector2d Cell = ReferenceDomain.GetCellSize();
+		return FIntPoint(
+			FMath::RoundToInt((World.X - ReferenceDomain.WorldMin.X) / FMath::Max(Cell.X, UE_DOUBLE_SMALL_NUMBER)),
+			FMath::RoundToInt((World.Y - ReferenceDomain.WorldMin.Y) / FMath::Max(Cell.Y, UE_DOUBLE_SMALL_NUMBER)));
+	}
+
 	bool EvaluateConstantNode(
 		const FEonformTerrainNode& Node,
 		const FEonformTerrainNodeInputs&,
-		const FEonformTerrainEvaluationContext&,
+		const FEonformTerrainEvaluationContext& Context,
 		FEonformTerrainNodeEvaluation& Out,
 		FString& Error)
 	{
-		const int32 Resolution = FMath::Clamp<int32>(static_cast<int32>(Node.GetInteger(TEXT("Resolution"), 257)), 2, 1025);
+		const int32 LegacyResolution = FMath::Clamp<int32>(static_cast<int32>(Node.GetInteger(TEXT("Resolution"), 257)), 2, 1025);
 		const float WorldSize = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("WorldSize"), 100000.0)), 1.0f, 10000000.0f);
-		const float HeightScale = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("HeightScale"), 8000.0)), 1.0f, 1000000.0f);
+		const float HeightScale = Context.PhysicalMetrics.HasElevationScale()
+			? static_cast<float>(Context.PhysicalMetrics.ElevationScaleMeters * 100.0)
+			: FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("HeightScale"), 8000.0)), 1.0f, 1000000.0f);
 		const FName OutputMode = Node.GetName(TEXT("Output"), TEXT("Height"));
 
 		const double HalfWorldSize = static_cast<double>(WorldSize) * 0.5;
-		const FEonformGridDomain Domain = FEonformGridDomain::Make(
-			FIntPoint(Resolution, Resolution),
-			FVector2d(-HalfWorldSize, -HalfWorldSize),
-			FVector2d(HalfWorldSize, HalfWorldSize));
-		if (!Domain.IsValid())
+		const FVector2d FallbackMin(-HalfWorldSize, -HalfWorldSize);
+		const FVector2d FallbackMax(HalfWorldSize, HalfWorldSize);
+		const FEonformGridDomain Domain = Context.ResolveTargetDomain(
+			FIntPoint(LegacyResolution, LegacyResolution),
+			FallbackMin,
+			FallbackMax);
+		const FEonformGridDomain ReferenceDomain = Context.ResolveReferenceDomain(
+			FIntPoint(LegacyResolution, LegacyResolution),
+			FallbackMin,
+			FallbackMax);
+		if (!Domain.IsValid() || !ReferenceDomain.IsValid())
 		{
 			Error = TEXT("Constant produced an invalid grid domain.");
 			return false;
@@ -113,19 +129,22 @@ namespace
 		HeightField.Initialize(Domain, Descriptor);
 
 		const float ConstantHeight = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Height"), 0.5)), -1.0f, 1.0f);
-		for (int32 Y = 0; Y < Resolution; ++Y)
+		const FIntPoint Storage = Domain.GetStorageDimensions();
+		for (int32 Y = 0; Y < Storage.Y; ++Y)
 		{
-			for (int32 X = 0; X < Resolution; ++X)
+			for (int32 X = 0; X < Storage.X; ++X)
 			{
 				float Value = ConstantHeight;
 				if (OutputMode == TEXT("Noise"))
 				{
-					uint32 Hash = static_cast<uint32>(X) * 0x9e3779b9U;
-					Hash ^= static_cast<uint32>(Y) * 0x85ebca6bU;
+					const FVector2d World = Domain.StorageSampleToWorld(X, Y);
+					const FIntPoint GlobalSample = ResolveGlobalSample(ReferenceDomain, World);
+					uint32 Hash = static_cast<uint32>(GlobalSample.X) * 0x9e3779b9U;
+					Hash ^= static_cast<uint32>(GlobalSample.Y) * 0x85ebca6bU;
 					const float Noise = static_cast<float>(ConstantNoiseHash(Hash) & 0x00ffffffU) / static_cast<float>(0x01000000U);
 					Value = FMath::Clamp(ConstantHeight + (Noise - 0.5f) * 0.1f, -1.0f, 1.0f);
 				}
-				HeightField.AtInterior(X, Y) = Value;
+				HeightField.AtStorage(X, Y) = Value;
 			}
 		}
 
