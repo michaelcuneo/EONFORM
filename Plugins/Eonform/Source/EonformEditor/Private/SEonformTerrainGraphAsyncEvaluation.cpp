@@ -330,16 +330,30 @@ void SEonformTerrainGraphPanel::StartNextAsyncEvaluation()
 					OutputState.CompleteAnalysis(BaseRevision);
 					SetGraphActivity(Panel, EEonformEditorGraphActivity::Idle);
 					const bool bRegional = FEonformTerrainRegionalSupport::Analyze(GenerationRecipe).bSupported;
-					Panel->StatusText = FText::FromString(FString::Printf(
-						bRegional
-							? TEXT("Terrain %08X preview ready in %.1f ms: %d node%s recomputed, %d cached, %d fields. Final output will evaluate Mesh Terrain regions on demand.")
-							: TEXT("Terrain %08X ready in %.1f ms: %d node%s recomputed, %d cached, %d fields. This graph still contains global/nonregional nodes, so final output uses the exact legacy full-world fallback."),
-						RecipeHash,
-						EvaluationMilliseconds,
-						EvaluatedNodeCount,
-						EvaluatedNodeCount == 1 ? TEXT("") : TEXT("s"),
-						CachedNodeCount,
-						BaseFieldCount));
+					FString StatusMessage;
+					if (bRegional)
+					{
+						StatusMessage = FString::Printf(
+							TEXT("Terrain %08X preview ready in %.1f ms: %d node%s recomputed, %d cached, %d fields. Final output will evaluate Mesh Terrain regions on demand."),
+							RecipeHash,
+							EvaluationMilliseconds,
+							EvaluatedNodeCount,
+							EvaluatedNodeCount == 1 ? TEXT("") : TEXT("s"),
+							CachedNodeCount,
+							BaseFieldCount);
+					}
+					else
+					{
+						StatusMessage = FString::Printf(
+							TEXT("Terrain %08X ready in %.1f ms: %d node%s recomputed, %d cached, %d fields. This graph still contains global/nonregional nodes, so final output uses the exact legacy full-world fallback."),
+							RecipeHash,
+							EvaluationMilliseconds,
+							EvaluatedNodeCount,
+							EvaluatedNodeCount == 1 ? TEXT("") : TEXT("s"),
+							CachedNodeCount,
+							BaseFieldCount);
+					}
+					Panel->StatusText = FText::FromString(MoveTemp(StatusMessage));
 					Panel->OnEvaluated.ExecuteIfBound();
 
 					Panel->bAutoPreviewEvaluating = false;
