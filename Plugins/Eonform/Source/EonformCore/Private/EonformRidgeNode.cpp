@@ -52,7 +52,7 @@ namespace
 		P.bHasMinimum = true;
 		P.Minimum = static_cast<double>(Min);
 		P.bHasMaximum = true;
-		P.Maximum = static_cast<double>(Max);
+		P.Maximum = Max;
 		return P;
 	}
 
@@ -254,7 +254,6 @@ bool FEonformRidgeGenerator::Generate(
 	for (int32 I = 0; I < OutHeight.Values.Num(); ++I)
 	{
 		OutHeight.Values[I] = FMath::Min(Directed.Values[I], SecondaryWarped.Values[I]);
-		OutHeight.Values[I] = FMath::Clamp(OutHeight.Values[I], 0.0f, Scale);
 	}
 
 	float MinValue = 1.0f;
