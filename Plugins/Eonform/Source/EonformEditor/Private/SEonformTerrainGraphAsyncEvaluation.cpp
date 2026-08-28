@@ -11,6 +11,7 @@ namespace
 {
 	const FName FinalTerrainSource(TEXT("EonformGraph"));
 	const FName InspectionTerrainSource(TEXT("EonformInspection"));
+	constexpr int32 InteractivePreviewMaxResolution = 505;
 
 	bool PrepareEvaluationContext(
 		const FEonformTerrainRecipe& Recipe,
@@ -24,11 +25,21 @@ namespace
 		const FEonformTerrainGraphOutputSettings& OutputSettings = FEonformTerrainOutputEditorState::Get().GetSettings();
 		if (OutputSettings.OutputResolution > 0)
 		{
-			const int32 Resolution = FMath::Clamp(OutputSettings.OutputResolution, 17, 8129);
-			OutContext.TargetResolution = FIntPoint(Resolution, Resolution);
+			const int32 FinalResolution = FMath::Clamp(OutputSettings.OutputResolution, 17, 8129);
+			const int32 PreviewResolution = FMath::Min(FinalResolution, InteractivePreviewMaxResolution);
+
+			// Interactive graph evaluation is a preview, not the final world build.
+			// Keep the full requested resolution as the procedural reference domain
+			// while evaluating only a compact preview raster. Final Mesh Terrain
+			// generation reuses ReferenceResolution and requests spatial regions.
+			OutContext.TargetResolution = FIntPoint(PreviewResolution, PreviewResolution);
+			OutContext.ReferenceResolution = FIntPoint(FinalResolution, FinalResolution);
 			OutContext.CacheContextRevision = HashCombineFast(
 				GetTypeHash(OutContext.CacheContextRevision),
-				GetTypeHash(Resolution));
+				GetTypeHash(FinalResolution));
+			OutContext.CacheContextRevision = HashCombineFast(
+				GetTypeHash(OutContext.CacheContextRevision),
+				GetTypeHash(PreviewResolution));
 		}
 
 		const bool bUsesExternalSource = Recipe.Nodes.ContainsByPredicate([](const FEonformTerrainNode& Node)
@@ -65,6 +76,17 @@ namespace
 
 		OutError.Reset();
 		return true;
+	}
+
+	FEonformTerrainEvaluationContext MakeGenerationContext(const FEonformTerrainEvaluationContext& PreviewContext)
+	{
+		FEonformTerrainEvaluationContext GenerationContext = PreviewContext;
+		if (GenerationContext.ReferenceResolution.X > 1 && GenerationContext.ReferenceResolution.Y > 1)
+		{
+			GenerationContext.TargetResolution = GenerationContext.ReferenceResolution;
+		}
+		GenerationContext.Region = FEonformTerrainEvaluationRegion();
+		return GenerationContext;
 	}
 
 	void SetGraphActivity(const TSharedPtr<SEonformTerrainGraphPanel>& Panel, EEonformEditorGraphActivity Activity)
@@ -171,12 +193,13 @@ void SEonformTerrainGraphPanel::StartNextAsyncEvaluation()
 		return;
 	}
 
+	const FEonformTerrainEvaluationContext GenerationContext = MakeGenerationContext(Context);
 	const uint64 CapturedGraphGeneration = GraphEvaluationGeneration;
 	const uint64 CapturedInspectionGeneration = InspectionEvaluationGeneration;
 	if (bEvaluateFinal)
 	{
 		bFinalEvaluationPending = false;
-		StatusText = FText::FromString(TEXT("Evaluating terrain incrementally in background..."));
+		StatusText = FText::FromString(TEXT("Evaluating terrain preview incrementally in background..."));
 	}
 	else
 	{
@@ -194,6 +217,7 @@ void SEonformTerrainGraphPanel::StartNextAsyncEvaluation()
 		 CapturedCache,
 		 Recipe = MoveTemp(Recipe),
 		 Context = MoveTemp(Context),
+		 GenerationContext,
 		 bEvaluateFinal,
 		 InspectionNodeId,
 		 CapturedGraphGeneration,
@@ -219,7 +243,7 @@ void SEonformTerrainGraphPanel::StartNextAsyncEvaluation()
 							if (bEvaluateFinal) FEonformTerrainOutputEditorState::Get().FailAnalysis(Failure);
 							Panel->StatusText = FText::FromString(FString::Printf(
 								TEXT("%s failed: %s"),
-								bEvaluateFinal ? TEXT("Terrain evaluation") : TEXT("Node inspection"),
+								bEvaluateFinal ? TEXT("Terrain preview evaluation") : TEXT("Node inspection"),
 								*Failure));
 						}
 						SetGraphActivity(Panel, EEonformEditorGraphActivity::Idle);
@@ -235,6 +259,7 @@ void SEonformTerrainGraphPanel::StartNextAsyncEvaluation()
 			const int32 EvaluatedNodeCount = Result.EvaluatedNodeCount;
 			const int32 CachedNodeCount = Result.CachedNodeCount;
 			const double EvaluationMilliseconds = Result.EvaluationMilliseconds;
+			FEonformTerrainRecipe GenerationRecipe = Recipe;
 
 			AsyncTask(ENamedThreads::GameThread,
 				[WeakPanel,
@@ -248,7 +273,9 @@ void SEonformTerrainGraphPanel::StartNextAsyncEvaluation()
 				 BaseFieldCount,
 				 EvaluatedNodeCount,
 				 CachedNodeCount,
-				 EvaluationMilliseconds]() mutable
+				 EvaluationMilliseconds,
+				 GenerationRecipe = MoveTemp(GenerationRecipe),
+				 GenerationContext]() mutable
 				{
 					const TSharedPtr<SEonformTerrainGraphPanel> Panel = WeakPanel.Pin();
 					if (!Panel.IsValid()) return;
@@ -295,10 +322,12 @@ void SEonformTerrainGraphPanel::StartNextAsyncEvaluation()
 						return;
 					}
 
-					FEonformTerrainOutputEditorState::Get().CompleteAnalysis(BaseRevision);
+					FEonformTerrainOutputEditorState& OutputState = FEonformTerrainOutputEditorState::Get();
+					OutputState.SetGenerationPlan(GenerationRecipe, GenerationContext, CapturedGraphGeneration);
+					OutputState.CompleteAnalysis(BaseRevision);
 					SetGraphActivity(Panel, EEonformEditorGraphActivity::Idle);
 					Panel->StatusText = FText::FromString(FString::Printf(
-						TEXT("Terrain %08X ready in %.1f ms: %d node%s recomputed, %d cached, %d fields. Derived analysis is demand-driven."),
+						TEXT("Terrain %08X preview ready in %.1f ms: %d node%s recomputed, %d cached, %d fields. Final output will evaluate Mesh Terrain regions on demand."),
 						RecipeHash,
 						EvaluationMilliseconds,
 						EvaluatedNodeCount,
