@@ -61,19 +61,18 @@ namespace
 
 	FEonformGridDomain BuildDomain(const FEonformTerrainEvaluationContext& Context)
 	{
-		const int32 Width = FMath::Clamp(Context.TargetResolution.X > 1 ? Context.TargetResolution.X : 257, 2, 4097);
-		const int32 Height = FMath::Clamp(Context.TargetResolution.Y > 1 ? Context.TargetResolution.Y : Width, 2, 4097);
-		double WorldWidthCm = 100000.0;
-		double WorldDepthCm = 100000.0;
-		if (Context.PhysicalMetrics.HasWorldDimensions())
-		{
-			WorldWidthCm = Context.PhysicalMetrics.WorldWidthMeters * 100.0;
-			WorldDepthCm = Context.PhysicalMetrics.WorldDepthMeters * 100.0;
-		}
-		return FEonformGridDomain::Make(
-			FIntPoint(Width, Height),
-			FVector2d(-WorldWidthCm * 0.5, -WorldDepthCm * 0.5),
-			FVector2d(WorldWidthCm * 0.5, WorldDepthCm * 0.5));
+		return Context.ResolveTargetDomain(
+			FIntPoint(257, 257),
+			FVector2d(-50000.0, -50000.0),
+			FVector2d(50000.0, 50000.0));
+	}
+
+	FEonformGridDomain BuildReferenceDomain(const FEonformTerrainEvaluationContext& Context)
+	{
+		return Context.ResolveReferenceDomain(
+			FIntPoint(257, 257),
+			FVector2d(-50000.0, -50000.0),
+			FVector2d(50000.0, 50000.0));
 	}
 
 	float ResolveHeightScale(const FEonformTerrainEvaluationContext& Context)
@@ -93,7 +92,8 @@ namespace
 		FString& Error)
 	{
 		const FEonformGridDomain Domain = BuildDomain(Context);
-		if (!Domain.IsValid())
+		const FEonformGridDomain ReferenceDomain = BuildReferenceDomain(Context);
+		if (!Domain.IsValid() || !ReferenceDomain.IsValid())
 		{
 			Error = TEXT("Voronoi produced an invalid evaluation domain.");
 			return false;
@@ -117,7 +117,7 @@ namespace
 
 		FEonformScalarField Height;
 		const float ClampValue = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Clamp"), 1.0)), 0.0001f, 1.0f);
-		if (!EonformVoronoi::Generate(Domain, Settings, ClampValue, Height, &Error)) return false;
+		if (!EonformVoronoi::Generate(Domain, Settings, ClampValue, Height, &Error, &ReferenceDomain)) return false;
 
 		FEonformTerrainDataset Dataset;
 		if (!Dataset.SetScalarField(MoveTemp(Height)))
@@ -135,9 +135,10 @@ bool EonformVoronoi::Generate(
 	const EonformTerrainProceduralOps::FVoronoiSettings& Settings,
 	float ClampValue,
 	FEonformScalarField& OutField,
-	FString* OutError)
+	FString* OutError,
+	const FEonformGridDomain* ReferenceDomain)
 {
-	if (!EonformTerrainRawNoise::Voronoi(Domain, Settings, OutField, OutError)) return false;
+	if (!EonformTerrainRawNoise::Voronoi(Domain, Settings, OutField, OutError, ReferenceDomain)) return false;
 
 	const float ClampedAmount = FMath::Clamp(ClampValue, 0.0001f, 1.0f);
 	for (float& Value : OutField.Values)
