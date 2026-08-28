@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "EonformTerrainEvaluator.h"
 #include "EonformTerrainGraphAsset.h"
 #include "EonformTerrainPhysicalMetrics.h"
 
@@ -24,6 +25,7 @@ public:
 		Settings = InSettings;
 		Sanitize();
 		PublishPhysicalContext();
+		InvalidateGenerationPlan();
 		++Revision;
 	}
 
@@ -31,13 +33,14 @@ public:
 	{
 		Settings = FEonformTerrainGraphOutputSettings();
 		PublishPhysicalContext();
+		InvalidateGenerationPlan();
 		++Revision;
 	}
 
-	void SetWorldWidthKilometers(double Value) { Settings.WorldWidthKilometers = FMath::Max(Value, 0.001); PublishPhysicalContext(); ++Revision; }
-	void SetWorldDepthKilometers(double Value) { Settings.WorldDepthKilometers = FMath::Max(Value, 0.001); PublishPhysicalContext(); ++Revision; }
-	void SetElevationScaleMeters(double Value) { Settings.ElevationScaleMeters = FMath::Max(Value, 0.001); PublishPhysicalContext(); ++Revision; }
-	void SetOutputResolution(int32 Value) { Settings.OutputResolution = FMath::Max(Value, 0); ++Revision; }
+	void SetWorldWidthKilometers(double Value) { Settings.WorldWidthKilometers = FMath::Max(Value, 0.001); PublishPhysicalContext(); InvalidateGenerationPlan(); ++Revision; }
+	void SetWorldDepthKilometers(double Value) { Settings.WorldDepthKilometers = FMath::Max(Value, 0.001); PublishPhysicalContext(); InvalidateGenerationPlan(); ++Revision; }
+	void SetElevationScaleMeters(double Value) { Settings.ElevationScaleMeters = FMath::Max(Value, 0.001); PublishPhysicalContext(); InvalidateGenerationPlan(); ++Revision; }
+	void SetOutputResolution(int32 Value) { Settings.OutputResolution = FMath::Max(Value, 0); InvalidateGenerationPlan(); ++Revision; }
 	void SetSectionLayout(EEonformTerrainOutputSectionLayout Value) { Settings.SectionLayout = Value; ++Revision; }
 	void SetSectionComplexity(EEonformTerrainOutputComplexity Value) { Settings.SectionComplexity = Value; ++Revision; }
 	void SetSectionsX(int32 Value) { Settings.SectionsX = FMath::Max(Value, 1); ++Revision; }
@@ -46,6 +49,45 @@ public:
 
 	uint64 GetRevision() const { return Revision; }
 
+	/**
+	 * Publish the latest validated graph recipe and its external evaluation
+	 * context for final output generation. This deliberately retains the recipe,
+	 * not a full-resolution terrain raster: Mesh Terrain can request spatial
+	 * regions from this plan without first materializing the complete world.
+	 */
+	void SetGenerationPlan(
+		const FEonformTerrainRecipe& InRecipe,
+		const FEonformTerrainEvaluationContext& InContext,
+		uint64 InGraphGeneration)
+	{
+		GenerationRecipe = InRecipe;
+		GenerationContext = InContext;
+		GenerationGraphGeneration = InGraphGeneration;
+		bGenerationPlanAvailable = GenerationRecipe.Validate(nullptr);
+	}
+
+	bool GetGenerationPlan(
+		FEonformTerrainRecipe& OutRecipe,
+		FEonformTerrainEvaluationContext& OutContext,
+		uint64* OutGraphGeneration = nullptr) const
+	{
+		if (!bGenerationPlanAvailable) return false;
+		OutRecipe = GenerationRecipe;
+		OutContext = GenerationContext;
+		if (OutGraphGeneration) *OutGraphGeneration = GenerationGraphGeneration;
+		return true;
+	}
+
+	bool HasGenerationPlan() const { return bGenerationPlanAvailable; }
+
+	void InvalidateGenerationPlan()
+	{
+		bGenerationPlanAvailable = false;
+		GenerationRecipe = FEonformTerrainRecipe();
+		GenerationContext = FEonformTerrainEvaluationContext();
+		GenerationGraphGeneration = 0;
+	}
+
 	/** A new graph revision is being evaluated. No snapshot is generation-safe yet. */
 	void BeginAnalysis()
 	{
@@ -53,6 +95,7 @@ public:
 		bAnalysisAvailable = false;
 		PublishedAnalysisRevision = 0;
 		AnalysisError.Reset();
+		InvalidateGenerationPlan();
 	}
 
 	/**
@@ -83,6 +126,7 @@ public:
 		bAnalysisAvailable = false;
 		PublishedAnalysisRevision = 0;
 		AnalysisError = InError;
+		InvalidateGenerationPlan();
 	}
 
 	/** Derived analysis failed, but the already-published base terrain stays usable. */
@@ -98,6 +142,7 @@ public:
 		bAnalysisAvailable = false;
 		PublishedAnalysisRevision = 0;
 		AnalysisError.Reset();
+		InvalidateGenerationPlan();
 	}
 
 	bool IsAnalysisPending() const { return bAnalysisPending; }
@@ -137,4 +182,9 @@ private:
 	bool bAnalysisPending = false;
 	bool bAnalysisAvailable = false;
 	FString AnalysisError;
+
+	FEonformTerrainRecipe GenerationRecipe;
+	FEonformTerrainEvaluationContext GenerationContext;
+	uint64 GenerationGraphGeneration = 0;
+	bool bGenerationPlanAvailable = false;
 };
