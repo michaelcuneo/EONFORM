@@ -49,8 +49,9 @@ namespace
 		FEonformTerrainNode Clamp;
 		Clamp.Id = FGuid(9705, 5, 5, 5);
 		Clamp.Type = EonformTerrainNodeTypes::Clamp;
-		Clamp.NumericParameters.Add(TEXT("Min"), -0.4);
-		Clamp.NumericParameters.Add(TEXT("Max"), 0.8);
+		Clamp.NameParameters.Add(TEXT("Mode"), TEXT("Standard"));
+		Clamp.NumericParameters.Add(TEXT("ValueMin"), 0.2);
+		Clamp.NumericParameters.Add(TEXT("ValueMax"), 0.8);
 
 		FEonformTerrainConnection C0;
 		C0.FromNode = Perlin.Id;
@@ -173,6 +174,26 @@ bool FEonformRegionalGraphEquivalenceTest::RunTest(const FString& Parameters)
 	}
 
 	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FEonformRegionalGraphRejectsGlobalRidgeTest,
+	"Eonform.Core.RegionalEvaluation.RidgeRequiresGlobalSummary",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FEonformRegionalGraphRejectsGlobalRidgeTest::RunTest(const FString& Parameters)
+{
+	FEonformTerrainRecipe Recipe;
+	FEonformTerrainNode Ridge;
+	Ridge.Id = FGuid(9710, 10, 10, 10);
+	Ridge.Type = EonformTerrainNodeTypes::Ridge;
+	Recipe.Nodes.Add(Ridge);
+	Recipe.OutputNode = Ridge.Id;
+
+	const FEonformTerrainRegionalSupportReport Support = FEonformTerrainRegionalSupport::Analyze(Recipe);
+	TestFalse(TEXT("Ridge is not silently admitted to regional generation"), Support.bSupported);
+	TestTrue(TEXT("Ridge rejection explains global summary requirement"), Support.Describe().Contains(TEXT("global-summary")));
+	return !Support.bSupported;
 }
 
 #endif
