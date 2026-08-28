@@ -3,8 +3,8 @@
 #include "EonformTerrainEvaluator.h"
 #include "EonformTerrainFieldNames.h"
 #include "EonformTerrainNodeDescriptor.h"
-#include "EonformTerrainProceduralOps.h"
 #include "EonformTerrainRecipe.h"
+#include "EonformTerrainTerrace.h"
 
 namespace
 {
@@ -69,17 +69,11 @@ namespace
 		const int32 Seed = static_cast<int32>(Node.GetInteger(TEXT("Seed"), 1337));
 
 		FEonformScalarField Source01 = *Height;
-		for (float& Value : Source01.Values)
-		{
-			Value = FMath::Clamp(Value * 0.5f + 0.5f, 0.0f, 1.0f);
-		}
+		for (float& Value : Source01.Values) Value = FMath::Clamp(Value * 0.5f + 0.5f, 0.0f, 1.0f);
 
 		FEonformScalarField Result01;
-		if (!EonformTerrainProceduralOps::ApplyTerrace(Source01, TerraceCount, Uniformity, Steepness, Intensity, Seed, false, Result01, &Error)) return false;
-		for (float& Value : Result01.Values)
-		{
-			Value = FMath::Clamp(Value * 2.0f - 1.0f, -1.0f, 1.0f);
-		}
+		if (!EonformTerrace::ApplyNormalized(Source01, TerraceCount, Uniformity, Steepness, Intensity, Seed, Result01, &Error)) return false;
+		for (float& Value : Result01.Values) Value = FMath::Clamp(Value * 2.0f - 1.0f, -1.0f, 1.0f);
 		Result01.Descriptor.Name = EonformTerrainFieldNames::Height;
 
 		FEonformTerrainDataset Dataset = Input->TerrainDataset;
@@ -91,6 +85,27 @@ namespace
 		Out.Outputs.Add(TEXT("Out"), FEonformTerrainValue::MakeTerrain(MoveTemp(Dataset), Input->HeightScale));
 		return true;
 	}
+}
+
+bool EonformTerrace::ApplyNormalized(
+	const FEonformScalarField& Source01,
+	int32 TerraceCount,
+	float Uniformity,
+	float Steepness,
+	float Intensity,
+	int32 Seed,
+	FEonformScalarField& OutField01,
+	FString* OutError)
+{
+	return EonformTerrainProceduralOps::TerraceFidelity(
+		Source01,
+		TerraceCount,
+		Uniformity,
+		Steepness,
+		Intensity,
+		Seed,
+		OutField01,
+		OutError);
 }
 
 void RegisterEonformTerraceNode()
