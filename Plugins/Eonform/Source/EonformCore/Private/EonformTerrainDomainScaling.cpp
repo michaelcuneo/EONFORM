@@ -41,41 +41,12 @@ namespace EonformTerrainDomainScaling
 			const FEonformGridDomain& Fallback,
 			const FEonformTerrainEvaluationContext& Context)
 		{
-			FIntPoint Dimensions = Fallback.Dimensions;
 			const bool bExplicitResolution = Context.TargetResolution.X > 1 && Context.TargetResolution.Y > 1;
-			if (bExplicitResolution)
-			{
-				Dimensions = Context.TargetResolution;
-			}
-
-			FVector2d WorldMin = Fallback.WorldMin;
-			FVector2d WorldMax = Fallback.WorldMax;
-			if (Context.PhysicalMetrics.HasWorldDimensions())
-			{
-				const double WidthCm = Context.PhysicalMetrics.WorldWidthMeters * 100.0;
-				const double DepthCm = Context.PhysicalMetrics.WorldDepthMeters * 100.0;
-				WorldMin = FVector2d(-WidthCm * 0.5, -DepthCm * 0.5);
-				WorldMax = FVector2d(WidthCm * 0.5, DepthCm * 0.5);
-			}
-
-			return FEonformGridDomain::Make(
-				Dimensions,
-				WorldMin,
-				WorldMax,
+			return Context.ResolveTargetDomain(
+				Fallback.Dimensions,
+				Fallback.WorldMin,
+				Fallback.WorldMax,
 				bExplicitResolution ? 0 : Fallback.BorderSamples);
-		}
-
-		double TargetStorageToNormalizedInterior(int32 StorageCoordinate, int32 InteriorDimension, int32 BorderSamples)
-		{
-			return InteriorDimension > 1
-				? static_cast<double>(StorageCoordinate - BorderSamples) / static_cast<double>(InteriorDimension - 1)
-				: 0.0;
-		}
-
-		double NormalizedInteriorToSourceStorage(double Coordinate, int32 InteriorDimension, int32 BorderSamples)
-		{
-			return static_cast<double>(BorderSamples)
-				+ Coordinate * static_cast<double>(FMath::Max(InteriorDimension - 1, 0));
 		}
 
 		float SampleScalarStorage(
@@ -159,13 +130,11 @@ namespace EonformTerrainDomainScaling
 			const FIntPoint TargetStorage = TargetDomain.GetStorageDimensions();
 			for (int32 Y = 0; Y < TargetStorage.Y; ++Y)
 			{
-				const double V = TargetStorageToNormalizedInterior(Y, TargetDomain.Dimensions.Y, TargetDomain.BorderSamples);
-				const double SY = NormalizedInteriorToSourceStorage(V, Source.Domain.Dimensions.Y, Source.Domain.BorderSamples);
 				for (int32 X = 0; X < TargetStorage.X; ++X)
 				{
-					const double U = TargetStorageToNormalizedInterior(X, TargetDomain.Dimensions.X, TargetDomain.BorderSamples);
-					const double SX = NormalizedInteriorToSourceStorage(U, Source.Domain.Dimensions.X, Source.Domain.BorderSamples);
-					OutField.Values[Y * TargetStorage.X + X] = SampleColorStorage(Source, SX, SY);
+					const FVector2d World = TargetDomain.StorageSampleToWorld(X, Y);
+					const FVector2d SourceCoordinate = Source.Domain.WorldToStorageCoordinate(World);
+					OutField.Values[Y * TargetStorage.X + X] = SampleColorStorage(Source, SourceCoordinate.X, SourceCoordinate.Y);
 				}
 			}
 			if (OutError) OutError->Reset();
@@ -245,13 +214,11 @@ namespace EonformTerrainDomainScaling
 		const FIntPoint TargetStorage = TargetDomain.GetStorageDimensions();
 		for (int32 Y = 0; Y < TargetStorage.Y; ++Y)
 		{
-			const double V = TargetStorageToNormalizedInterior(Y, TargetDomain.Dimensions.Y, TargetDomain.BorderSamples);
-			const double SY = NormalizedInteriorToSourceStorage(V, Source.Domain.Dimensions.Y, Source.Domain.BorderSamples);
 			for (int32 X = 0; X < TargetStorage.X; ++X)
 			{
-				const double U = TargetStorageToNormalizedInterior(X, TargetDomain.Dimensions.X, TargetDomain.BorderSamples);
-				const double SX = NormalizedInteriorToSourceStorage(U, Source.Domain.Dimensions.X, Source.Domain.BorderSamples);
-				OutField.AtStorage(X, Y) = SampleScalarStorage(Source, SX, SY);
+				const FVector2d World = TargetDomain.StorageSampleToWorld(X, Y);
+				const FVector2d SourceCoordinate = Source.Domain.WorldToStorageCoordinate(World);
+				OutField.AtStorage(X, Y) = SampleScalarStorage(Source, SourceCoordinate.X, SourceCoordinate.Y);
 			}
 		}
 		if (OutError) OutError->Reset();
@@ -374,7 +341,8 @@ namespace EonformTerrainDomainScaling
 		const FEonformTerrainEvaluationContext& Context,
 		FString* OutError)
 	{
-		if (Context.TargetResolution.X <= 1 || Context.TargetResolution.Y <= 1)
+		const bool bHasExplicitResolution = Context.TargetResolution.X > 1 && Context.TargetResolution.Y > 1;
+		if (!bHasExplicitResolution && !Context.HasRegion())
 		{
 			if (OutError) OutError->Reset();
 			return true;
