@@ -54,7 +54,7 @@ namespace
 		P.bHasMinimum = true;
 		P.Minimum = static_cast<double>(Min);
 		P.bHasMaximum = true;
-		P.Maximum = static_cast<double>(Max);
+		P.Maximum = Max;
 		return P;
 	}
 
@@ -251,6 +251,13 @@ bool FEonformRidgeGenerator::Generate(
 	if (!EonformWarp::Apply(Directed, SecondaryWarpSettings, SecondaryWarped, OutError)) return false;
 
 	if (!EonformCombine::ApplyRawFields(Directed, SecondaryWarped, TEXT("Min"), 1.0f, OutHeight, OutError)) return false;
+
+	// Preserve the recovered range stage: clamp the Min result to Ridge Scale,
+	// then shift its true minimum to zero without renormalizing the maximum.
+	for (float& Value : OutHeight.Values)
+	{
+		Value = FMath::Clamp(Value, 0.0f, Scale);
+	}
 
 	float MinValue = 1.0f;
 	for (const float Value : OutHeight.Values) MinValue = FMath::Min(Value, MinValue);
