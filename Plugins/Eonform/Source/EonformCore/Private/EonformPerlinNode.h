@@ -10,7 +10,8 @@ namespace EonformPerlin
 		const EonformTerrainProceduralOps::FPerlinSettings& Settings,
 		float HeightAmount,
 		FEonformScalarField& OutField,
-		FString* OutError = nullptr);
+		FString* OutError = nullptr,
+		const FEonformGridDomain* ReferenceDomain = nullptr);
 }
 
 void RegisterEonformPerlinNode();
