@@ -17,17 +17,18 @@
 #include "EonformDotNoiseNode.h"
 #include "EonformDriftNoiseNode.h"
 #include "EonformEcologyNodes.h"
+#include "EonformErosion2Node.h"
 #include "EonformErosionNode.h"
 #include "EonformFileNodeDecoder.h"
 #include "EonformFlipNode.h"
 #include "EonformFlowMapNodes.h"
 #include "EonformFractalTerracesNode.h"
 #include "EonformGaborNode.h"
+#include "EonformGroundTextureNode.h"
 #include "EonformHeightNode.h"
 #include "EonformHemisphereNode.h"
 #include "EonformInvertNode.h"
 #include "EonformLakeNode.h"
-#include "EonformSeaNode.h"
 #include "EonformLinearGradientNode.h"
 #include "EonformModifyFoundationNodes.h"
 #include "EonformModifyProfileNodes.h"
@@ -39,11 +40,9 @@
 #include "EonformPrimitiveCoverageNodes.h"
 #include "EonformRadialGradientNode.h"
 #include "EonformRecurveNode.h"
-#include "EonformReferenceFidelityNodes.h"
-#include "EonformReferenceFidelityExtendedNodes.h"
-#include "EonformReferenceFidelityProcessNodes.h"
-#include "EonformReferenceFidelityTransposeNode.h"
 #include "EonformRidgeNode.h"
+#include "EonformRockNoiseNode.h"
+#include "EonformSeaNode.h"
 #include "EonformShaperNode.h"
 #include "EonformSharpenNode.h"
 #include "EonformSimulateEvolutionNodes.h"
@@ -51,6 +50,7 @@
 #include "EonformSineNode.h"
 #include "EonformSlopeNode.h"
 #include "EonformSoftClipNode.h"
+#include "EonformStratifyNode.h"
 #include "EonformSurfaceAnalysisNodes.h"
 #include "EonformSurfaceNodes.h"
 #include "EonformTerraceNode.h"
@@ -60,7 +60,10 @@
 #include "EonformThermalErosionNode.h"
 #include "EonformThresholdNode.h"
 #include "EonformTransformNode.h"
+#include "EonformTransposeNode.h"
 #include "EonformUtilityNodes.h"
+#include "EonformVoronoiNode.h"
+#include "EonformWarpNode.h"
 #include "EonformWizardNodes.h"
 #include "EonformZeroBordersNode.h"
 
@@ -108,8 +111,10 @@ public:
 		RegisterEonformTileInputNode();
 		RegisterEonformVoronoiNode();
 		RegisterEonformWaveShineNode();
+
 		RegisterEonformRidgeNode();
 		RegisterEonformErosionNode();
+		RegisterEonformErosion2Node();
 		RegisterEonformThermalErosionNode();
 		RegisterEonformSimulateFoundationNodes();
 		RegisterEonformSimulateEvolutionNodes();
@@ -121,6 +126,7 @@ public:
 		RegisterEonformNetworkProcessNodes();
 		RegisterEonformEcologyNodes();
 		RegisterEonformWizardNodes();
+
 		RegisterEonformCurvatureNode();
 		RegisterEonformHeightNode();
 		RegisterEonformAngleNode();
@@ -128,6 +134,7 @@ public:
 		RegisterEonformFlowMapNodes();
 		RegisterEonformTerrainSemanticNodes();
 		RegisterEonformSurfaceAnalysisNodes();
+
 		RegisterEonformCombineNode();
 		RegisterEonformClampNode();
 
@@ -165,9 +172,9 @@ public:
 		RegisterEonformThermalShaperNode();
 		RegisterEonformThresholdNode();
 		RegisterEonformTransformNode();
-		RegisterEonformTransposeNode();
+		RegisterEonformAuthoritativeTransposeNode();
 		RegisterEonformVariableBlurNode();
-		RegisterEonformWarpNode();
+		RegisterEonformAuthoritativeWarpNode();
 		RegisterEonformWhorlNode();
 
 		RegisterEonformInvertNode();
@@ -177,6 +184,9 @@ public:
 		RegisterEonformFractalTerracesNode();
 		RegisterEonformTerraceNode();
 		RegisterEonformSurfaceNodes();
+		RegisterEonformRockNoiseNode();
+		RegisterEonformGroundTextureNode();
+		RegisterEonformStratifyNode();
 		RegisterEonformUtilityNodes();
 
 		ApplyCurrentEonformPublicMetadata(EonformTerrainNodeTypes::SourceDataset, TEXT("Source Dataset"), TEXT("Internal"), true);
@@ -205,8 +215,10 @@ public:
 		ApplyCurrentEonformPublicMetadata(EonformTerrainNodeTypes::TileInput, TEXT("TileInput"), TEXT("Primitive"));
 		ApplyCurrentEonformPublicMetadata(EonformTerrainNodeTypes::Voronoi, TEXT("Voronoi"), TEXT("Primitive"));
 		ApplyCurrentEonformPublicMetadata(EonformTerrainNodeTypes::WaveShine, TEXT("WaveShine"), TEXT("Primitive"));
+
 		ApplyCurrentEonformPublicMetadata(EonformTerrainNodeTypes::Ridge, TEXT("Ridge"), TEXT("Terrain"));
 		ApplyCurrentEonformPublicMetadata(EonformTerrainNodeTypes::HydraulicErosion, TEXT("Erosion"), TEXT("Simulate"));
+		ApplyCurrentEonformPublicMetadata(EonformTerrainNodeTypes::Erosion2, TEXT("Erosion2"), TEXT("Simulate"));
 		ApplyCurrentEonformPublicMetadata(EonformTerrainNodeTypes::ThermalErosion, TEXT("Thermal"), TEXT("Simulate"));
 		ApplyCurrentEonformPublicMetadata(EonformTerrainNodeTypes::Lake, TEXT("Lake"), TEXT("Simulate"));
 		ApplyCurrentEonformPublicMetadata(EonformTerrainNodeTypes::Sea, TEXT("Sea"), TEXT("Simulate"));
@@ -262,6 +274,10 @@ public:
 
 		ApplyCurrentEonformPublicMetadata(EonformTerrainNodeTypes::FractalTerraces, TEXT("FractalTerraces"), TEXT("Surface"));
 		ApplyCurrentEonformPublicMetadata(EonformTerrainNodeTypes::Terrace, TEXT("Terraces"), TEXT("Surface"));
+		ApplyCurrentEonformPublicMetadata(EonformTerrainNodeTypes::RockNoise, TEXT("RockNoise"), TEXT("Surface"));
+		ApplyCurrentEonformPublicMetadata(EonformTerrainNodeTypes::GroundTexture, TEXT("GroundTexture"), TEXT("Surface"));
+		ApplyCurrentEonformPublicMetadata(EonformTerrainNodeTypes::Stratify, TEXT("Stratify"), TEXT("Surface"));
+
 		ApplyCurrentEonformPublicMetadata(EonformTerrainNodeTypes::Angle, TEXT("Angle"), TEXT("Derive"));
 		ApplyCurrentEonformPublicMetadata(EonformTerrainNodeTypes::Curvature, TEXT("Curvature"), TEXT("Derive"));
 		ApplyCurrentEonformPublicMetadata(EonformTerrainNodeTypes::Height, TEXT("Height"), TEXT("Derive"));
@@ -273,24 +289,12 @@ public:
 		ApplyCurrentEonformPublicMetadata(EonformTerrainNodeTypes::Soil, TEXT("Soil"), TEXT("Derive"));
 		ApplyCurrentEonformPublicMetadata(EonformTerrainNodeTypes::Normals, TEXT("Normals"), TEXT("Derive"));
 		ApplyCurrentEonformPublicMetadata(EonformTerrainNodeTypes::Occlusion, TEXT("Occlusion"), TEXT("Derive"));
+
 		ApplyCurrentEonformPublicMetadata(EonformTerrainNodeTypes::Combine, TEXT("Combine"), TEXT("Utility"));
 		ApplyCurrentEonformPublicMetadata(EonformTerrainNodeTypes::ZeroBorders, TEXT("Edge"), TEXT("Utility"));
 		ApplyCurrentEonformPublicMetadata(EonformTerrainNodeTypes::Invert, TEXT("Invert"), TEXT("Legacy"), true);
 		ApplyCurrentEonformPublicMetadata(EonformTerrainNodeTypes::Sine, TEXT("Sine"), TEXT("Legacy"), true);
 		ApplyCurrentEonformPublicMetadata(EonformTerrainNodeTypes::MultiCombine, TEXT("MultiCombine"), TEXT("Legacy"), true);
-
-		// Audited Gaea-facing implementations always register last. This makes the
-		// Core module the authoritative registration order and prevents legacy
-		// compatibility implementations from silently replacing corrected behavior.
-		RegisterEonformReferenceFidelityNodes();
-		RegisterEonformReferenceFidelityExtendedNodes();
-		RegisterEonformReferenceFidelityTransposeNode();
-		RegisterEonformReferenceFidelityProcessNodes();
-
-		// Ridge is an authored terrain primitive/landform in its own right. Reapply
-		// its registration after the audited families so no compatibility pass can
-		// replace the shared Ridge evaluator used by compound landforms.
-		RegisterEonformRidgeNode();
 	}
 };
 
