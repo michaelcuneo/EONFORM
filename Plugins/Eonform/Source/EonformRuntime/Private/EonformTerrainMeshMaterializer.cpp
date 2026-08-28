@@ -3,7 +3,10 @@
 #include "DynamicMesh/DynamicMeshAttributeSet.h"
 #include "DynamicMesh/DynamicMeshOverlay.h"
 #include "DynamicMesh/MeshNormals.h"
+#include "EonformTerrainEvaluator.h"
 #include "EonformTerrainFieldNames.h"
+#include "EonformTerrainGenerationPlan.h"
+#include "EonformTerrainRegionalSupport.h"
 
 using UE::Geometry::FDynamicMesh3;
 using UE::Geometry::FDynamicMeshColorOverlay;
@@ -12,6 +15,9 @@ using UE::Geometry::FMeshNormals;
 
 namespace
 {
+	thread_local bool bRegionalMaterializationActive = false;
+	constexpr int32 RegionalMaterializationHalo = 16;
+
 	bool ResolveHeightField(
 		const FEonformTerrainDataset& Dataset,
 		const FEonformTerrainMeshBuildOptions& Options,
@@ -63,6 +69,83 @@ namespace
 		OutG = Dataset.FindScalarField(EonformTerrainFieldNames::BaseColorG);
 		OutB = Dataset.FindScalarField(EonformTerrainFieldNames::BaseColorB);
 		return OutR && OutG && OutB && OutR->IsValid() && OutG->IsValid() && OutB->IsValid();
+	}
+
+	bool TryBuildFromGenerationPlan(
+		const FEonformTerrainMeshBuildOptions& Options,
+		const FIntPoint& StartSample,
+		const FIntPoint& EndSample,
+		FDynamicMesh3& OutMesh,
+		FString* OutError,
+		bool& bOutHandled)
+	{
+		bOutHandled = false;
+		if (bRegionalMaterializationActive) return false;
+		if (Options.TargetResolution.X < 2 || Options.TargetResolution.Y < 2) return false;
+
+		FEonformTerrainGenerationPlan Plan;
+		if (!FEonformTerrainGenerationPlanRegistry::Get(Plan)) return false;
+
+		const FEonformTerrainRegionalSupportReport Support = FEonformTerrainRegionalSupport::Analyze(Plan.Recipe);
+		if (!Support.bSupported) return false;
+
+		const FIntPoint FullResolution = Options.TargetResolution;
+		if (StartSample.X < 0 || StartSample.Y < 0
+			|| EndSample.X >= FullResolution.X || EndSample.Y >= FullResolution.Y
+			|| EndSample.X <= StartSample.X || EndSample.Y <= StartSample.Y)
+		{
+			return false;
+		}
+
+		const FEonformGridDomain ReferenceDomain = Plan.Context.ResolveReferenceDomain(
+			FullResolution,
+			FVector2d(-50000.0, -50000.0),
+			FVector2d(50000.0, 50000.0));
+		if (!ReferenceDomain.IsValid()) return false;
+
+		const FVector2d CellSize = ReferenceDomain.GetCellSize();
+		FEonformTerrainEvaluationContext RegionContext = Plan.Context;
+		RegionContext.TargetResolution = FIntPoint(
+			EndSample.X - StartSample.X + 1,
+			EndSample.Y - StartSample.Y + 1);
+		RegionContext.ReferenceResolution = FullResolution;
+		RegionContext.Region.WorldMinCm = ReferenceDomain.WorldMin + FVector2d(
+			static_cast<double>(StartSample.X) * CellSize.X,
+			static_cast<double>(StartSample.Y) * CellSize.Y);
+		RegionContext.Region.WorldMaxCm = ReferenceDomain.WorldMin + FVector2d(
+			static_cast<double>(EndSample.X) * CellSize.X,
+			static_cast<double>(EndSample.Y) * CellSize.Y);
+		RegionContext.Region.BorderSamples = RegionalMaterializationHalo;
+
+		FEonformTerrainEvaluationResult RegionResult = FEonformTerrainEvaluator::Evaluate(Plan.Recipe, RegionContext);
+		bOutHandled = true;
+		if (!RegionResult.bSuccess)
+		{
+			if (OutError)
+			{
+				*OutError = FString::Printf(
+					TEXT("Regional EONFORM evaluation failed for samples (%d,%d)-(%d,%d): %s"),
+					StartSample.X,
+					StartSample.Y,
+					EndSample.X,
+					EndSample.Y,
+					*RegionResult.Error);
+			}
+			return false;
+		}
+
+		FEonformTerrainMeshBuildOptions LocalOptions = Options;
+		LocalOptions.HeightScale = RegionResult.HeightScale;
+		LocalOptions.TargetResolution = RegionContext.TargetResolution;
+
+		TGuardValue<bool> Guard(bRegionalMaterializationActive, true);
+		return FEonformTerrainMeshMaterializer::BuildDynamicMeshRegion(
+			RegionResult.Dataset,
+			LocalOptions,
+			FIntPoint(0, 0),
+			FIntPoint(LocalOptions.TargetResolution.X - 1, LocalOptions.TargetResolution.Y - 1),
+			OutMesh,
+			OutError);
 	}
 }
 
@@ -126,6 +209,16 @@ bool FEonformTerrainMeshMaterializer::BuildDynamicMeshRegion(
 	FDynamicMesh3& OutMesh,
 	FString* OutError)
 {
+	bool bRegionalHandled = false;
+	if (TryBuildFromGenerationPlan(Options, StartSample, EndSample, OutMesh, OutError, bRegionalHandled))
+	{
+		return true;
+	}
+	if (bRegionalHandled)
+	{
+		return false;
+	}
+
 	const FEonformScalarField* Height = nullptr;
 	FIntPoint TargetResolution = FIntPoint::ZeroValue;
 	if (!ResolveHeightField(Dataset, Options, Height, TargetResolution, OutError))
