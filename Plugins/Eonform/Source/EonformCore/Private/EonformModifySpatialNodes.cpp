@@ -68,18 +68,6 @@ namespace EonformModifySpatialNodesPrivate
 		return static_cast<float>(H & 0x00ffffffu) / static_cast<float>(0x00ffffffu);
 	}
 
-	float SmoothNoise(int32 X, int32 Y, int32 Seed, int32 Scale)
-	{
-		Scale = FMath::Max(1, Scale);
-		const float FX = static_cast<float>(X) / Scale;
-		const float FY = static_cast<float>(Y) / Scale;
-		const int32 X0 = FMath::FloorToInt(FX), Y0 = FMath::FloorToInt(FY);
-		const float TX = FX - X0, TY = FY - Y0;
-		const float A = FMath::Lerp(Hash01(X0, Y0, Seed), Hash01(X0 + 1, Y0, Seed), TX);
-		const float B = FMath::Lerp(Hash01(X0, Y0 + 1, Seed), Hash01(X0 + 1, Y0 + 1, Seed), TX);
-		return FMath::Lerp(A, B, TY) * 2.0f - 1.0f;
-	}
-
 	float SampleGridBilinear(const FEonformScalarField& Field, float X, float Y, bool bMirror)
 	{
 		const int32 W = Field.Domain.Dimensions.X, H = Field.Domain.Dimensions.Y;
@@ -314,23 +302,6 @@ namespace EonformModifySpatialNodesPrivate
 		return true;
 	}
 
-	bool WarpField(const FEonformTerrainNode& Node, const FEonformScalarField& Source, const FEonformScalarField* Guide, FEonformScalarField& Out, FString& Error)
-	{
-		if (!Source.IsValid()) { Error = TEXT("Warp received an invalid field."); return false; }
-		const float Size = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Size"), 0.35)), 0.01f, 1.0f);
-		const float Strength = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Strength"), 0.2)), 0.0f, 1.0f) * FMath::Min(Source.Domain.Dimensions.X, Source.Domain.Dimensions.Y) * 0.08f;
-		const int32 Seed = static_cast<int32>(Node.GetInteger(TEXT("Seed"), 1337));
-		const int32 Scale = FMath::Max(2, FMath::RoundToInt(Size * FMath::Min(Source.Domain.Dimensions.X, Source.Domain.Dimensions.Y) * 0.5f));
-		Out = Source;
-		for (int32 Y = 0; Y < Source.Domain.Dimensions.Y; ++Y) for (int32 X = 0; X < Source.Domain.Dimensions.X; ++X)
-		{
-			float NX = SmoothNoise(X, Y, Seed, Scale), NY = SmoothNoise(X, Y, Seed + 991, Scale);
-			if (Guide) { float GX, GY; GradientAt(*Guide, X, Y, GX, GY); NX += GX; NY += GY; }
-			Out.AtInterior(X, Y) = SampleGridBilinear(Source, X - NX * Strength, Y - NY * Strength, true);
-		}
-		return true;
-	}
-
 	bool WhorlField(const FEonformTerrainNode& Node, const FEonformScalarField& Source, const FEonformScalarField*, FEonformScalarField& Out, FString& Error)
 	{
 		if (!Source.IsValid()) { Error = TEXT("Whorl received an invalid field."); return false; }
@@ -392,5 +363,4 @@ void RegisterEonformSwirlNode(){ using namespace EonformModifySpatialNodesPrivat
 void RegisterEonformThermalShaperNode(){ using namespace EonformModifySpatialNodesPrivate; RegisterSpatialSimple(EonformTerrainNodeTypes::ThermalShaper,TEXT("ThermalShaper"),TEXT("Strengthens or relaxes steep thermal-like terrain structure."),{SpatialNumber(TEXT("Amount"),TEXT("Amount"),0.5,-1.0,1.0),SpatialNumber(TEXT("Talus"),TEXT("Talus"),0.08,0.001,1.0),SpatialInteger(TEXT("Iterations"),TEXT("Iterations"),2,1,16)},ThermalShaperField); }
 void RegisterEonformTransposeNode(){ using namespace EonformModifySpatialNodesPrivate; RegisterSpatialSimple(EonformTerrainNodeTypes::Transpose,TEXT("Transpose"),TEXT("Transfers the character of a reference field onto an input while retaining its broad form."),{SpatialName(TEXT("Mode"),TEXT("Mode"),TEXT("Transpose"),{TEXT("Transpose"),TEXT("Embed"),TEXT("Insert")}),SpatialNumber(TEXT("Amount"),TEXT("Amount"),1.0,0.0,1.0),SpatialBool(TEXT("Extend"),TEXT("Extend"),false),SpatialBool(TEXT("Flatten"),TEXT("Flatten"),false),SpatialNumber(TEXT("Threshold"),TEXT("Threshold"),0.0,-1.0,1.0),SpatialName(TEXT("Boundary"),TEXT("Boundary"),TEXT("Mirror"),{TEXT("Clamp"),TEXT("Mirror")})},TransposeField,true); }
 void RegisterEonformVariableBlurNode(){ using namespace EonformModifySpatialNodesPrivate; RegisterSpatialSimple(EonformTerrainNodeTypes::VariableBlur,TEXT("VariableBlur"),TEXT("Varies blur radius spatially using an optional guide field."),{SpatialNumber(TEXT("Amount"),TEXT("Amount"),1.0,0.0,1.0),SpatialInteger(TEXT("Radius"),TEXT("Radius"),6,1,24)},VariableBlurField,true); }
-void RegisterEonformWarpNode(){ using namespace EonformModifySpatialNodesPrivate; RegisterSpatialSimple(EonformTerrainNodeTypes::Warp,TEXT("Warp"),TEXT("Applies broad organic vector-field warping without directional tearing."),{SpatialNumber(TEXT("Size"),TEXT("Size"),0.35,0.01,1.0),SpatialNumber(TEXT("Strength"),TEXT("Strength"),0.2,0.0,1.0),SpatialInteger(TEXT("Seed"),TEXT("Seed"),1337,0,2147483647)},WarpField,true); }
 void RegisterEonformWhorlNode(){ using namespace EonformModifySpatialNodesPrivate; RegisterSpatialSimple(EonformTerrainNodeTypes::Whorl,TEXT("Whorl"),TEXT("Applies multiple vortex-like distortions across large terrain areas."),{SpatialName(TEXT("Type"),TEXT("Type"),TEXT("Stretch"),{TEXT("Stretch"),TEXT("Spin")}),SpatialInteger(TEXT("Whorls"),TEXT("Whorls"),4,1,32),SpatialNumber(TEXT("Power"),TEXT("Power"),0.35,-2.0,2.0),SpatialInteger(TEXT("Seed"),TEXT("Seed"),1337,0,2147483647)},WhorlField); }
