@@ -157,21 +157,6 @@ namespace EonformPrimitiveCoverage
 			return V * 0.5f + 0.5f;
 		});
 	}
-	bool EvalVoronoi(const FEonformTerrainNode& Node, const FEonformTerrainNodeInputs&, const FEonformTerrainEvaluationContext&, FEonformTerrainNodeEvaluation& Out, FString& Error)
-	{
-		const float Scale = FMath::Max(static_cast<float>(Node.GetNumber(TEXT("Scale"), 1.0)), 0.001f); const float Jitter = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Jitter"), 1.0)), 0.0f, 2.0f); const FName Function = Node.GetName(TEXT("Function"), TEXT("Euclidean")); const FName Form = Node.GetName(TEXT("Form"), TEXT("P")); const float Gain = static_cast<float>(Node.GetNumber(TEXT("Gain"), 1.0)); const float ClampV = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Clamp"), 1.0)), 0.0f, 1.0f); const int32 Seed = static_cast<int32>(Node.GetInteger(TEXT("Seed"), 1337));
-		return BuildTerrain(Node, Out, Error, [=](int32, int32, const FVector2d& W, const FEonformGridDomain& D)
-		{
-			const float PX = static_cast<float>(W.X / D.WorldSize().X) * 18.0f * Scale; const float PY = static_cast<float>(W.Y / D.WorldSize().Y) * 18.0f * Scale; const int32 BX = FMath::FloorToInt(PX), BY = FMath::FloorToInt(PY); float F1 = 9999.0f, F2 = 9999.0f; float Cell = 0.0f;
-			for (int32 CY = BY - 1; CY <= BY + 1; ++CY) for (int32 CX = BX - 1; CX <= BX + 1; ++CX)
-			{
-				const float FX = CX + 0.5f + (Hash01(CX, CY, Seed) - 0.5f) * Jitter; const float FY = CY + 0.5f + (Hash01(CY, CX, Seed + 31) - 0.5f) * Jitter; const float DX = PX - FX, DY = PY - FY; const float Dist = Function == TEXT("Manhattan") ? FMath::Abs(DX) + FMath::Abs(DY) : FMath::Sqrt(DX * DX + DY * DY);
-				if (Dist < F1) { F2 = F1; F1 = Dist; Cell = Hash01(CX, CY, Seed + 71); } else if (Dist < F2) F2 = Dist;
-			}
-			float V = 1.0f - FMath::Clamp(F1, 0.0f, 1.0f); if (Form == TEXT("C")) V = Cell; else if (Form == TEXT("N")) V = 1.0f - FMath::Clamp(F2, 0.0f, 1.0f); else if (Form == TEXT("R") || Form == TEXT("D")) V = FMath::Clamp(F2 - F1, 0.0f, 1.0f); else if (Form == TEXT("S")) V = FMath::Pow(V, 3.0f); else if (Form == TEXT("M")) V *= Cell; else if (Form == TEXT("A")) V = FMath::Lerp(V, Cell, 0.35f);
-			return FMath::Min(V * Gain, ClampV);
-		});
-	}
 	bool EvalWaveShine(const FEonformTerrainNode& Node, const FEonformTerrainNodeInputs&, const FEonformTerrainEvaluationContext&, FEonformTerrainNodeEvaluation& Out, FString& Error)
 	{
 		const int32 Frame = static_cast<int32>(Node.GetInteger(TEXT("Frame"), 0)); const int32 Oct = FMath::Clamp<int32>(static_cast<int32>(Node.GetInteger(TEXT("Octaves"), 4)), 1, 12); const int32 Seed = static_cast<int32>(Node.GetInteger(TEXT("Seed"), 1337));
@@ -218,13 +203,6 @@ void RegisterEonformMultiFractalNode()
 	using namespace EonformPrimitiveCoverage; FEonformTerrainNodeDescriptor D; D.Type = EonformTerrainNodeTypes::MultiFractal; D.DisplayName = TEXT("MultiFractal"); D.Category = TEXT("Primitive"); D.Description = TEXT("Generates highly variable multi-fractal noise with modulation, positioning, and warp controls."); D.Outputs.Add(TerrainOut());
 	D.Parameters = { Choice(TEXT("NoiseType"), TEXT("Noise Type"), TEXT("FBM"), {TEXT("FBM"),TEXT("Billowy"),TEXT("Ridged")}), Bool(TEXT("AutoOctaves"), TEXT("Auto Octaves"), true), Int(TEXT("Octaves"), TEXT("Octaves"), 6, 1, 16), Num(TEXT("Scale"), TEXT("Scale"), 1.0, 0.001, 16.0), Num(TEXT("RelativeFeatureScale"), TEXT("Relative Feature Scale"), 1.0, 0.001, 16.0), Num(TEXT("Roughness"), TEXT("Roughness"), 0.5, 0.0, 1.0), Num(TEXT("EdgeSmoothing"), TEXT("Edge Smoothing"), 0.0, 0.0, 1.0), Int(TEXT("Seed"), TEXT("Seed"), 1337), Choice(TEXT("VariationType"), TEXT("Type"), TEXT("Secondary Fractal"), {TEXT("Secondary Fractal"),TEXT("Self Modulation")}), Num(TEXT("Variation"), TEXT("Variation"), 0.5, 0.0, 1.0), Num(TEXT("Smoothness"), TEXT("Smoothness"), 0.5, 0.0, 1.0), Num(TEXT("Contrast"), TEXT("Contrast"), 1.0, 0.0, 4.0), Num(TEXT("Damping"), TEXT("Damping"), 0.0, 0.0, 1.0), Num(TEXT("Bias"), TEXT("Bias"), 0.0, -1.0, 1.0), Num(TEXT("Rotation"), TEXT("Rotation"), 0.0, -360.0, 360.0), Num(TEXT("Anisotropy"), TEXT("Anisotropy"), 0.0, 0.0, 1.0), Num(TEXT("OffsetX"), TEXT("Offset X"), 0.0), Num(TEXT("OffsetY"), TEXT("Offset Y"), 0.0), Choice(TEXT("Perturb"), TEXT("Perturb"), TEXT("None"), {TEXT("None"),TEXT("Simple"),TEXT("Complex")}), Num(TEXT("RelativeSize"), TEXT("Relative Size"), 1.0, 0.001, 16.0), Num(TEXT("Strength"), TEXT("Strength"), 0.0, 0.0, 4.0), Num(TEXT("Complexity"), TEXT("Complexity"), 0.5, 0.0, 1.0), Num(TEXT("WarpRoughness"), TEXT("Roughness"), 0.5, 0.0, 1.0), Num(TEXT("Attenuation"), TEXT("Attenuation"), 0.0, 0.0, 1.0), Int(TEXT("Iterations"), TEXT("Iterations"), 1, 1, 16), Num(TEXT("RelativeAnisotropy"), TEXT("Relative Anisotropy"), 0.0, 0.0, 1.0) };
 	FEonformTerrainNodeDescriptorRegistry::Register(D); FEonformTerrainNodeRegistry::Register(EonformTerrainNodeTypes::MultiFractal, EvalMultiFractal);
-}
-
-void RegisterEonformVoronoiNode()
-{
-	using namespace EonformPrimitiveCoverage; FEonformTerrainNodeDescriptor D; D.Type = EonformTerrainNodeTypes::Voronoi; D.DisplayName = TEXT("Voronoi"); D.Category = TEXT("Primitive"); D.Description = TEXT("Generates Gaea-style geometric Voronoi terrain patterns."); D.Outputs.Add(TerrainOut());
-	D.Parameters = { Num(TEXT("Scale"), TEXT("Scale"), 1.0, 0.001, 16.0), Num(TEXT("Jitter"), TEXT("Jitter"), 1.0, 0.0, 2.0), Choice(TEXT("Function"), TEXT("Function"), TEXT("Euclidean"), {TEXT("Euclidean"),TEXT("Manhattan")}), Choice(TEXT("Form"), TEXT("Form"), TEXT("P"), {TEXT("C"),TEXT("N"),TEXT("R"),TEXT("P"),TEXT("A"),TEXT("S"),TEXT("M"),TEXT("D")}), Num(TEXT("Gain"), TEXT("Gain"), 1.0, 0.0, 4.0), Num(TEXT("Clamp"), TEXT("Clamp"), 1.0, 0.0, 1.0), Int(TEXT("Seed"), TEXT("Seed"), 1337), Choice(TEXT("WarpType"), TEXT("Type"), TEXT("None"), {TEXT("None"),TEXT("Simple"),TEXT("Complex")}), Num(TEXT("WarpFrequency"), TEXT("Frequency"), 1.0, 0.001, 16.0), Num(TEXT("WarpAmplitude"), TEXT("Amplitude"), 0.0, 0.0, 4.0), Int(TEXT("WarpOctaves"), TEXT("Octaves"), 1, 1, 16), Num(TEXT("ScaleX"), TEXT("Scale X"), 1.0, 0.001, 16.0), Num(TEXT("ScaleY"), TEXT("Scale Y"), 1.0, 0.001, 16.0), Num(TEXT("X"), TEXT("X"), 0.0), Num(TEXT("Y"), TEXT("Y"), 0.0) };
-	FEonformTerrainNodeDescriptorRegistry::Register(D); FEonformTerrainNodeRegistry::Register(EonformTerrainNodeTypes::Voronoi, EvalVoronoi);
 }
 
 void RegisterEonformWaveShineNode()
