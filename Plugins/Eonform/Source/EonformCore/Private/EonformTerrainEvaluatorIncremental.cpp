@@ -61,17 +61,25 @@ FEonformTerrainEvaluationResult FEonformTerrainEvaluator::EvaluateIncremental(
 
 	FEonformTerrainNodeRegistry::RegisterBuiltIns();
 
-	// The selected output resolution is part of the core context contract, not an
-	// editor-only hint. Hash it directly so non-editor callers cannot reuse cached
-	// node results after changing the requested output grid.
 	uint64 ContextRevision = Context.CacheContextRevision;
 	ContextRevision = HashCombineFast(GetTypeHash(ContextRevision), GetTypeHash(Context.TargetResolution.X));
 	ContextRevision = HashCombineFast(GetTypeHash(ContextRevision), GetTypeHash(Context.TargetResolution.Y));
+	ContextRevision = HashCombineFast(GetTypeHash(ContextRevision), GetTypeHash(Context.ReferenceResolution.X));
+	ContextRevision = HashCombineFast(GetTypeHash(ContextRevision), GetTypeHash(Context.ReferenceResolution.Y));
 	ContextRevision = HashCombineFast(GetTypeHash(ContextRevision), GetTypeHash(Context.HeightScale));
 	ContextRevision = HashCombineFast(GetTypeHash(ContextRevision), GetTypeHash(Context.PhysicalMetrics.WorldWidthMeters));
 	ContextRevision = HashCombineFast(GetTypeHash(ContextRevision), GetTypeHash(Context.PhysicalMetrics.WorldDepthMeters));
 	ContextRevision = HashCombineFast(GetTypeHash(ContextRevision), GetTypeHash(Context.PhysicalMetrics.ElevationScaleMeters));
 	ContextRevision = HashCombineFast(GetTypeHash(ContextRevision), GetTypeHash(Context.PhysicalMetrics.SeaLevelMeters));
+	ContextRevision = HashCombineFast(GetTypeHash(ContextRevision), GetTypeHash(Context.HasRegion()));
+	if (Context.HasRegion())
+	{
+		ContextRevision = HashCombineFast(GetTypeHash(ContextRevision), GetTypeHash(Context.Region.WorldMinCm.X));
+		ContextRevision = HashCombineFast(GetTypeHash(ContextRevision), GetTypeHash(Context.Region.WorldMinCm.Y));
+		ContextRevision = HashCombineFast(GetTypeHash(ContextRevision), GetTypeHash(Context.Region.WorldMaxCm.X));
+		ContextRevision = HashCombineFast(GetTypeHash(ContextRevision), GetTypeHash(Context.Region.WorldMaxCm.Y));
+		ContextRevision = HashCombineFast(GetTypeHash(ContextRevision), GetTypeHash(Context.Region.BorderSamples));
+	}
 
 	TSet<FGuid> Visiting;
 	TMap<FGuid, uint32> CurrentSignatures;
