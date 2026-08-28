@@ -5,6 +5,7 @@
 #include "EonformTerrainEvaluator.h"
 #include "EonformTerrainOutputEditorState.h"
 #include "EonformTerrainPhysicalMetrics.h"
+#include "EonformTerrainRegionalSupport.h"
 #include "Modules/ModuleManager.h"
 
 namespace
@@ -22,16 +23,18 @@ namespace
 		OutContext.PhysicalMetrics = FEonformTerrainPhysicalContext::GetActive();
 		OutContext.CacheContextRevision = FEonformTerrainPhysicalContext::GetRevision();
 
+		const FEonformTerrainRegionalSupportReport RegionalSupport = FEonformTerrainRegionalSupport::Analyze(Recipe);
 		const FEonformTerrainGraphOutputSettings& OutputSettings = FEonformTerrainOutputEditorState::Get().GetSettings();
 		if (OutputSettings.OutputResolution > 0)
 		{
 			const int32 FinalResolution = FMath::Clamp(OutputSettings.OutputResolution, 17, 8129);
-			const int32 PreviewResolution = FMath::Min(FinalResolution, InteractivePreviewMaxResolution);
+			const int32 PreviewResolution = RegionalSupport.bSupported
+				? FMath::Min(FinalResolution, InteractivePreviewMaxResolution)
+				: FinalResolution;
 
-			// Interactive graph evaluation is a preview, not the final world build.
-			// Keep the full requested resolution as the procedural reference domain
-			// while evaluating only a compact preview raster. Final Mesh Terrain
-			// generation reuses ReferenceResolution and requests spatial regions.
+			// Only proven region-safe graphs can use a cheap preview raster. Graphs
+			// containing unresolved global dependencies keep the legacy full-resolution
+			// preview so the existing output fallback remains behaviorally identical.
 			OutContext.TargetResolution = FIntPoint(PreviewResolution, PreviewResolution);
 			OutContext.ReferenceResolution = FIntPoint(FinalResolution, FinalResolution);
 			OutContext.CacheContextRevision = HashCombineFast(
@@ -326,8 +329,11 @@ void SEonformTerrainGraphPanel::StartNextAsyncEvaluation()
 					OutputState.SetGenerationPlan(GenerationRecipe, GenerationContext, CapturedGraphGeneration);
 					OutputState.CompleteAnalysis(BaseRevision);
 					SetGraphActivity(Panel, EEonformEditorGraphActivity::Idle);
+					const bool bRegional = FEonformTerrainRegionalSupport::Analyze(GenerationRecipe).bSupported;
 					Panel->StatusText = FText::FromString(FString::Printf(
-						TEXT("Terrain %08X preview ready in %.1f ms: %d node%s recomputed, %d cached, %d fields. Final output will evaluate Mesh Terrain regions on demand."),
+						bRegional
+							? TEXT("Terrain %08X preview ready in %.1f ms: %d node%s recomputed, %d cached, %d fields. Final output will evaluate Mesh Terrain regions on demand.")
+							: TEXT("Terrain %08X ready in %.1f ms: %d node%s recomputed, %d cached, %d fields. This graph still contains global/nonregional nodes, so final output uses the exact legacy full-world fallback."),
 						RecipeHash,
 						EvaluationMilliseconds,
 						EvaluatedNodeCount,
