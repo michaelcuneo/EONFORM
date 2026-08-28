@@ -166,6 +166,11 @@ namespace EonformTerrainRawNoise
 			}
 			return Sample.F1 + Sample.F2;
 		}
+
+		bool IsSignedCellularOutput(FName Form)
+		{
+			return Form == TEXT("C") || Form == TEXT("D");
+		}
 	}
 
 	bool Voronoi(
@@ -201,7 +206,6 @@ namespace EonformTerrainRawNoise
 			{
 				float U = static_cast<float>(X) * ResolutionInv;
 				float V = static_cast<float>(Y) * ResolutionInv;
-				// Default viewport is [0,1] and RawNoise offset is applied in wavelength space.
 				U += Settings.X * Wavelength * ResolutionInv;
 				V += Settings.Y * Wavelength * ResolutionInv;
 				U -= Half;
@@ -211,7 +215,6 @@ namespace EonformTerrainRawNoise
 				float PY = V * Resolution;
 				float PZ = 0.0f;
 
-				// FillSampledNoiseSetVector applies frequency and axis scales before perturb.
 				PX *= Frequency * Settings.ScaleX;
 				PY *= Frequency * Settings.ScaleY;
 				PZ *= Frequency;
@@ -225,7 +228,9 @@ namespace EonformTerrainRawNoise
 					DefaultFractalBounding);
 
 				const float Raw = CellularRaw(PX, PY, PZ, LookupFrequency, Settings);
-				OutField.AtInterior(X, Y) = Half + Raw * Half;
+				OutField.AtInterior(X, Y) = IsSignedCellularOutput(Settings.Form)
+					? Half + Raw * Half
+					: Raw * Half;
 			}
 		}
 
