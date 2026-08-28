@@ -30,15 +30,11 @@ FEonformTerrainRegionalSupportReport FEonformTerrainRegionalSupport::Analyze(con
 		bool bNodeSupported = false;
 		FString Reason;
 
-		if (Node.Type == EonformTerrainNodeTypes::PerlinNoise || Node.Type == EonformTerrainNodeTypes::Voronoi)
+		if (Node.Type == EonformTerrainNodeTypes::PerlinNoise
+			|| Node.Type == EonformTerrainNodeTypes::Voronoi
+			|| Node.Type == EonformTerrainNodeTypes::Constant)
 		{
 			bNodeSupported = true;
-		}
-		else if (Node.Type == EonformTerrainNodeTypes::Constant)
-		{
-			const FName Output = Node.GetName(TEXT("Output"), TEXT("Height"));
-			bNodeSupported = Output != TEXT("Noise");
-			if (!bNodeSupported) Reason = TEXT("Constant Noise still hashes local sample coordinates");
 		}
 		else if (Node.Type == EonformTerrainNodeTypes::Combine
 			|| Node.Type == EonformTerrainNodeTypes::Clamp
