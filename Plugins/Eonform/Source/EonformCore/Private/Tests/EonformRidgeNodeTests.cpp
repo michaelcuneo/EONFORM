@@ -4,7 +4,9 @@
 #include "EonformTerrainEvaluator.h"
 #include "EonformTerrainFieldNames.h"
 #include "EonformTerrainNodeDescriptor.h"
+#include "EonformTerrainProceduralOps.h"
 #include "EonformTerrainRecipe.h"
+#include "EonformVoronoiNode.h"
 #include "Misc/AutomationTest.h"
 
 namespace EonformRidgeNodeTests
@@ -147,6 +149,50 @@ bool FEonformRidgeDeterminismTest::RunTest(const FString& Parameters)
 	{
 		TestTrue(TEXT("Same Ridge seed/settings are deterministic"), MeanAbsoluteDifference(*A, *B) <= UE_SMALL_NUMBER);
 	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FEonformRidgeVoronoiRangeCompatibilityTest,
+	"Eonform.Core.Graph.Ridge.VoronoiRangeCompatibility",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FEonformRidgeVoronoiRangeCompatibilityTest::RunTest(const FString& Parameters)
+{
+	constexpr float RidgeScale = 0.75f;
+	constexpr float RidgeVoronoiScaleCoefficient = 1.05f;
+	const FEonformGridDomain Domain = FEonformGridDomain::Make(
+		FIntPoint(97, 97),
+		FVector2d(-600000.0, -400000.0),
+		FVector2d(600000.0, 400000.0));
+
+	EonformTerrainProceduralOps::FVoronoiSettings Settings;
+	Settings.Scale = 1.0f - RidgeScale * RidgeVoronoiScaleCoefficient;
+	Settings.Function = TEXT("Euclidean");
+	Settings.Form = TEXT("P");
+	Settings.Gain = 0.5f;
+	Settings.WarpType = TEXT("Complex");
+	Settings.WarpFrequency = 0.1f;
+	Settings.WarpAmplitude = 0.3f;
+	Settings.WarpOctaves = 10;
+	Settings.Seed = 4451;
+	Settings.ScaleX = 1.0f;
+	Settings.ScaleY = 1.0f;
+	Settings.Jitter = 0.45f;
+
+	FEonformScalarField Structure;
+	FString Error;
+	TestTrue(TEXT("Ridge Voronoi source evaluates"), EonformVoronoi::Generate(Domain, Settings, 1.0f, Structure, &Error));
+	if (!Structure.IsValid()) return false;
+
+	int32 AtOrAboveScale = 0;
+	for (const float Value : Structure.Values)
+	{
+		if (Value >= RidgeScale) ++AtOrAboveScale;
+	}
+	TestTrue(
+		TEXT("Ridge Voronoi source does not globally saturate the Ridge Scale ceiling"),
+		AtOrAboveScale * 2 < Structure.Values.Num());
 	return true;
 }
 
