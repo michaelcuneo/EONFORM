@@ -9,14 +9,14 @@
 
 namespace EonformRidgeNodeTests
 {
-	FEonformTerrainEvaluationResult EvaluateRidge(float Definition, int32 Seed, FIntPoint Resolution)
+	FEonformTerrainEvaluationResult EvaluateRidge(float Definition, int32 Seed, FIntPoint Resolution, float Scale = 0.75f)
 	{
 		RegisterEonformRidgeNode();
 
 		FEonformTerrainNode Ridge;
 		Ridge.Id = FGuid(0x51D6E001, 0x51D6E002, 0x51D6E003, 0x51D6E004);
 		Ridge.Type = EonformTerrainNodeTypes::Ridge;
-		Ridge.NumericParameters.Add(TEXT("Scale"), 0.75);
+		Ridge.NumericParameters.Add(TEXT("Scale"), Scale);
 		Ridge.NumericParameters.Add(TEXT("Height"), 0.6);
 		Ridge.NumericParameters.Add(TEXT("Definition"), Definition);
 		Ridge.NumericParameters.Add(TEXT("ScaleX"), 1.0);
@@ -45,6 +45,18 @@ namespace EonformRidgeNodeTests
 			}
 		}
 		return Sum / FMath::Max(1, A.Domain.GetInteriorSampleCount());
+	}
+
+	float FieldRange(const FEonformScalarField& Field)
+	{
+		float MinValue = TNumericLimits<float>::Max();
+		float MaxValue = TNumericLimits<float>::Lowest();
+		for (const float Value : Field.Values)
+		{
+			MinValue = FMath::Min(MinValue, Value);
+			MaxValue = FMath::Max(MaxValue, Value);
+		}
+		return MaxValue - MinValue;
 	}
 }
 
@@ -134,6 +146,34 @@ bool FEonformRidgeDeterminismTest::RunTest(const FString& Parameters)
 	if (A && B)
 	{
 		TestTrue(TEXT("Same Ridge seed/settings are deterministic"), MeanAbsoluteDifference(*A, *B) <= UE_SMALL_NUMBER);
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FEonformRidgeRangeRetentionTest,
+	"Eonform.Core.Graph.Ridge.RangeRetention",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FEonformRidgeRangeRetentionTest::RunTest(const FString& Parameters)
+{
+	using namespace EonformRidgeNodeTests;
+	const FEonformTerrainEvaluationResult DefaultResult = EvaluateRidge(0.4f, 4451, FIntPoint(97, 97), 0.75f);
+	const FEonformTerrainEvaluationResult LowScaleResult = EvaluateRidge(0.4f, 4451, FIntPoint(97, 97), 0.35f);
+	TestTrue(TEXT("Default Ridge evaluates"), DefaultResult.bSuccess);
+	TestTrue(TEXT("Low-scale Ridge evaluates"), LowScaleResult.bSuccess);
+
+	const FEonformScalarField* DefaultHeight = DefaultResult.Dataset.FindScalarField(EonformTerrainFieldNames::Height);
+	const FEonformScalarField* LowScaleHeight = LowScaleResult.Dataset.FindScalarField(EonformTerrainFieldNames::Height);
+	TestNotNull(TEXT("Default Ridge publishes Height"), DefaultHeight);
+	TestNotNull(TEXT("Low-scale Ridge publishes Height"), LowScaleHeight);
+	if (DefaultHeight)
+	{
+		TestTrue(TEXT("Default Ridge retains vertical variation"), FieldRange(*DefaultHeight) > 0.05f);
+	}
+	if (LowScaleHeight)
+	{
+		TestTrue(TEXT("Low-scale Ridge does not collapse to a plane"), FieldRange(*LowScaleHeight) > 0.01f);
 	}
 	return true;
 }
