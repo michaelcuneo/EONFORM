@@ -89,38 +89,6 @@ namespace
 		return Index < Resolution ? Index : (Period - 1 - Index);
 	}
 
-	float Bilinear(const FEonformScalarField& Field, float X, float Y, EonformDirectionalWarp::EEdgeBehaviour Edge)
-	{
-		const int32 W = Field.Domain.Dimensions.X;
-		const int32 H = Field.Domain.Dimensions.Y;
-
-		int32 X0 = static_cast<int32>(X);
-		int32 Y0 = static_cast<int32>(Y);
-		int32 X1 = X0 + 1;
-		int32 Y1 = Y0 + 1;
-		const float TX = X - static_cast<float>(X0);
-		const float TY = Y - static_cast<float>(Y0);
-
-		if (Edge == EonformDirectionalWarp::EEdgeBehaviour::Edge)
-		{
-			X0 = FMath::Clamp(X0, 0, W - 1);
-			Y0 = FMath::Clamp(Y0, 0, H - 1);
-			X1 = FMath::Clamp(X1, 0, W - 1);
-			Y1 = FMath::Clamp(Y1, 0, H - 1);
-		}
-		else
-		{
-			X0 = MirrorIndex(X0, W);
-			X1 = MirrorIndex(X1, W);
-			Y0 = MirrorIndex(Y0, H);
-			Y1 = MirrorIndex(Y1, H);
-		}
-
-		const float Top = Field.AtInterior(X0, Y0) * (1.0f - TX) + Field.AtInterior(X1, Y0) * TX;
-		const float Bottom = Field.AtInterior(X0, Y1) * (1.0f - TX) + Field.AtInterior(X1, Y1) * TX;
-		return Top * (1.0f - TY) + Bottom * TY;
-	}
-
 	bool EvaluateDirectionalWarp(
 		const FEonformTerrainNode& Node,
 		const FEonformTerrainNodeInputs& Inputs,
@@ -158,6 +126,51 @@ namespace
 	}
 }
 
+FVector2D EonformDirectionalWarp::ResolveSourceCoordinate(
+	const FVector2D& LatticeCoordinate,
+	float CustomValue,
+	float StrengthPixels,
+	float DirectionDegrees)
+{
+	const float Radians = DirectionDegrees * DirectionDegreesToRadians;
+	const FVector2D Direction(-FMath::Cos(Radians) * StrengthPixels, FMath::Sin(Radians) * StrengthPixels);
+	return LatticeCoordinate + Direction * (CustomValue - 0.5f);
+}
+
+float EonformDirectionalWarp::SampleBilinear(
+	const TFunctionRef<float(int32, int32)>& SampleInteger,
+	const FIntPoint& Dimensions,
+	float X,
+	float Y,
+	EEdgeBehaviour EdgeBehaviour)
+{
+	const int32 W = Dimensions.X;
+	const int32 H = Dimensions.Y;
+	int32 X0 = static_cast<int32>(X);
+	int32 Y0 = static_cast<int32>(Y);
+	int32 X1 = X0 + 1;
+	int32 Y1 = Y0 + 1;
+	const float TX = X - static_cast<float>(X0);
+	const float TY = Y - static_cast<float>(Y0);
+	if (EdgeBehaviour == EEdgeBehaviour::Edge)
+	{
+		X0 = FMath::Clamp(X0, 0, W - 1);
+		Y0 = FMath::Clamp(Y0, 0, H - 1);
+		X1 = FMath::Clamp(X1, 0, W - 1);
+		Y1 = FMath::Clamp(Y1, 0, H - 1);
+	}
+	else
+	{
+		X0 = MirrorIndex(X0, W);
+		X1 = MirrorIndex(X1, W);
+		Y0 = MirrorIndex(Y0, H);
+		Y1 = MirrorIndex(Y1, H);
+	}
+	const float Top = SampleInteger(X0, Y0) * (1.0f - TX) + SampleInteger(X1, Y0) * TX;
+	const float Bottom = SampleInteger(X0, Y1) * (1.0f - TX) + SampleInteger(X1, Y1) * TX;
+	return Top * (1.0f - TY) + Bottom * TY;
+}
+
 bool EonformDirectionalWarp::ApplyPixels(
 	const FEonformScalarField& Source,
 	const FEonformScalarField& Custom,
@@ -173,15 +186,19 @@ bool EonformDirectionalWarp::ApplyPixels(
 		return false;
 	}
 
-	const float Radians = DirectionDegrees * DirectionDegreesToRadians;
-	const FVector2D Direction(-FMath::Cos(Radians) * StrengthPixels, FMath::Sin(Radians) * StrengthPixels);
 	OutField = Source;
-	for (int32 Y = 0; Y < Source.Domain.Dimensions.Y; ++Y)
+	const FIntPoint Dimensions = Source.Domain.Dimensions;
+	for (int32 Y = 0; Y < Dimensions.Y; ++Y)
 	{
-		for (int32 X = 0; X < Source.Domain.Dimensions.X; ++X)
+		for (int32 X = 0; X < Dimensions.X; ++X)
 		{
-			const FVector2D Offset = Direction * (Custom.AtInterior(X, Y) - 0.5f);
-			OutField.AtInterior(X, Y) = Bilinear(Source, X + Offset.X, Y + Offset.Y, EdgeBehaviour);
+			const FVector2D SampleCoordinate = ResolveSourceCoordinate(FVector2D(X, Y), Custom.AtInterior(X, Y), StrengthPixels, DirectionDegrees);
+			OutField.AtInterior(X, Y) = SampleBilinear(
+				[&Source](int32 SX, int32 SY) { return Source.AtInterior(SX, SY); },
+				Dimensions,
+				static_cast<float>(SampleCoordinate.X),
+				static_cast<float>(SampleCoordinate.Y),
+				EdgeBehaviour);
 		}
 	}
 	if (OutError) OutError->Reset();
