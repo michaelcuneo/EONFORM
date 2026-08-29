@@ -89,10 +89,12 @@ namespace
 	FEonformGridDomain BuildRidgeReferenceDomain(const FEonformTerrainEvaluationContext& Context)
 	{
 		const FIntPoint Dimensions = ResolveLegacyRidgeResolution(Context, true);
-		return Context.ResolveReferenceDomain(
+		const FEonformGridDomain WorldReference = Context.ResolveReferenceDomain(
 			Dimensions,
 			FVector2d(-50000.0, -50000.0),
 			FVector2d(50000.0, 50000.0));
+		if (!WorldReference.IsValid()) return FEonformGridDomain();
+		return FEonformGridDomain::Make(Dimensions, WorldReference.WorldMin, WorldReference.WorldMax);
 	}
 
 	FEonformGridDomain BuildRidgeTargetDomain(
@@ -318,8 +320,6 @@ bool FEonformRidgeGenerator::Generate(
 
 	if (!EonformCombine::ApplyRawFields(Directed, SecondaryWarped, TEXT("Min"), 1.0f, OutHeight, OutError)) return false;
 
-	// Preserve the recovered range stage: clamp the Min result to Ridge Scale,
-	// then shift its true minimum to zero without renormalizing the maximum.
 	for (float& Value : OutHeight.Values)
 	{
 		Value = FMath::Clamp(Value, 0.0f, Scale);
