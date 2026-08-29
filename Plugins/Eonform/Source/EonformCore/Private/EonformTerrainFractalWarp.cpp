@@ -11,6 +11,8 @@ namespace EonformTerrainProceduralOps
 		constexpr float EonformFinalPerturbFrequencyMultiplier = 4.0f;
 		constexpr float EonformFinalPerturbWarpMultiplier = 0.25f;
 		constexpr float EonformDirectionCycleDegrees = 360.0f;
+		constexpr uint64 CoordinateBits = 21ull;
+		constexpr uint64 CoordinateMask = (1ull << CoordinateBits) - 1ull;
 
 		float MirrorCoord(float V, int32 MaxIndex)
 		{
@@ -37,19 +39,12 @@ namespace EonformTerrainProceduralOps
 
 		float Sample(const FEonformScalarField& Field, float X, float Y, EEdgeBehaviour Edge)
 		{
-			const int32 W = Field.Domain.Dimensions.X;
-			const int32 H = Field.Domain.Dimensions.Y;
-			ResolveEdgeCoordinate(X, Y, W, H, Edge);
-			const int32 X0 = FMath::FloorToInt(X);
-			const int32 Y0 = FMath::FloorToInt(Y);
-			const int32 X1 = FMath::Min(X0 + 1, W - 1);
-			const int32 Y1 = FMath::Min(Y0 + 1, H - 1);
-			const float TX = X - static_cast<float>(X0);
-			const float TY = Y - static_cast<float>(Y0);
-			return FMath::Lerp(
-				FMath::Lerp(Field.AtInterior(X0, Y0), Field.AtInterior(X1, Y0), TX),
-				FMath::Lerp(Field.AtInterior(X0, Y1), Field.AtInterior(X1, Y1), TX),
-				TY);
+			return FractalWarpSampleBilinear(
+				[&Field](int32 SX, int32 SY) { return Field.AtInterior(SX, SY); },
+				Field.Domain.Dimensions,
+				X,
+				Y,
+				Edge);
 		}
 
 		FVector2D SampleVectorField(const TArray<FVector2D>& Field, int32 W, int32 H, float X, float Y, EEdgeBehaviour Edge)
@@ -124,10 +119,35 @@ namespace EonformTerrainProceduralOps
 
 		uint64 CoordinateCacheKey(int32 Iteration, int32 X, int32 Y)
 		{
-			uint32 H = HashCombineFast(GetTypeHash(Iteration), GetTypeHash(X));
-			H = HashCombineFast(H, GetTypeHash(Y));
-			return static_cast<uint64>(H) | (static_cast<uint64>(static_cast<uint32>(Iteration)) << 32);
+			check(Iteration >= 0);
+			check(X >= 0 && static_cast<uint64>(X) <= CoordinateMask);
+			check(Y >= 0 && static_cast<uint64>(Y) <= CoordinateMask);
+			return (static_cast<uint64>(Iteration) << (CoordinateBits * 2ull))
+				| (static_cast<uint64>(Y) << CoordinateBits)
+				| static_cast<uint64>(X);
 		}
+	}
+
+	float FractalWarpSampleBilinear(
+		const TFunctionRef<float(int32, int32)>& SampleInteger,
+		const FIntPoint& Dimensions,
+		float X,
+		float Y,
+		EEdgeBehaviour EdgeBehaviour)
+	{
+		const int32 W = Dimensions.X;
+		const int32 H = Dimensions.Y;
+		ResolveEdgeCoordinate(X, Y, W, H, EdgeBehaviour);
+		const int32 X0 = FMath::FloorToInt(X);
+		const int32 Y0 = FMath::FloorToInt(Y);
+		const int32 X1 = FMath::Min(X0 + 1, W - 1);
+		const int32 Y1 = FMath::Min(Y0 + 1, H - 1);
+		const float TX = X - static_cast<float>(X0);
+		const float TY = Y - static_cast<float>(Y0);
+		return FMath::Lerp(
+			FMath::Lerp(SampleInteger(X0, Y0), SampleInteger(X1, Y0), TX),
+			FMath::Lerp(SampleInteger(X0, Y1), SampleInteger(X1, Y1), TX),
+			TY);
 	}
 
 	bool FractalWarpVectorCoordinate(
@@ -158,7 +178,6 @@ namespace EonformTerrainProceduralOps
 		const bool bPerlin = CanonicalWarpNoiseType(Settings.NoiseType) == TEXT("Perlin FBM");
 		const bool bNeedsPerturbationPass = !bPerlin && Settings.Perturbation != 0.0f;
 		const int32 Iterations = RequestedIterations + (bNeedsPerturbationPass ? 1 : 0);
-		const float DirectionStep = EonformDirectionCycleDegrees / static_cast<float>(RequestedIterations);
 
 		TMap<uint64, FVector2D> IntegerCache;
 		TFunction<FVector2D(int32, float, float)> SampleIteration;
