@@ -16,7 +16,6 @@ using UE::Geometry::FMeshNormals;
 namespace
 {
 	thread_local bool bRegionalMaterializationActive = false;
-	constexpr int32 RegionalMaterializationHalo = 16;
 
 	bool ResolveHeightField(
 		const FEonformTerrainDataset& Dataset,
@@ -87,7 +86,7 @@ namespace
 		if (!FEonformTerrainGenerationPlanRegistry::Get(Plan)) return false;
 
 		const FEonformTerrainRegionalSupportReport Support = FEonformTerrainRegionalSupport::Analyze(Plan.Recipe);
-		if (!Support.bSupported) return false;
+		if (!Support.bSupported || Support.RequiredBorderSamples < 0) return false;
 
 		const FIntPoint FullResolution = Options.TargetResolution;
 		if (StartSample.X < 0 || StartSample.Y < 0
@@ -115,7 +114,7 @@ namespace
 		RegionContext.Region.WorldMaxCm = ReferenceDomain.WorldMin + FVector2d(
 			static_cast<double>(EndSample.X) * CellSize.X,
 			static_cast<double>(EndSample.Y) * CellSize.Y);
-		RegionContext.Region.BorderSamples = RegionalMaterializationHalo;
+		RegionContext.Region.BorderSamples = Support.RequiredBorderSamples;
 
 		FEonformTerrainEvaluationResult RegionResult = FEonformTerrainEvaluator::Evaluate(Plan.Recipe, RegionContext);
 		bOutHandled = true;
