@@ -32,6 +32,23 @@ struct EONFORMCORE_API FEonformTerrainEvaluationRegion
 	}
 };
 
+/**
+ * Shared scalar reductions for exact regional evaluation. The cache is carried
+ * by FEonformTerrainEvaluationContext so all region requests from one published
+ * generation plan see the same world summaries.
+ */
+class EONFORMCORE_API FEonformTerrainGlobalSummaryCache
+{
+public:
+	bool Find(uint64 Key, float& OutValue) const;
+	void Store(uint64 Key, float Value);
+	void Reset();
+
+private:
+	mutable FCriticalSection Mutex;
+	TMap<uint64, float> Scalars;
+};
+
 struct EONFORMCORE_API FEonformTerrainEvaluationContext
 {
 	FEonformTerrainDataset SourceDataset;
@@ -40,29 +57,26 @@ struct EONFORMCORE_API FEonformTerrainEvaluationContext
 	/** Optional physical world contract supplied by EONFORM's graph asset/output settings. */
 	FEonformTerrainPhysicalMetrics PhysicalMetrics = FEonformTerrainPhysicalContext::GetActive();
 
-	/**
-	 * Preferred interior evaluation resolution for source/terrain nodes. Zero
-	 * means the node may choose an appropriate native working resolution. During
-	 * regional evaluation this is the resolution of the requested region, not
-	 * the resolution of the complete world.
-	 */
+	/** Preferred interior evaluation resolution. */
 	FIntPoint TargetResolution = FIntPoint::ZeroValue;
 
-	/**
-	 * Virtual full-world resolution used to preserve global procedural scale when
-	 * only a region is evaluated. Zero preserves legacy behaviour by falling back
-	 * to TargetResolution and then the node's native resolution.
-	 */
+	/** Virtual full-world resolution used to preserve global procedural scale. */
 	FIntPoint ReferenceResolution = FIntPoint::ZeroValue;
 
 	/** Optional local world-space evaluation window. Invalid means evaluate the full world. */
 	FEonformTerrainEvaluationRegion Region;
 
 	/**
-	 * Changes whenever an external part of the evaluation context changes.
-	 * Incremental evaluation mixes this into node signatures so physical output
-	 * settings or external source revisions cannot accidentally reuse stale data.
+	 * Preview evaluation may use preview-local global reductions. Final generation
+	 * always clears this flag and requires exact full-reference summaries.
 	 */
+	bool bPreviewEvaluation = false;
+
+	/** Shared exact world reductions used by regional/global-summary nodes. */
+	TSharedPtr<FEonformTerrainGlobalSummaryCache, ESPMode::ThreadSafe> GlobalSummaryCache =
+		MakeShared<FEonformTerrainGlobalSummaryCache, ESPMode::ThreadSafe>();
+
+	/** External context revision mixed into incremental signatures. */
 	uint64 CacheContextRevision = 0;
 
 	bool HasRegion() const
@@ -70,7 +84,6 @@ struct EONFORMCORE_API FEonformTerrainEvaluationContext
 		return Region.IsValid();
 	}
 
-	/** Resolve the virtual complete-world domain used by coordinate-stable procedural sources. */
 	FEonformGridDomain ResolveReferenceDomain(
 		const FIntPoint& NativeResolution,
 		const FVector2d& FallbackWorldMinCm,
@@ -99,7 +112,6 @@ struct EONFORMCORE_API FEonformTerrainEvaluationContext
 		return FEonformGridDomain::Make(Dimensions, WorldMin, WorldMax);
 	}
 
-	/** Resolve the local domain that graph nodes should publish for this evaluation request. */
 	FEonformGridDomain ResolveTargetDomain(
 		const FIntPoint& NativeResolution,
 		const FVector2d& FallbackWorldMinCm,
@@ -141,8 +153,6 @@ struct EONFORMCORE_API FEonformTerrainEvaluationResult
 	uint32 RecipeHash = 0;
 	float HeightScale = 1000.0f;
 	FEonformTerrainDataset Dataset;
-
-	/** Incremental-evaluation diagnostics. Zero for the legacy stateless path. */
 	int32 EvaluatedNodeCount = 0;
 	int32 CachedNodeCount = 0;
 	double EvaluationMilliseconds = 0.0;
@@ -154,19 +164,8 @@ struct EONFORMCORE_API FEonformTerrainNodeEvaluation
 
 	const FEonformTerrainValue* FindOutput(FName Name) const
 	{
-		// Prefer an exact pin match first. Some Derive nodes expose a terrain
-		// passthrough named "Terrain" and a scalar result named "Out".
-		if (const FEonformTerrainValue* Exact = Outputs.Find(Name))
-		{
-			return Exact;
-		}
-
-		// Compatibility fallback for modern Gaea-facing nodes whose terrain output
-		// is named "Out" rather than "Terrain".
-		if (Name == TEXT("Terrain"))
-		{
-			return Outputs.Find(TEXT("Out"));
-		}
+		if (const FEonformTerrainValue* Exact = Outputs.Find(Name)) return Exact;
+		if (Name == TEXT("Terrain")) return Outputs.Find(TEXT("Out"));
 		return nullptr;
 	}
 };
@@ -177,13 +176,6 @@ struct EONFORMCORE_API FEonformTerrainEvaluationCacheEntry
 	FEonformTerrainNodeEvaluation Evaluation;
 };
 
-/**
- * Persistent graph-node cache used by interactive editors.
- *
- * A node is reusable only when its own parameters, incoming wiring, every
- * upstream node signature, and the external evaluation-context revision match.
- * Changing one node therefore dirties only that node and its downstream chain.
- */
 struct EONFORMCORE_API FEonformTerrainEvaluationCache
 {
 	TMap<FGuid, FEonformTerrainEvaluationCacheEntry> Nodes;
@@ -203,7 +195,6 @@ using FEonformTerrainNodeEvaluator = TFunction<bool(
 	FEonformTerrainNodeEvaluation&,
 	FString&)>;
 
-/** Runtime registry for pure graph node evaluators. */
 class EONFORMCORE_API FEonformTerrainNodeRegistry
 {
 public:
@@ -217,20 +208,13 @@ private:
 	static const FEonformTerrainNodeEvaluator* Find(FName NodeType);
 };
 
-/** Evaluates FEonformTerrainRecipe without any editor-only dependency. */
 class EONFORMCORE_API FEonformTerrainEvaluator
 {
 public:
-	/** Stateless full evaluation. Kept for runtime/tests and callers that do not own a cache. */
 	static FEonformTerrainEvaluationResult Evaluate(
 		const FEonformTerrainRecipe& Recipe,
 		const FEonformTerrainEvaluationContext& Context);
 
-	/**
-	 * Persistent incremental evaluation for interactive graph authoring.
-	 * Unchanged upstream nodes are reused across calls; only dirty downstream
-	 * work is recomputed.
-	 */
 	static FEonformTerrainEvaluationResult EvaluateIncremental(
 		const FEonformTerrainRecipe& Recipe,
 		const FEonformTerrainEvaluationContext& Context,
