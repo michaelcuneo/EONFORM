@@ -5,6 +5,23 @@
 namespace EonformTerrainProceduralOps
 {
 	/**
+	 * Resolve the exact source coordinate used by Vector Field FractalWarp for
+	 * one full-world lattice sample. This is the authoritative coordinate path
+	 * used by both raster and streamed evaluation.
+	 *
+	 * The current point contract intentionally accepts only the source-independent
+	 * Virtual path (ZScale == 0 and no Modulator), which is the recovered Ridge
+	 * dependency chain. Other modes continue through FractalWarpFidelity until
+	 * they receive an equivalent point contract.
+	 */
+	bool FractalWarpVectorCoordinate(
+		const FVector2D& LatticeCoordinate,
+		const FIntPoint& ReferenceDimensions,
+		const FFractalWarpSettings& Settings,
+		FVector2D& OutSourceCoordinate,
+		FString* OutError = nullptr);
+
+	/**
 	 * Independent implementation of the observed FractalWarp contract.
 	 *
 	 * Important invariants:
