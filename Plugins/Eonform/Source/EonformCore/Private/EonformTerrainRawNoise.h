@@ -5,6 +5,18 @@
 
 namespace EonformTerrainRawNoise
 {
+	/** Evaluate the exact raw Voronoi implementation at one virtual full-world sample coordinate. */
+	float SampleVoronoiReference(
+		const FVector2d& ReferenceCoordinate,
+		int32 ReferenceResolutionX,
+		const EonformTerrainProceduralOps::FVoronoiSettings& Settings);
+
+	/** Evaluate the exact raw Perlin implementation at one virtual full-world sample coordinate. */
+	float SamplePerlinReference(
+		const FVector2d& ReferenceCoordinate,
+		int32 ReferenceResolutionX,
+		const EonformTerrainProceduralOps::FPerlinSettings& Settings);
+
 	bool Voronoi(
 		const FEonformGridDomain& Domain,
 		const EonformTerrainProceduralOps::FVoronoiSettings& Settings,
