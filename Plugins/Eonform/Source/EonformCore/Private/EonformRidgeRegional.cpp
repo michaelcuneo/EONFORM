@@ -113,12 +113,35 @@ namespace
 			SecondaryWarpSettings.Mode = TEXT("Vector Field");
 			SecondaryWarpSettings.EdgeBehaviour = EonformTerrainProceduralOps::EEdgeBehaviour::Mirror;
 			SecondaryWarpSettings.Seed = Settings.Seed + 5;
+
+			if (bValid)
+			{
+				FVector2D Probe;
+				FString WarpError;
+				bValid = EonformTerrainProceduralOps::FractalWarpVectorCoordinate(
+					FVector2D::ZeroVector,
+					Dimensions,
+					GuideWarpSettings,
+					Probe,
+					&WarpError)
+					&& EonformTerrainProceduralOps::FractalWarpVectorCoordinate(
+						FVector2D::ZeroVector,
+						Dimensions,
+						SecondaryWarpSettings,
+						Probe,
+						&WarpError);
+				if (!bValid && OutError)
+				{
+					*OutError = FString::Printf(TEXT("Ridge streamed warp contract is unavailable: %s"), *WarpError);
+				}
+			}
 		}
 
 		bool IsValid() const { return bValid; }
 
 		float PreRange(int32 X, int32 Y)
 		{
+			check(bValid);
 			const uint64 Key = PointKey(X, Y);
 			if (bEnableCaches)
 			{
@@ -164,15 +187,13 @@ namespace
 			}
 
 			FVector2D SourceCoordinate;
-			if (!EonformTerrainProceduralOps::FractalWarpVectorCoordinate(
+			const bool bResolved = EonformTerrainProceduralOps::FractalWarpVectorCoordinate(
 				FVector2D(X, Y),
 				Dimensions,
 				GuideWarpSettings,
 				SourceCoordinate,
-				nullptr))
-			{
-				return Terraced(X, Y);
-			}
+				nullptr);
+			checkf(bResolved, TEXT("Validated Ridge guide FractalWarp failed during point evaluation."));
 			const float Warped = EonformTerrainProceduralOps::FractalWarpSampleBilinear(
 				[this](int32 SX, int32 SY) { return Terraced(SX, SY); },
 				Dimensions,
@@ -211,15 +232,13 @@ namespace
 		float SecondaryWarped(int32 X, int32 Y)
 		{
 			FVector2D SourceCoordinate;
-			if (!EonformTerrainProceduralOps::FractalWarpVectorCoordinate(
+			const bool bResolved = EonformTerrainProceduralOps::FractalWarpVectorCoordinate(
 				FVector2D(X, Y),
 				Dimensions,
 				SecondaryWarpSettings,
 				SourceCoordinate,
-				nullptr))
-			{
-				return Directed(X, Y);
-			}
+				nullptr);
+			checkf(bResolved, TEXT("Validated Ridge secondary FractalWarp failed during point evaluation."));
 			return EonformTerrainProceduralOps::FractalWarpSampleBilinear(
 				[this](int32 SX, int32 SY) { return Directed(SX, SY); },
 				Dimensions,
@@ -260,7 +279,8 @@ namespace
 		ParallelFor(Dimensions.Y, [&](int32 Y)
 		{
 			if (bFailed.Load()) return;
-			FRidgePointEvaluator Evaluator(Dimensions, Settings, false, nullptr);
+			FString RowError;
+			FRidgePointEvaluator Evaluator(Dimensions, Settings, false, &RowError);
 			if (!Evaluator.IsValid())
 			{
 				bFailed.Store(true);
@@ -276,7 +296,7 @@ namespace
 
 		if (bFailed.Load())
 		{
-			if (OutError) *OutError = TEXT("Ridge could not evaluate its exact full-world minimum.");
+			if (OutError) *OutError = TEXT("Ridge could not evaluate its exact full-world minimum because its streamed point contract failed validation.");
 			return false;
 		}
 
