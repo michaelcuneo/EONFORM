@@ -177,11 +177,11 @@ bool FEonformRegionalGraphEquivalenceTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FEonformRegionalGraphRejectsGlobalRidgeTest,
-	"Eonform.Core.RegionalEvaluation.RidgeRequiresGlobalSummary",
+	FEonformRegionalGraphAdmitsStreamedRidgeTest,
+	"Eonform.Core.RegionalEvaluation.RidgeUsesGlobalSummaryContract",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-bool FEonformRegionalGraphRejectsGlobalRidgeTest::RunTest(const FString& Parameters)
+bool FEonformRegionalGraphAdmitsStreamedRidgeTest::RunTest(const FString& Parameters)
 {
 	FEonformTerrainRecipe Recipe;
 	FEonformTerrainNode Ridge;
@@ -191,9 +191,9 @@ bool FEonformRegionalGraphRejectsGlobalRidgeTest::RunTest(const FString& Paramet
 	Recipe.OutputNode = Ridge.Id;
 
 	const FEonformTerrainRegionalSupportReport Support = FEonformTerrainRegionalSupport::Analyze(Recipe);
-	TestFalse(TEXT("Ridge is not silently admitted to regional generation"), Support.bSupported);
-	TestTrue(TEXT("Ridge rejection explains global summary requirement"), Support.Describe().Contains(TEXT("global-summary")));
-	return !Support.bSupported;
+	TestTrue(TEXT("Ridge is admitted through its streamed global-summary contract"), Support.bSupported);
+	TestEqual(TEXT("Streamed Ridge requires no regional halo"), Support.RequiredBorderSamples, 0);
+	return Support.bSupported;
 }
 
 #endif
