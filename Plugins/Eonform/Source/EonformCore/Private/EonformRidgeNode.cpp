@@ -58,10 +58,21 @@ namespace
 		return P;
 	}
 
+	FIntPoint ResolveLegacyRidgeResolution(const FEonformTerrainEvaluationContext& Context, bool bUseReference)
+	{
+		const FIntPoint Requested = bUseReference
+			&& Context.ReferenceResolution.X > 1
+			&& Context.ReferenceResolution.Y > 1
+				? Context.ReferenceResolution
+				: Context.TargetResolution;
+		const int32 Width = FMath::Clamp(Requested.X > 1 ? Requested.X : 257, 2, 4097);
+		const int32 Height = FMath::Clamp(Requested.Y > 1 ? Requested.Y : Width, 2, 4097);
+		return FIntPoint(Width, Height);
+	}
+
 	FEonformGridDomain BuildRidgeDomain(const FEonformTerrainEvaluationContext& Context)
 	{
-		const int32 Width = FMath::Clamp(Context.TargetResolution.X > 1 ? Context.TargetResolution.X : 257, 2, 4097);
-		const int32 Height = FMath::Clamp(Context.TargetResolution.Y > 1 ? Context.TargetResolution.Y : Width, 2, 4097);
+		const FIntPoint Dimensions = ResolveLegacyRidgeResolution(Context, false);
 		double WorldWidthCm = 100000.0;
 		double WorldDepthCm = 100000.0;
 		if (Context.PhysicalMetrics.HasWorldDimensions())
@@ -70,9 +81,35 @@ namespace
 			WorldDepthCm = Context.PhysicalMetrics.WorldDepthMeters * 100.0;
 		}
 		return FEonformGridDomain::Make(
-			FIntPoint(Width, Height),
+			Dimensions,
 			FVector2d(-WorldWidthCm * 0.5, -WorldDepthCm * 0.5),
 			FVector2d(WorldWidthCm * 0.5, WorldDepthCm * 0.5));
+	}
+
+	FEonformGridDomain BuildRidgeReferenceDomain(const FEonformTerrainEvaluationContext& Context)
+	{
+		const FIntPoint Dimensions = ResolveLegacyRidgeResolution(Context, true);
+		return Context.ResolveReferenceDomain(
+			Dimensions,
+			FVector2d(-50000.0, -50000.0),
+			FVector2d(50000.0, 50000.0));
+	}
+
+	FEonformGridDomain BuildRidgeTargetDomain(
+		const FEonformTerrainEvaluationContext& Context,
+		const FEonformGridDomain& ReferenceDomain)
+	{
+		FIntPoint Dimensions = Context.TargetResolution;
+		if (Dimensions.X < 2 || Dimensions.Y < 2) Dimensions = ReferenceDomain.Dimensions;
+		if (Context.HasRegion())
+		{
+			return FEonformGridDomain::Make(
+				Dimensions,
+				Context.Region.WorldMinCm,
+				Context.Region.WorldMaxCm,
+				Context.Region.BorderSamples);
+		}
+		return FEonformGridDomain::Make(Dimensions, ReferenceDomain.WorldMin, ReferenceDomain.WorldMax);
 	}
 
 	float ResolveRidgeHeightScale(const FEonformTerrainEvaluationContext& Context)
@@ -84,6 +121,13 @@ namespace
 		return FMath::Max(Context.HeightScale, 1.0f);
 	}
 
+	uint64 RidgeSummaryKey(const FEonformTerrainNode& Node)
+	{
+		const uint64 High = (static_cast<uint64>(Node.Id.A) << 32) | static_cast<uint64>(Node.Id.B);
+		const uint64 Low = (static_cast<uint64>(Node.Id.C) << 32) | static_cast<uint64>(Node.Id.D);
+		return High ^ ((Low << 17) | (Low >> 47));
+	}
+
 	bool EvaluateRidgeNode(
 		const FEonformTerrainNode& Node,
 		const FEonformTerrainNodeInputs&,
@@ -91,13 +135,6 @@ namespace
 		FEonformTerrainNodeEvaluation& Out,
 		FString& Error)
 	{
-		const FEonformGridDomain Domain = BuildRidgeDomain(Context);
-		if (!Domain.IsValid())
-		{
-			Error = TEXT("Ridge produced an invalid evaluation domain.");
-			return false;
-		}
-
 		FEonformRidgeSettings Settings;
 		Settings.Scale = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Scale"), 0.75)), 0.0001f, 1.0f);
 		Settings.Height = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Height"), 0.6)), 0.0f, 3.0f);
@@ -107,7 +144,36 @@ namespace
 		Settings.ScaleY = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("ScaleY"), 1.0)), 0.0001f, 100.0f);
 
 		FEonformScalarField Height;
-		if (!FEonformRidgeGenerator::Generate(Domain, Settings, Height, &Error)) return false;
+		const bool bUseStreamedEvaluation = Context.HasRegion() || Context.bPreviewEvaluation;
+		if (bUseStreamedEvaluation)
+		{
+			const FEonformGridDomain ReferenceDomain = BuildRidgeReferenceDomain(Context);
+			const FEonformGridDomain TargetDomain = BuildRidgeTargetDomain(Context, ReferenceDomain);
+			if (!ReferenceDomain.IsValid() || !TargetDomain.IsValid())
+			{
+				Error = TEXT("Ridge produced an invalid regional evaluation domain.");
+				return false;
+			}
+			if (!FEonformRidgeGenerator::GenerateRegional(
+				TargetDomain,
+				ReferenceDomain,
+				Settings,
+				Context.bPreviewEvaluation,
+				Context.GlobalSummaryCache,
+				RidgeSummaryKey(Node),
+				Height,
+				&Error)) return false;
+		}
+		else
+		{
+			const FEonformGridDomain Domain = BuildRidgeDomain(Context);
+			if (!Domain.IsValid())
+			{
+				Error = TEXT("Ridge produced an invalid evaluation domain.");
+				return false;
+			}
+			if (!FEonformRidgeGenerator::Generate(Domain, Settings, Height, &Error)) return false;
+		}
 
 		FEonformTerrainDataset Dataset;
 		if (!Dataset.SetScalarField(MoveTemp(Height)))
