@@ -22,6 +22,7 @@ namespace
 		OutContext = FEonformTerrainEvaluationContext();
 		OutContext.PhysicalMetrics = FEonformTerrainPhysicalContext::GetActive();
 		OutContext.CacheContextRevision = FEonformTerrainPhysicalContext::GetRevision();
+		OutContext.bPreviewEvaluation = true;
 
 		const FEonformTerrainRegionalSupportReport RegionalSupport = FEonformTerrainRegionalSupport::Analyze(Recipe);
 		const FEonformTerrainGraphOutputSettings& OutputSettings = FEonformTerrainOutputEditorState::Get().GetSettings();
@@ -32,9 +33,6 @@ namespace
 				? FMath::Min(FinalResolution, InteractivePreviewMaxResolution)
 				: FinalResolution;
 
-			// Only proven region-safe graphs can use a cheap preview raster. Graphs
-			// containing unresolved global dependencies keep the legacy full-resolution
-			// preview so the existing output fallback remains behaviorally identical.
 			OutContext.TargetResolution = FIntPoint(PreviewResolution, PreviewResolution);
 			OutContext.ReferenceResolution = FIntPoint(FinalResolution, FinalResolution);
 			OutContext.CacheContextRevision = HashCombineFast(
@@ -89,6 +87,7 @@ namespace
 			GenerationContext.TargetResolution = GenerationContext.ReferenceResolution;
 		}
 		GenerationContext.Region = FEonformTerrainEvaluationRegion();
+		GenerationContext.bPreviewEvaluation = false;
 		return GenerationContext;
 	}
 
@@ -106,23 +105,15 @@ void SEonformTerrainGraphPanel::RequestFinalEvaluationAsync()
 	++GraphEvaluationGeneration;
 	bFinalEvaluationPending = true;
 	FEonformTerrainOutputEditorState::Get().BeginAnalysis();
-
-	if (!bAutoPreviewEvaluating)
-	{
-		StartNextAsyncEvaluation();
-	}
+	if (!bAutoPreviewEvaluating) StartNextAsyncEvaluation();
 }
 
 void SEonformTerrainGraphPanel::RequestInspectionEvaluationAsync(const FGuid& NodeId)
 {
 	if (!NodeId.IsValid()) return;
-
 	++InspectionEvaluationGeneration;
 	PendingInspectionNodeId = NodeId;
-	if (!bAutoPreviewEvaluating)
-	{
-		StartNextAsyncEvaluation();
-	}
+	if (!bAutoPreviewEvaluating) StartNextAsyncEvaluation();
 }
 
 void SEonformTerrainGraphPanel::ClearInspectionPreview()
@@ -158,10 +149,7 @@ void SEonformTerrainGraphPanel::StartNextAsyncEvaluation()
 			bFinalEvaluationPending = false;
 			FEonformTerrainOutputEditorState::Get().FailAnalysis(Error);
 		}
-		else
-		{
-			PendingInspectionNodeId.Invalidate();
-		}
+		else PendingInspectionNodeId.Invalidate();
 		if (EditorGraph.IsValid()) EditorGraph->SetActivity(EEonformEditorGraphActivity::Idle);
 		StatusText = FText::FromString(FString::Printf(TEXT("Graph is invalid: %s"), *Error));
 		return;
@@ -187,10 +175,7 @@ void SEonformTerrainGraphPanel::StartNextAsyncEvaluation()
 			bFinalEvaluationPending = false;
 			FEonformTerrainOutputEditorState::Get().FailAnalysis(Error);
 		}
-		else
-		{
-			PendingInspectionNodeId.Invalidate();
-		}
+		else PendingInspectionNodeId.Invalidate();
 		if (EditorGraph.IsValid()) EditorGraph->SetActivity(EEonformEditorGraphActivity::Idle);
 		StatusText = FText::FromString(Error);
 		return;
@@ -216,15 +201,8 @@ void SEonformTerrainGraphPanel::StartNextAsyncEvaluation()
 	TWeakPtr<SEonformTerrainGraphPanel> WeakPanel = SharedThis(this);
 	const TSharedPtr<FEonformTerrainEvaluationCache, ESPMode::ThreadSafe> CapturedCache = IncrementalEvaluationCache;
 	Async(EAsyncExecution::ThreadPool,
-		[WeakPanel,
-		 CapturedCache,
-		 Recipe = MoveTemp(Recipe),
-		 Context = MoveTemp(Context),
-		 GenerationContext,
-		 bEvaluateFinal,
-		 InspectionNodeId,
-		 CapturedGraphGeneration,
-		 CapturedInspectionGeneration]() mutable
+		[WeakPanel, CapturedCache, Recipe = MoveTemp(Recipe), Context = MoveTemp(Context), GenerationContext,
+		 bEvaluateFinal, InspectionNodeId, CapturedGraphGeneration, CapturedInspectionGeneration]() mutable
 		{
 			FEonformTerrainEvaluationResult Result = bEvaluateFinal && CapturedCache.IsValid()
 				? FEonformTerrainEvaluator::EvaluateIncremental(Recipe, Context, *CapturedCache)
@@ -265,24 +243,12 @@ void SEonformTerrainGraphPanel::StartNextAsyncEvaluation()
 			FEonformTerrainRecipe GenerationRecipe = Recipe;
 
 			AsyncTask(ENamedThreads::GameThread,
-				[WeakPanel,
-				 bEvaluateFinal,
-				 InspectionNodeId,
-				 CapturedGraphGeneration,
-				 CapturedInspectionGeneration,
-				 BaseDataset = MoveTemp(BaseDataset),
-				 HeightScale,
-				 RecipeHash,
-				 BaseFieldCount,
-				 EvaluatedNodeCount,
-				 CachedNodeCount,
-				 EvaluationMilliseconds,
-				 GenerationRecipe = MoveTemp(GenerationRecipe),
-				 GenerationContext]() mutable
+				[WeakPanel, bEvaluateFinal, InspectionNodeId, CapturedGraphGeneration, CapturedInspectionGeneration,
+				 BaseDataset = MoveTemp(BaseDataset), HeightScale, RecipeHash, BaseFieldCount, EvaluatedNodeCount,
+				 CachedNodeCount, EvaluationMilliseconds, GenerationRecipe = MoveTemp(GenerationRecipe), GenerationContext]() mutable
 				{
 					const TSharedPtr<SEonformTerrainGraphPanel> Panel = WeakPanel.Pin();
 					if (!Panel.IsValid()) return;
-
 					const bool bStale = bEvaluateFinal
 						? CapturedGraphGeneration != Panel->GraphEvaluationGeneration
 						: CapturedInspectionGeneration != Panel->InspectionEvaluationGeneration;
@@ -301,10 +267,7 @@ void SEonformTerrainGraphPanel::StartNextAsyncEvaluation()
 					if (BaseRevision == 0)
 					{
 						Panel->bAutoPreviewEvaluating = false;
-						if (bEvaluateFinal)
-						{
-							FEonformTerrainOutputEditorState::Get().FailAnalysis(TEXT("Publishing the evaluated terrain snapshot failed."));
-						}
+						if (bEvaluateFinal) FEonformTerrainOutputEditorState::Get().FailAnalysis(TEXT("Publishing the evaluated terrain snapshot failed."));
 						SetGraphActivity(Panel, EEonformEditorGraphActivity::Idle);
 						Panel->StatusText = FText::FromString(TEXT("Terrain evaluated successfully, but publishing the snapshot failed."));
 						Panel->StartNextAsyncEvaluation();
@@ -335,27 +298,18 @@ void SEonformTerrainGraphPanel::StartNextAsyncEvaluation()
 					{
 						StatusMessage = FString::Printf(
 							TEXT("Terrain %08X preview ready in %.1f ms: %d node%s recomputed, %d cached, %d fields. Final output will evaluate Mesh Terrain regions on demand."),
-							RecipeHash,
-							EvaluationMilliseconds,
-							EvaluatedNodeCount,
-							EvaluatedNodeCount == 1 ? TEXT("") : TEXT("s"),
-							CachedNodeCount,
-							BaseFieldCount);
+							RecipeHash, EvaluationMilliseconds, EvaluatedNodeCount,
+							EvaluatedNodeCount == 1 ? TEXT("") : TEXT("s"), CachedNodeCount, BaseFieldCount);
 					}
 					else
 					{
 						StatusMessage = FString::Printf(
 							TEXT("Terrain %08X ready in %.1f ms: %d node%s recomputed, %d cached, %d fields. This graph still contains global/nonregional nodes, so final output uses the exact legacy full-world fallback."),
-							RecipeHash,
-							EvaluationMilliseconds,
-							EvaluatedNodeCount,
-							EvaluatedNodeCount == 1 ? TEXT("") : TEXT("s"),
-							CachedNodeCount,
-							BaseFieldCount);
+							RecipeHash, EvaluationMilliseconds, EvaluatedNodeCount,
+							EvaluatedNodeCount == 1 ? TEXT("") : TEXT("s"), CachedNodeCount, BaseFieldCount);
 					}
 					Panel->StatusText = FText::FromString(MoveTemp(StatusMessage));
 					Panel->OnEvaluated.ExecuteIfBound();
-
 					Panel->bAutoPreviewEvaluating = false;
 					Panel->StartNextAsyncEvaluation();
 				});
