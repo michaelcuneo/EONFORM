@@ -5,6 +5,17 @@
 namespace EonformTerrainProceduralOps
 {
 	/**
+	 * Authoritative FractalWarp edge/bilinear sampler. The callback is evaluated
+	 * only at resolved full-world integer lattice coordinates.
+	 */
+	float FractalWarpSampleBilinear(
+		const TFunctionRef<float(int32, int32)>& SampleInteger,
+		const FIntPoint& Dimensions,
+		float X,
+		float Y,
+		EEdgeBehaviour EdgeBehaviour);
+
+	/**
 	 * Resolve the exact source coordinate used by Vector Field FractalWarp for
 	 * one full-world lattice sample. This is the authoritative coordinate path
 	 * used by both raster and streamed evaluation.
