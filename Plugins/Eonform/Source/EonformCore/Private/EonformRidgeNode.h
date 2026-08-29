@@ -4,6 +4,8 @@
 #include "EonformGridDomain.h"
 #include "EonformScalarField.h"
 
+class FEonformTerrainGlobalSummaryCache;
+
 namespace EonformTerrainNodeTypes
 {
 	EONFORMCORE_API extern const FName Ridge;
@@ -27,9 +29,26 @@ struct FEonformRidgeSettings
 class EONFORMCORE_API FEonformRidgeGenerator
 {
 public:
+	/** Legacy full-field reference implementation. */
 	static bool Generate(
 		const FEonformGridDomain& Domain,
 		const FEonformRidgeSettings& Settings,
+		FEonformScalarField& OutHeight,
+		FString* OutError = nullptr);
+
+	/**
+	 * Exact streamed implementation. RidgeReferenceDomain is the virtual lattice
+	 * the legacy Ridge generator would have built (including its 4097 cap).
+	 * TargetDomain is any requested world-space window/resolution. Final regional
+	 * generation shares one exact whole-Ridge minimum through SummaryCache.
+	 */
+	static bool GenerateRegional(
+		const FEonformGridDomain& TargetDomain,
+		const FEonformGridDomain& RidgeReferenceDomain,
+		const FEonformRidgeSettings& Settings,
+		bool bPreviewEvaluation,
+		const TSharedPtr<FEonformTerrainGlobalSummaryCache, ESPMode::ThreadSafe>& SummaryCache,
+		uint64 SummaryKey,
 		FEonformScalarField& OutHeight,
 		FString* OutError = nullptr);
 };
