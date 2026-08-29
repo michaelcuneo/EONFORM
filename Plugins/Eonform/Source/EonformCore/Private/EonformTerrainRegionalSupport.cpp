@@ -42,18 +42,22 @@ FEonformTerrainRegionalSupportReport FEonformTerrainRegionalSupport::Analyze(con
 			|| Node.Type == EonformTerrainNodeTypes::Threshold
 			|| Node.Type == EonformTerrainNodeTypes::Terrace)
 		{
-			// These operations are pointwise/value-local once their inputs share the
-			// requested regional domain. Terrace randomness depends on value/seed,
-			// not absolute sample index.
 			bNodeSupported = true;
 		}
 		else if (Node.Type == EonformTerrainNodeTypes::Ridge)
 		{
-			Reason = TEXT("Ridge still subtracts a whole-field minimum and requires a global-summary contract");
+			// Ridge owns a streamed reference-lattice evaluator for its exact
+			// Voronoi -> Perlin -> Terrace -> FractalWarp -> Max ->
+			// DirectionalWarp -> FractalWarp -> Min chain. Its recovered final
+			// whole-field minimum is reduced once over the legacy Ridge lattice and
+			// shared by every requested region through the generation-plan summary
+			// cache. No neighbourhood halo is required because displaced samples are
+			// resolved lazily in full-world reference coordinates.
+			bNodeSupported = true;
 		}
 		else if (Node.Type == EonformTerrainNodeTypes::Mountain)
 		{
-			Reason = TEXT("Mountain depends on Ridge/global range behaviour and is not region-safe yet");
+			Reason = TEXT("Mountain still requires its compound Ridge construction to adopt the streamed Ridge contract");
 		}
 		else if (Node.Type == EonformTerrainNodeTypes::AutoLevel || Node.Type == EonformTerrainNodeTypes::Equalize)
 		{
