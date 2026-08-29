@@ -27,9 +27,7 @@ namespace EonformTerrainRawNoise
 			return EonformFastNoiseSIMDCompat::ECellularDistance::Euclidean;
 		}
 
-		FVector2d WorldToReferenceInterior(
-			const FVector2d& World,
-			const FEonformGridDomain& ReferenceDomain)
+		FVector2d WorldToReferenceInterior(const FVector2d& World, const FEonformGridDomain& ReferenceDomain)
 		{
 			const FVector2d Size = ReferenceDomain.WorldSize();
 			return FVector2d(
@@ -42,7 +40,6 @@ namespace EonformTerrainRawNoise
 			constexpr float F3 = 1.0f / 3.0f;
 			constexpr float G3 = 1.0f / 6.0f;
 			constexpr float G33 = -0.5f;
-
 			const float F = (X + Y + Z) * F3;
 			const float IF = FMath::FloorToFloat(X + F);
 			const float JF = FMath::FloorToFloat(Y + F);
@@ -50,12 +47,10 @@ namespace EonformTerrainRawNoise
 			const int32 I = EonformFastNoiseSIMDCompat::PrimeCoordinate(static_cast<int32>(IF), EonformFastNoiseSIMDCompat::XPrime);
 			const int32 J = EonformFastNoiseSIMDCompat::PrimeCoordinate(static_cast<int32>(JF), EonformFastNoiseSIMDCompat::YPrime);
 			const int32 K = EonformFastNoiseSIMDCompat::PrimeCoordinate(static_cast<int32>(KF), EonformFastNoiseSIMDCompat::ZPrime);
-
 			const float G = (IF + JF + KF) * G3;
 			const float X0 = X - (IF - G);
 			const float Y0 = Y - (JF - G);
 			const float Z0 = Z - (KF - G);
-
 			const bool XGeY = X0 >= Y0;
 			const bool YGeZ = Y0 >= Z0;
 			const bool XGeZ = X0 >= Z0;
@@ -65,7 +60,6 @@ namespace EonformTerrainRawNoise
 			const bool I2 = XGeY || XGeZ;
 			const bool J2 = !XGeY || YGeZ;
 			const bool K2 = !(XGeZ && YGeZ);
-
 			const float X1 = X0 - (I1 ? 1.0f : 0.0f) + G3;
 			const float Y1 = Y0 - (J1 ? 1.0f : 0.0f) + G3;
 			const float Z1 = Z0 - (K1 ? 1.0f : 0.0f) + G3;
@@ -75,7 +69,6 @@ namespace EonformTerrainRawNoise
 			const float X3 = X0 + G33;
 			const float Y3 = Y0 + G33;
 			const float Z3 = Z0 + G33;
-
 			auto Contribution = [Seed](float CX, float CY, float CZ, int32 PrimeI, int32 PrimeJ, int32 PrimeK)
 			{
 				float T = 0.6f - CX * CX - CY * CY - CZ * CZ;
@@ -83,36 +76,23 @@ namespace EonformTerrainRawNoise
 				T *= T;
 				return T * T * EonformFastNoiseSIMDCompat::GradientCoordinate(Seed, PrimeI, PrimeJ, PrimeK, CX, CY, CZ);
 			};
-
 			return 32.0f * (
 				Contribution(X0, Y0, Z0, I, J, K)
-				+ Contribution(
-					X1, Y1, Z1,
+				+ Contribution(X1, Y1, Z1,
 					I1 ? EonformFastNoiseSIMDCompat::WrapAdd(I, EonformFastNoiseSIMDCompat::XPrime) : I,
 					J1 ? EonformFastNoiseSIMDCompat::WrapAdd(J, EonformFastNoiseSIMDCompat::YPrime) : J,
 					K1 ? EonformFastNoiseSIMDCompat::WrapAdd(K, EonformFastNoiseSIMDCompat::ZPrime) : K)
-				+ Contribution(
-					X2, Y2, Z2,
+				+ Contribution(X2, Y2, Z2,
 					I2 ? EonformFastNoiseSIMDCompat::WrapAdd(I, EonformFastNoiseSIMDCompat::XPrime) : I,
 					J2 ? EonformFastNoiseSIMDCompat::WrapAdd(J, EonformFastNoiseSIMDCompat::YPrime) : J,
 					K2 ? EonformFastNoiseSIMDCompat::WrapAdd(K, EonformFastNoiseSIMDCompat::ZPrime) : K)
-				+ Contribution(
-					X3, Y3, Z3,
+				+ Contribution(X3, Y3, Z3,
 					EonformFastNoiseSIMDCompat::WrapAdd(I, EonformFastNoiseSIMDCompat::XPrime),
 					EonformFastNoiseSIMDCompat::WrapAdd(J, EonformFastNoiseSIMDCompat::YPrime),
 					EonformFastNoiseSIMDCompat::WrapAdd(K, EonformFastNoiseSIMDCompat::ZPrime)));
 		}
 
-		void Perturb(
-			float& X,
-			float& Y,
-			float& Z,
-			FName WarpType,
-			float Amplitude,
-			float Frequency,
-			int32 Octaves,
-			int32 Seed,
-			float MainFractalBounding)
+		void Perturb(float& X, float& Y, float& Z, FName WarpType, float Amplitude, float Frequency, int32 Octaves, int32 Seed, float MainFractalBounding)
 		{
 			if (WarpType == TEXT("None")) return;
 			if (WarpType == TEXT("Simple"))
@@ -120,34 +100,15 @@ namespace EonformTerrainRawNoise
 				EonformFastNoiseSIMDCompat::GradientPerturb(X, Y, Z, Seed, Amplitude, Frequency);
 				return;
 			}
-
 			EonformFastNoiseSIMDCompat::GradientFractalPerturb(
-				X, Y, Z,
-				Seed,
-				Amplitude,
-				Frequency,
-				Octaves,
-				2.0f,
-				0.5f,
-				MainFractalBounding);
+				X, Y, Z, Seed, Amplitude, Frequency, Octaves, 2.0f, 0.5f, MainFractalBounding);
 		}
 
-		float CellularRaw(
-			float X,
-			float Y,
-			float Z,
-			float LookupFrequency,
-			const EonformTerrainProceduralOps::FVoronoiSettings& Settings)
+		float CellularRaw(float X, float Y, float Z, float LookupFrequency, const EonformTerrainProceduralOps::FVoronoiSettings& Settings)
 		{
 			const auto DistanceType = ToDistance(Settings.Function);
 			const bool bDistanceReturn = Settings.Form != TEXT("C") && Settings.Form != TEXT("D");
-			const auto Sample = EonformFastNoiseSIMDCompat::Cellular(
-				X, Y, Z,
-				Settings.Jitter,
-				DistanceType,
-				Settings.Seed,
-				bDistanceReturn);
-
+			const auto Sample = EonformFastNoiseSIMDCompat::Cellular(X, Y, Z, Settings.Jitter, DistanceType, Settings.Seed, bDistanceReturn);
 			if (Settings.Form == TEXT("C")) return Sample.CellValue;
 			if (Settings.Form == TEXT("R")) return Sample.F1;
 			if (Settings.Form == TEXT("A")) return Sample.F2;
@@ -156,21 +117,13 @@ namespace EonformTerrainRawNoise
 			if (Settings.Form == TEXT("M")) return Sample.F1 / FMath::Max(Sample.F2, UE_SMALL_NUMBER);
 			if (Settings.Form == TEXT("D"))
 			{
-				return Simplex(
-					Sample.Feature.X * LookupFrequency,
-					Sample.Feature.Y * LookupFrequency,
-					Sample.Feature.Z * LookupFrequency,
-					Settings.Seed);
+				return Simplex(Sample.Feature.X * LookupFrequency, Sample.Feature.Y * LookupFrequency, Sample.Feature.Z * LookupFrequency, Settings.Seed);
 			}
 			if (Settings.Form == TEXT("N"))
 			{
 				const float C0 = Sample.F1 / FMath::Max(Sample.F2, UE_SMALL_NUMBER);
 				const auto Sample1 = EonformFastNoiseSIMDCompat::Cellular(
-					X + 0.5f, Y + 0.5f, Z + 0.5f,
-					Settings.Jitter,
-					DistanceType,
-					Settings.Seed + 1,
-					true);
+					X + 0.5f, Y + 0.5f, Z + 0.5f, Settings.Jitter, DistanceType, Settings.Seed + 1, true);
 				const float C1 = Sample1.F1 / FMath::Max(Sample1.F2, UE_SMALL_NUMBER);
 				return FMath::Min(C0, C1);
 			}
@@ -181,6 +134,80 @@ namespace EonformTerrainRawNoise
 		{
 			return Form == TEXT("C") || Form == TEXT("D");
 		}
+	}
+
+	float SampleVoronoiReference(
+		const FVector2d& ReferenceCoordinate,
+		int32 ReferenceResolutionX,
+		const EonformTerrainProceduralOps::FVoronoiSettings& Settings)
+	{
+		const float Resolution = static_cast<float>(FMath::Max(ReferenceResolutionX, 2));
+		const float ResolutionFactor = RawNoiseResolutionReference / Resolution;
+		const float Frequency = Settings.Scale * RawNoiseFrequencyScale * ResolutionFactor;
+		const float LookupFrequency = Settings.Scale * ResolutionFactor;
+		const float Wavelength = One / Frequency;
+		const float PerturbAmplitude = Settings.WarpAmplitude * RawNoisePerturbScale;
+		const float DefaultFractalBounding = EonformFastNoiseSIMDCompat::FractalBounding(3, 0.5f);
+		const float ResolutionInv = One / Resolution;
+		float U = static_cast<float>(ReferenceCoordinate.X) * ResolutionInv;
+		float V = static_cast<float>(ReferenceCoordinate.Y) * ResolutionInv;
+		U += Settings.X * Wavelength * ResolutionInv;
+		V += Settings.Y * Wavelength * ResolutionInv;
+		U -= Half;
+		V -= Half;
+		float PX = U * Resolution;
+		float PY = V * Resolution;
+		float PZ = 0.0f;
+		PX *= Frequency * Settings.ScaleX;
+		PY *= Frequency * Settings.ScaleY;
+		PZ *= Frequency;
+		Perturb(PX, PY, PZ, Settings.WarpType, PerturbAmplitude, Settings.WarpFrequency, Settings.WarpOctaves, Settings.Seed, DefaultFractalBounding);
+		const float Raw = CellularRaw(PX, PY, PZ, LookupFrequency, Settings);
+		return IsSignedCellularOutput(Settings.Form) ? Half + Raw * Half : Raw * Half;
+	}
+
+	float SamplePerlinReference(
+		const FVector2d& ReferenceCoordinate,
+		int32 ReferenceResolutionX,
+		const EonformTerrainProceduralOps::FPerlinSettings& Settings)
+	{
+		const float Resolution = static_cast<float>(FMath::Max(ReferenceResolutionX, 2));
+		const float Scale = One - Settings.Scale;
+		const float ResolutionFactor = RawNoiseResolutionReference / Resolution;
+		const float MainFrequency = Scale * RawNoiseFrequencyScale * ResolutionFactor;
+		const float Wavelength = One / MainFrequency;
+		const float PerturbAmplitude = Settings.WarpAmplitude * RawNoisePerturbScale;
+		const float ResolutionInv = One / Resolution;
+		const int32 Octaves = Settings.Octaves;
+		const float Gain = Settings.Gain;
+		const float MainFractalBounding = EonformFastNoiseSIMDCompat::FractalBounding(Octaves, Gain);
+		float U = static_cast<float>(ReferenceCoordinate.X) * ResolutionInv;
+		float V = static_cast<float>(ReferenceCoordinate.Y) * ResolutionInv;
+		U += Settings.X * Wavelength * ResolutionInv;
+		V += Settings.Y * Wavelength * ResolutionInv;
+		U -= Half;
+		V -= Half;
+		float PX = U * Resolution;
+		float PY = V * Resolution;
+		float PZ = 0.0f;
+		PX *= MainFrequency * Settings.ScaleX;
+		PY *= MainFrequency * Settings.ScaleY;
+		PZ *= MainFrequency;
+		Perturb(PX, PY, PZ, Settings.WarpType, PerturbAmplitude, Settings.WarpFrequency, Settings.WarpOctaves, Settings.Seed, MainFractalBounding);
+		float Raw = 0.0f;
+		if (Settings.Type == TEXT("Ridged"))
+		{
+			Raw = EonformFastNoiseSIMDCompat::PerlinRigidMulti(PX, PY, PZ, Octaves, 2.0f, Gain, Settings.Seed);
+		}
+		else if (Settings.Type == TEXT("Billowy"))
+		{
+			Raw = EonformFastNoiseSIMDCompat::PerlinBillow(PX, PY, PZ, Octaves, 2.0f, Gain, Settings.Seed);
+		}
+		else
+		{
+			Raw = EonformFastNoiseSIMDCompat::PerlinFBM(PX, PY, PZ, Octaves, 2.0f, Gain, Settings.Seed);
+		}
+		return Half + Raw * Half;
 	}
 
 	bool Voronoi(
@@ -195,68 +222,22 @@ namespace EonformTerrainRawNoise
 			if (OutError) *OutError = TEXT("RawNoise Voronoi requires a valid domain.");
 			return false;
 		}
-
 		const FEonformGridDomain& Reference = ReferenceDomain && ReferenceDomain->IsValid() ? *ReferenceDomain : Domain;
 		FEonformFieldDescriptor Descriptor;
 		MakeHeightDescriptor(Descriptor);
 		OutField.Initialize(Domain, Descriptor, 0.0f);
-
-		const int32 ResolutionX = Reference.Dimensions.X;
-		const float Resolution = static_cast<float>(ResolutionX);
-		const float ResolutionFactor = RawNoiseResolutionReference / Resolution;
-		const float Frequency = Settings.Scale * RawNoiseFrequencyScale * ResolutionFactor;
-		const float LookupFrequency = Settings.Scale * ResolutionFactor;
-		const float Wavelength = One / Frequency;
-		const float PerturbAmplitude = Settings.WarpAmplitude * RawNoisePerturbScale;
-		const float DefaultFractalBounding = EonformFastNoiseSIMDCompat::FractalBounding(3, 0.5f);
-		const float ResolutionInv = One / Resolution;
 		const FIntPoint Storage = Domain.GetStorageDimensions();
 		const bool bLegacyCoordinates = Domain.BorderSamples == 0 && Domain == Reference;
-
 		for (int32 Y = 0; Y < Storage.Y; ++Y)
 		{
 			for (int32 X = 0; X < Storage.X; ++X)
 			{
-				FVector2d ReferenceCoord;
-				if (bLegacyCoordinates)
-				{
-					ReferenceCoord = FVector2d(X, Y);
-				}
-				else
-				{
-					ReferenceCoord = WorldToReferenceInterior(Domain.StorageSampleToWorld(X, Y), Reference);
-				}
-
-				float U = static_cast<float>(ReferenceCoord.X) * ResolutionInv;
-				float V = static_cast<float>(ReferenceCoord.Y) * ResolutionInv;
-				U += Settings.X * Wavelength * ResolutionInv;
-				V += Settings.Y * Wavelength * ResolutionInv;
-				U -= Half;
-				V -= Half;
-
-				float PX = U * Resolution;
-				float PY = V * Resolution;
-				float PZ = 0.0f;
-
-				PX *= Frequency * Settings.ScaleX;
-				PY *= Frequency * Settings.ScaleY;
-				PZ *= Frequency;
-				Perturb(
-					PX, PY, PZ,
-					Settings.WarpType,
-					PerturbAmplitude,
-					Settings.WarpFrequency,
-					Settings.WarpOctaves,
-					Settings.Seed,
-					DefaultFractalBounding);
-
-				const float Raw = CellularRaw(PX, PY, PZ, LookupFrequency, Settings);
-				OutField.AtStorage(X, Y) = IsSignedCellularOutput(Settings.Form)
-					? Half + Raw * Half
-					: Raw * Half;
+				const FVector2d ReferenceCoord = bLegacyCoordinates
+					? FVector2d(X, Y)
+					: WorldToReferenceInterior(Domain.StorageSampleToWorld(X, Y), Reference);
+				OutField.AtStorage(X, Y) = SampleVoronoiReference(ReferenceCoord, Reference.Dimensions.X, Settings);
 			}
 		}
-
 		if (OutError) OutError->Reset();
 		return OutField.IsValid();
 	}
@@ -273,80 +254,22 @@ namespace EonformTerrainRawNoise
 			if (OutError) *OutError = TEXT("RawNoise Perlin requires a valid domain.");
 			return false;
 		}
-
 		const FEonformGridDomain& Reference = ReferenceDomain && ReferenceDomain->IsValid() ? *ReferenceDomain : Domain;
 		FEonformFieldDescriptor Descriptor;
 		MakeHeightDescriptor(Descriptor);
 		OutField.Initialize(Domain, Descriptor, 0.0f);
-
-		const float Resolution = static_cast<float>(Reference.Dimensions.X);
-		const float Scale = One - Settings.Scale;
-		const float ResolutionFactor = RawNoiseResolutionReference / Resolution;
-		const float MainFrequency = Scale * RawNoiseFrequencyScale * ResolutionFactor;
-		const float Wavelength = One / MainFrequency;
-		const float PerturbAmplitude = Settings.WarpAmplitude * RawNoisePerturbScale;
-		const float ResolutionInv = One / Resolution;
-		const int32 Octaves = Settings.Octaves;
-		const float Gain = Settings.Gain;
-		const float MainFractalBounding = EonformFastNoiseSIMDCompat::FractalBounding(Octaves, Gain);
 		const FIntPoint Storage = Domain.GetStorageDimensions();
 		const bool bLegacyCoordinates = Domain.BorderSamples == 0 && Domain == Reference;
-
 		for (int32 Y = 0; Y < Storage.Y; ++Y)
 		{
 			for (int32 X = 0; X < Storage.X; ++X)
 			{
-				FVector2d ReferenceCoord;
-				if (bLegacyCoordinates)
-				{
-					ReferenceCoord = FVector2d(X, Y);
-				}
-				else
-				{
-					ReferenceCoord = WorldToReferenceInterior(Domain.StorageSampleToWorld(X, Y), Reference);
-				}
-
-				float U = static_cast<float>(ReferenceCoord.X) * ResolutionInv;
-				float V = static_cast<float>(ReferenceCoord.Y) * ResolutionInv;
-				U += Settings.X * Wavelength * ResolutionInv;
-				V += Settings.Y * Wavelength * ResolutionInv;
-				U -= Half;
-				V -= Half;
-
-				float PX = U * Resolution;
-				float PY = V * Resolution;
-				float PZ = 0.0f;
-				PX *= MainFrequency * Settings.ScaleX;
-				PY *= MainFrequency * Settings.ScaleY;
-				PZ *= MainFrequency;
-
-				Perturb(
-					PX, PY, PZ,
-					Settings.WarpType,
-					PerturbAmplitude,
-					Settings.WarpFrequency,
-					Settings.WarpOctaves,
-					Settings.Seed,
-					MainFractalBounding);
-
-				float Raw = 0.0f;
-				if (Settings.Type == TEXT("Ridged"))
-				{
-					Raw = EonformFastNoiseSIMDCompat::PerlinRigidMulti(PX, PY, PZ, Octaves, 2.0f, Gain, Settings.Seed);
-				}
-				else if (Settings.Type == TEXT("Billowy"))
-				{
-					Raw = EonformFastNoiseSIMDCompat::PerlinBillow(PX, PY, PZ, Octaves, 2.0f, Gain, Settings.Seed);
-				}
-				else
-				{
-					Raw = EonformFastNoiseSIMDCompat::PerlinFBM(PX, PY, PZ, Octaves, 2.0f, Gain, Settings.Seed);
-				}
-
-				OutField.AtStorage(X, Y) = Half + Raw * Half;
+				const FVector2d ReferenceCoord = bLegacyCoordinates
+					? FVector2d(X, Y)
+					: WorldToReferenceInterior(Domain.StorageSampleToWorld(X, Y), Reference);
+				OutField.AtStorage(X, Y) = SamplePerlinReference(ReferenceCoord, Reference.Dimensions.X, Settings);
 			}
 		}
-
 		if (OutError) OutError->Reset();
 		return OutField.IsValid();
 	}
