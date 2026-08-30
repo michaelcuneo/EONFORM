@@ -3,7 +3,6 @@
 #include "CoreMinimal.h"
 #include "Widgets/SCompoundWidget.h"
 
-class STextBlock;
 class SUniformGridPanel;
 
 class SEonformTerrainRegionGrid : public SCompoundWidget
@@ -31,6 +30,7 @@ private:
 	bool HasSelection() const;
 
 	uint64 LastChangeSerial = 0;
+	uint64 LastPlanningSignature = 0;
 	FIntPoint LatestGridDimensions = FIntPoint::ZeroValue;
 	TSet<FIntPoint> SelectedRegions;
 	TSet<FIntPoint> LastEditorRegionSelection;
