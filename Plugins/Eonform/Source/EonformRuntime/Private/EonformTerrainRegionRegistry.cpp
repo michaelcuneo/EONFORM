@@ -67,6 +67,13 @@ bool FEonformTerrainRegionRegistry::SetStage(
 	Snapshot->Operation = Operation;
 	Snapshot->Error.Reset();
 	Snapshot->Progress = FEonformTerrainRegionProgress();
+	if (Snapshot->Residency == EEonformTerrainRegionResidency::Unloaded
+		&& (Stage == EEonformTerrainRegionStage::Generating
+			|| Stage == EEonformTerrainRegionStage::Meshing
+			|| Stage == EEonformTerrainRegionStage::Committing))
+	{
+		Snapshot->Residency = EEonformTerrainRegionResidency::Loading;
+	}
 	return true;
 }
 
@@ -157,6 +164,10 @@ bool FEonformTerrainRegionRegistry::FailRegion(const FEonformTerrainRegionId& Id
 	Snapshot->Progress = FEonformTerrainRegionProgress();
 	Snapshot->Error = Error;
 	Snapshot->bDirty = Snapshot->bHasResidentResolution;
+	if (!Snapshot->bHasResidentResolution)
+	{
+		Snapshot->Residency = EEonformTerrainRegionResidency::Unloaded;
+	}
 	return true;
 }
 
