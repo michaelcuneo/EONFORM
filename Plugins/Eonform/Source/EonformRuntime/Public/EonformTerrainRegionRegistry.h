@@ -21,14 +21,6 @@ enum class EEonformTerrainRegionStage : uint8
 	Failed
 };
 
-enum class EEonformTerrainRegionQuality : uint8
-{
-	Q0,
-	Q1,
-	Q2,
-	Q3
-};
-
 struct EONFORMRUNTIME_API FEonformTerrainRegionId
 {
 	FName SourceId = NAME_None;
@@ -76,9 +68,9 @@ struct EONFORMRUNTIME_API FEonformTerrainRegionSnapshot
 	EEonformTerrainRegionResidency Residency = EEonformTerrainRegionResidency::Unloaded;
 	EEonformTerrainRegionStage Stage = EEonformTerrainRegionStage::Idle;
 
-	bool bHasResidentQuality = false;
-	EEonformTerrainRegionQuality ResidentQuality = EEonformTerrainRegionQuality::Q0;
-	EEonformTerrainRegionQuality TargetQuality = EEonformTerrainRegionQuality::Q3;
+	bool bHasResidentResolution = false;
+	FIntPoint ResidentResolution = FIntPoint::ZeroValue;
+	FIntPoint TargetResolution = FIntPoint::ZeroValue;
 	uint64 RequestedRevision = 0;
 	uint64 ResidentRevision = 0;
 
@@ -97,7 +89,9 @@ struct EONFORMRUNTIME_API FEonformTerrainRegionSnapshot
 			&& Id.Coordinate.X >= 0
 			&& Id.Coordinate.Y >= 0
 			&& Id.Coordinate.X < GridDimensions.X
-			&& Id.Coordinate.Y < GridDimensions.Y;
+			&& Id.Coordinate.Y < GridDimensions.Y
+			&& TargetResolution.X > 1
+			&& TargetResolution.Y > 1;
 	}
 
 	bool HasMeasuredProgress() const
@@ -108,9 +102,9 @@ struct EONFORMRUNTIME_API FEonformTerrainRegionSnapshot
 	bool IsResidentCurrent() const
 	{
 		return Residency == EEonformTerrainRegionResidency::Loaded
-			&& bHasResidentQuality
+			&& bHasResidentResolution
 			&& ResidentRevision == RequestedRevision
-			&& ResidentQuality == TargetQuality
+			&& ResidentResolution == TargetResolution
 			&& !bDirty;
 	}
 };
@@ -119,9 +113,11 @@ struct EONFORMRUNTIME_API FEonformTerrainRegionSnapshot
  * Runtime-safe authoritative status registry for spatial terrain regions.
  *
  * The resident state is deliberately independent from the requested state so
- * a usable lower-quality region can remain loaded while a newer or higher-
- * quality revision is being prepared. Progress is only measurable when a
- * producer supplies real completed/total work counts.
+ * a usable lower-resolution region can remain loaded while a newer or higher-
+ * resolution revision is being prepared. Resolution is the current factual
+ * quality signal; named LOD tiers can be layered on later when a scheduler owns
+ * a real quality policy. Progress is only measurable when a producer supplies
+ * real completed/total work counts.
  */
 class EONFORMRUNTIME_API FEonformTerrainRegionRegistry
 {
@@ -130,8 +126,8 @@ public:
 		const FEonformTerrainRegionId& Id,
 		const FIntPoint& GridDimensions,
 		const FIntRect& SampleBounds,
-		uint64 RequestedRevision,
-		EEonformTerrainRegionQuality TargetQuality);
+		const FIntPoint& TargetResolution,
+		uint64 RequestedRevision);
 
 	static bool SetStage(
 		const FEonformTerrainRegionId& Id,
@@ -148,7 +144,7 @@ public:
 	static bool CommitRegion(
 		const FEonformTerrainRegionId& Id,
 		uint64 ResidentRevision,
-		EEonformTerrainRegionQuality ResidentQuality,
+		const FIntPoint& ResidentResolution,
 		int32 VertexCount = 0,
 		int32 TriangleCount = 0);
 
