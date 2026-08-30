@@ -156,7 +156,6 @@ bool FEonformTerrainGlobalSummary::ResolveOutputRange(
 	float Maximum = TNumericLimits<float>::Lowest();
 	bool bSawSample = false;
 
-	constexpr int32 PreferredStripRows = 32;
 	int32 StartY = 0;
 	while (StartY < ReferenceResolution.Y)
 	{

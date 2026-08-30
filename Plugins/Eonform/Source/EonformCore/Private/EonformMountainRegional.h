@@ -27,8 +27,9 @@ namespace EonformMountainRegional
 
 	/**
 	 * Resolves the exact min/max of the virtual full-world Mountain core without
-	 * allocating that full field. The reduction streams two reference rows at a
-	 * time through GenerateCore and is shared across regions through SummaryCache.
+	 * allocating that full field. The reduction streams bounded full-width strips
+	 * through GenerateCore using the shared global-summary strip budget and caches
+	 * the result across all regions in the generation plan.
 	 */
 	bool ResolveCoreRange(
 		const FEonformGridDomain& ReferenceDomain,

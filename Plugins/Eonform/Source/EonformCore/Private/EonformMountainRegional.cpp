@@ -3,6 +3,7 @@
 #include "EonformTerrainEvaluator.h"
 #include "EonformTerrainFieldNames.h"
 #include "EonformTerrainFractalWarp.h"
+#include "EonformTerrainGlobalSummary.h"
 #include "EonformTerrainProceduralOps.h"
 
 namespace
@@ -265,25 +266,28 @@ bool EonformMountainRegional::ResolveCoreRange(
 
 	float Minimum = TNumericLimits<float>::Max();
 	float Maximum = TNumericLimits<float>::Lowest();
-	for (int32 Row = 0; Row < ReferenceDomain.Dimensions.Y; Row += 2)
+	int32 StartY = 0;
+	while (StartY < ReferenceDomain.Dimensions.Y)
 	{
-		int32 Row0 = Row;
-		int32 Row1 = FMath::Min(Row + 1, ReferenceDomain.Dimensions.Y - 1);
-		if (Row0 == Row1)
+		int32 Remaining = ReferenceDomain.Dimensions.Y - StartY;
+		if (Remaining == 1 && StartY > 0)
 		{
-			Row0 = FMath::Max(0, Row0 - 1);
+			--StartY;
+			Remaining = 2;
 		}
+		const int32 RowCount = FMath::Min(FEonformTerrainGlobalSummary::PreferredStripRows, Remaining);
+		const int32 EndY = StartY + RowCount - 1;
 
-		const FVector2d WorldMin = ReferenceDomain.InteriorSampleToWorld(0, Row0);
-		const FVector2d WorldMax = ReferenceDomain.InteriorSampleToWorld(ReferenceDomain.Dimensions.X - 1, Row1);
-		const FEonformGridDomain RowDomain = FEonformGridDomain::Make(
-			FIntPoint(ReferenceDomain.Dimensions.X, 2),
+		const FVector2d WorldMin = ReferenceDomain.InteriorSampleToWorld(0, StartY);
+		const FVector2d WorldMax = ReferenceDomain.InteriorSampleToWorld(ReferenceDomain.Dimensions.X - 1, EndY);
+		const FEonformGridDomain StripDomain = FEonformGridDomain::Make(
+			FIntPoint(ReferenceDomain.Dimensions.X, RowCount),
 			WorldMin,
 			WorldMax);
 
-		FEonformScalarField Rows;
+		FEonformScalarField Strip;
 		if (!GenerateCore(
-			RowDomain,
+			StripDomain,
 			ReferenceDomain,
 			RidgeSettings0,
 			RidgeSettings1,
@@ -295,21 +299,24 @@ bool EonformMountainRegional::ResolveCoreRange(
 			bApplyPreWarp,
 			MountainNodeId,
 			SummaryCache,
-			Rows,
+			Strip,
 			OutError))
 		{
 			return false;
 		}
 
-		for (int32 Y = 0; Y < Rows.Domain.Dimensions.Y; ++Y)
+		for (int32 Y = 0; Y < Strip.Domain.Dimensions.Y; ++Y)
 		{
-			for (int32 X = 0; X < Rows.Domain.Dimensions.X; ++X)
+			for (int32 X = 0; X < Strip.Domain.Dimensions.X; ++X)
 			{
-				const float Value = Rows.AtInterior(X, Y);
+				const float Value = Strip.AtInterior(X, Y);
 				Minimum = FMath::Min(Minimum, Value);
 				Maximum = FMath::Max(Maximum, Value);
 			}
 		}
+
+		if (EndY >= ReferenceDomain.Dimensions.Y - 1) break;
+		StartY = EndY + 1;
 	}
 
 	if (!FMath::IsFinite(Minimum) || !FMath::IsFinite(Maximum) || Maximum < Minimum)
