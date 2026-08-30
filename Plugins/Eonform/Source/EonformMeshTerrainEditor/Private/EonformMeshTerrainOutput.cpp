@@ -10,6 +10,7 @@
 #include "GameFramework/Actor.h"
 #include "EonformMeshTerrainBridgeActor.h"
 #include "EonformTerrainFieldNames.h"
+#include "EonformTerrainRegionRegistry.h"
 #include "Materials/MaterialInterface.h"
 #include "MeshPartition.h"
 #include "MeshPartitionDefinition.h"
@@ -71,9 +72,6 @@ namespace
 		EditorComponent->Modify();
 		OverrideProperty->SetObjectPropertyValue_InContainer(EditorComponent, Material);
 
-		// Avoid a hard compile-time dependency on the experimental Mesh Partition
-		// editor component. If UpdateMaterial is reflected by this UE build, invoke it;
-		// otherwise marking the primitive render state dirty is sufficient to refresh.
 		if (UFunction* UpdateMaterialFunction = EditorComponent->FindFunction(FName(TEXT("UpdateMaterial"))))
 		{
 			EditorComponent->ProcessEvent(UpdateMaterialFunction, nullptr);
@@ -209,6 +207,32 @@ FEonformMeshTerrainBuildResult FEonformMeshTerrainOutput::Build(
 	const bool bHasSatMapColor = HasSatMapColor(Dataset);
 	UMaterialInterface* SatMapDebugMaterial = bHasSatMapColor ? ResolveSatMapDebugMaterial() : nullptr;
 
+	FString RegionTrackingReason;
+	const bool bTrackRegions = FEonformTerrainRegionRegistry::BeginCurrentPlan(
+		Resolution,
+		Sections,
+		&RegionTrackingReason);
+
+	const int32 IntervalsX = Resolution.X - 1;
+	const int32 IntervalsY = Resolution.Y - 1;
+	if (bTrackRegions)
+	{
+		for (int32 SectionY = 0; SectionY < Sections.Y; ++SectionY)
+		{
+			const int32 StartY = (SectionY * IntervalsY) / Sections.Y;
+			const int32 EndY = ((SectionY + 1) * IntervalsY) / Sections.Y;
+			for (int32 SectionX = 0; SectionX < Sections.X; ++SectionX)
+			{
+				const int32 StartX = (SectionX * IntervalsX) / Sections.X;
+				const int32 EndX = ((SectionX + 1) * IntervalsX) / Sections.X;
+				FEonformTerrainRegionRegistry::RegisterCurrentRegion(
+					FIntPoint(SectionX, SectionY),
+					FIntPoint(StartX, StartY),
+					FIntPoint(EndX, EndY));
+			}
+		}
+	}
+
 	AMeshPartition* Partition = Cast<AMeshPartition>(Settings.TargetMeshPartition.Get());
 	if (!Partition)
 	{
@@ -283,8 +307,6 @@ FEonformMeshTerrainBuildResult FEonformMeshTerrainOutput::Build(
 	ExistingBaseRegions.Sort([](const AActor& A, const AActor& B) { return A.GetActorLabel() < B.GetActorLabel(); });
 #endif
 
-	const int32 IntervalsX = Resolution.X - 1;
-	const int32 IntervalsY = Resolution.Y - 1;
 	int32 RegionIndex = 0;
 	for (int32 SectionY = 0; SectionY < Sections.Y; ++SectionY)
 	{
@@ -294,16 +316,30 @@ FEonformMeshTerrainBuildResult FEonformMeshTerrainOutput::Build(
 		{
 			const int32 StartX = (SectionX * IntervalsX) / Sections.X;
 			const int32 EndX = ((SectionX + 1) * IntervalsX) / Sections.X;
+			const FIntPoint StartSample(StartX, StartY);
+			const FIntPoint EndSample(EndX, EndY);
+			if (bTrackRegions) FEonformTerrainRegionRegistry::BeginEvaluation(StartSample, EndSample);
+
 			FDynamicMesh3 SectionMesh;
 			FString MaterializeError;
-			if (!FEonformTerrainMeshMaterializer::BuildDynamicMeshRegion(Dataset, MeshOptions, FIntPoint(StartX, StartY), FIntPoint(EndX, EndY), SectionMesh, &MaterializeError))
+			if (!FEonformTerrainMeshMaterializer::BuildDynamicMeshRegion(Dataset, MeshOptions, StartSample, EndSample, SectionMesh, &MaterializeError))
 			{
+				if (bTrackRegions) FEonformTerrainRegionRegistry::FailEvaluation(StartSample, EndSample, MaterializeError);
 				Result.Message = FString::Printf(TEXT("Mesh Terrain base region %d,%d failed: %s"), SectionX, SectionY, *MaterializeError);
 				return Result;
 			}
 
 			const int32 RegionVertexCount = SectionMesh.VertexCount();
 			const int32 RegionTriangleCount = SectionMesh.TriangleCount();
+			if (bTrackRegions)
+			{
+				FEonformTerrainRegionRegistry::CompleteEvaluation(
+					StartSample,
+					EndSample,
+					RegionVertexCount,
+					RegionTriangleCount);
+			}
+
 			AActor* RegionActor = ExistingBaseRegions.IsValidIndex(RegionIndex) ? ExistingBaseRegions[RegionIndex] : nullptr;
 			if (!RegionActor)
 			{
@@ -313,7 +349,9 @@ FEonformMeshTerrainBuildResult FEonformMeshTerrainOutput::Build(
 				RegionActor = World->SpawnActor<AActor>(AActor::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, RegionSpawnParameters);
 				if (!RegionActor)
 				{
-					Result.Message = FString::Printf(TEXT("Failed to create EONFORM Mesh Terrain base region actor %d,%d."), SectionX, SectionY);
+					const FString Error = FString::Printf(TEXT("Failed to create EONFORM Mesh Terrain base region actor %d,%d."), SectionX, SectionY);
+					if (bTrackRegions) FEonformTerrainRegionRegistry::FailMaterialization(StartSample, EndSample, Error);
+					Result.Message = Error;
 					return Result;
 				}
 			}
@@ -327,15 +365,21 @@ FEonformMeshTerrainBuildResult FEonformMeshTerrainOutput::Build(
 			USceneComponent* RegionRoot = EnsureRegionRoot(RegionActor);
 			if (!RegionRoot)
 			{
-				Result.Message = TEXT("Failed to create or resolve an EONFORM base region scene root.");
+				const FString Error = TEXT("Failed to create or resolve an EONFORM base region scene root.");
+				if (bTrackRegions) FEonformTerrainRegionRegistry::FailMaterialization(StartSample, EndSample, Error);
+				Result.Message = Error;
 				return Result;
 			}
 			UMeshProviderModifier* MeshProvider = EnsureRegionProvider(RegionActor, RegionRoot);
 			if (!MeshProvider)
 			{
-				Result.Message = TEXT("Failed to create or resolve the UE 5.8 Mesh Provider modifier for an EONFORM base region.");
+				const FString Error = TEXT("Failed to create or resolve the UE 5.8 Mesh Provider modifier for an EONFORM base region.");
+				if (bTrackRegions) FEonformTerrainRegionRegistry::FailMaterialization(StartSample, EndSample, Error);
+				Result.Message = Error;
 				return Result;
 			}
+
+			if (bTrackRegions) FEonformTerrainRegionRegistry::BeginCommit(StartSample, EndSample);
 			MeshProvider->Modify();
 			MeshProvider->BP_SetAffectedMegaMesh(Partition);
 			if (SatMapDebugMaterial)
@@ -343,6 +387,8 @@ FEonformMeshTerrainBuildResult FEonformMeshTerrainOutput::Build(
 				MeshProvider->SetMaterial(0, SatMapDebugMaterial);
 			}
 			MeshProvider->SetMesh(MoveTemp(SectionMesh), true);
+			if (bTrackRegions) FEonformTerrainRegionRegistry::MarkLoaded(StartSample, EndSample);
+
 			Result.VertexCount += RegionVertexCount;
 			Result.TriangleCount += RegionTriangleCount;
 			++Result.SectionCount;
@@ -360,8 +406,6 @@ FEonformMeshTerrainBuildResult FEonformMeshTerrainOutput::Build(
 		ExtraActor->Destroy();
 	}
 
-	// SetMesh can create/rebuild preview sections asynchronously. Refresh the
-	// editor override once more after all base modifiers have been updated.
 	ApplySatMapEditorMaterialOverride(Partition, SatMapDebugMaterial);
 
 	Result.bSuccess = true;

@@ -9,8 +9,10 @@
 #include "EonformTerrainGraphPin.h"
 #include "SEonformTerrainInspector.h"
 #include "SEonformTerrainOutputPanel.h"
+#include "SEonformTerrainRegionGrid.h"
 #include "ToolMenus.h"
 #include "Widgets/Docking/SDockTab.h"
+#include "Widgets/SBoxPanel.h"
 
 #define LOCTEXT_NAMESPACE "FEonformEditorModule"
 
@@ -90,7 +92,17 @@ private:
 
 	TSharedRef<SDockTab> SpawnEonformTab(const FSpawnTabArgs& Args)
 	{
-		TSharedRef<SWidget> OutputPanel = SNew(SEonformTerrainOutputPanel);
+		TSharedRef<SWidget> OutputPanel =
+			SNew(SVerticalBox)
+			+ SVerticalBox::Slot().AutoHeight()
+			[
+				SNew(SEonformTerrainOutputPanel)
+			]
+			+ SVerticalBox::Slot().AutoHeight()
+			[
+				SNew(SEonformTerrainRegionGrid)
+			];
+
 		return SNew(SDockTab)
 			.TabRole(ETabRole::NomadTab)
 			[
