@@ -5,6 +5,27 @@
 #include "EonformTerrainNodeDescriptor.h"
 #include "EonformTerrainRecipe.h"
 
+namespace EonformBlurNode
+{
+	int32 ResolveRadiusSamples(
+		const FEonformTerrainNode& Node,
+		const FIntPoint& ReferenceDimensions)
+	{
+		const float RadiusControl = FMath::Clamp(
+			static_cast<float>(Node.GetNumber(TEXT("Radius"), 0.1)),
+			0.0f,
+			1.0f);
+		if (RadiusControl <= UE_SMALL_NUMBER) return 0;
+		if (ReferenceDimensions.X < 2 || ReferenceDimensions.Y < 2) return INDEX_NONE;
+
+		const int32 MinDimension = FMath::Min(ReferenceDimensions.X, ReferenceDimensions.Y);
+		return FMath::Clamp(
+			FMath::RoundToInt(RadiusControl * static_cast<float>(MinDimension) * 0.02f),
+			1,
+			16);
+	}
+}
+
 namespace
 {
 	FEonformTerrainPortDescriptor BlurAnyPort(FName Name, const TCHAR* DisplayName = nullptr)
@@ -30,14 +51,39 @@ namespace
 		return Parameter;
 	}
 
-	float BlurSampleClamped(const FEonformScalarField& Field, int32 X, int32 Y)
+	float BlurSampleClamped(
+		const FEonformScalarField& Field,
+		int32 X,
+		int32 Y,
+		const FEonformGridDomain* ReferenceDomain)
 	{
-		return Field.AtInterior(
-			FMath::Clamp(X, 0, Field.Domain.Dimensions.X - 1),
-			FMath::Clamp(Y, 0, Field.Domain.Dimensions.Y - 1));
+		const FIntPoint StorageDimensions = Field.Domain.GetStorageDimensions();
+		int32 SampleX = FMath::Clamp(X, 0, StorageDimensions.X - 1);
+		int32 SampleY = FMath::Clamp(Y, 0, StorageDimensions.Y - 1);
+
+		// A regional guard band may extend beyond the actual world on regions
+		// touching a world edge. The legacy full-world Blur clamps there, so map
+		// those samples back onto the reference-world edge rather than consuming
+		// procedural values generated outside the world.
+		if (ReferenceDomain)
+		{
+			FVector2d World = Field.Domain.StorageSampleToWorld(SampleX, SampleY);
+			World.X = FMath::Clamp(World.X, ReferenceDomain->WorldMin.X, ReferenceDomain->WorldMax.X);
+			World.Y = FMath::Clamp(World.Y, ReferenceDomain->WorldMin.Y, ReferenceDomain->WorldMax.Y);
+			const FVector2d StorageCoordinate = Field.Domain.WorldToStorageCoordinate(World);
+			SampleX = FMath::Clamp(FMath::RoundToInt(StorageCoordinate.X), 0, StorageDimensions.X - 1);
+			SampleY = FMath::Clamp(FMath::RoundToInt(StorageCoordinate.Y), 0, StorageDimensions.Y - 1);
+		}
+
+		return Field.AtStorage(SampleX, SampleY);
 	}
 
-	bool BlurProcessField(const FEonformTerrainNode& Node, const FEonformScalarField& Source, FEonformScalarField& OutField, FString& Error)
+	bool BlurProcessField(
+		const FEonformTerrainNode& Node,
+		const FEonformScalarField& Source,
+		const FEonformTerrainEvaluationContext& Context,
+		FEonformScalarField& OutField,
+		FString& Error)
 	{
 		if (!Source.IsValid())
 		{
@@ -45,19 +91,50 @@ namespace
 			return false;
 		}
 
-		const float RadiusControl = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Radius"), 0.1)), 0.0f, 1.0f);
-		if (RadiusControl <= UE_SMALL_NUMBER)
+		const FIntPoint ReferenceDimensions = Context.HasRegion()
+			? Context.ReferenceResolution
+			: Source.Domain.Dimensions;
+		const int32 Radius = EonformBlurNode::ResolveRadiusSamples(Node, ReferenceDimensions);
+		if (Radius == INDEX_NONE)
+		{
+			Error = TEXT("Regional Blur requires a valid full-world reference resolution.");
+			return false;
+		}
+		if (Radius == 0)
 		{
 			OutField = Source;
 			return true;
 		}
-
-		const int32 MinDimension = FMath::Max(1, FMath::Min(Source.Domain.Dimensions.X, Source.Domain.Dimensions.Y));
-		const int32 Radius = FMath::Clamp(FMath::RoundToInt(RadiusControl * static_cast<float>(MinDimension) * 0.02f), 1, 16);
-		OutField = Source;
-		for (int32 Y = 0; Y < Source.Domain.Dimensions.Y; ++Y)
+		if (Context.HasRegion() && Source.Domain.BorderSamples < Radius)
 		{
-			for (int32 X = 0; X < Source.Domain.Dimensions.X; ++X)
+			Error = FString::Printf(
+				TEXT("Regional Blur requires at least %d dependency-border samples; received %d."),
+				Radius,
+				Source.Domain.BorderSamples);
+			return false;
+		}
+
+		FEonformGridDomain ReferenceDomain;
+		const FEonformGridDomain* ReferenceDomainPtr = nullptr;
+		if (Context.HasRegion())
+		{
+			ReferenceDomain = Context.ResolveReferenceDomain(
+				ReferenceDimensions,
+				FVector2d(-50000.0, -50000.0),
+				FVector2d(50000.0, 50000.0));
+			if (!ReferenceDomain.IsValid())
+			{
+				Error = TEXT("Regional Blur could not resolve the full-world reference domain.");
+				return false;
+			}
+			ReferenceDomainPtr = &ReferenceDomain;
+		}
+
+		OutField = Source;
+		const FIntPoint StorageDimensions = Source.Domain.GetStorageDimensions();
+		for (int32 Y = 0; Y < StorageDimensions.Y; ++Y)
+		{
+			for (int32 X = 0; X < StorageDimensions.X; ++X)
 			{
 				float Sum = 0.0f;
 				int32 Count = 0;
@@ -65,17 +142,24 @@ namespace
 				{
 					for (int32 DX = -Radius; DX <= Radius; ++DX)
 					{
-						Sum += BlurSampleClamped(Source, X + DX, Y + DY);
+						Sum += BlurSampleClamped(Source, X + DX, Y + DY, ReferenceDomainPtr);
 						++Count;
 					}
 				}
-				OutField.AtInterior(X, Y) = Count > 0 ? Sum / static_cast<float>(Count) : Source.AtInterior(X, Y);
+				OutField.AtStorage(X, Y) = Count > 0
+					? Sum / static_cast<float>(Count)
+					: Source.AtStorage(X, Y);
 			}
 		}
 		return OutField.IsValid();
 	}
 
-	bool EvaluateBlurNode(const FEonformTerrainNode& Node, const FEonformTerrainNodeInputs& Inputs, const FEonformTerrainEvaluationContext&, FEonformTerrainNodeEvaluation& Out, FString& Error)
+	bool EvaluateBlurNode(
+		const FEonformTerrainNode& Node,
+		const FEonformTerrainNodeInputs& Inputs,
+		const FEonformTerrainEvaluationContext& Context,
+		FEonformTerrainNodeEvaluation& Out,
+		FString& Error)
 	{
 		const FEonformTerrainValue* const* InputPtr = Inputs.Find(TEXT("Input"));
 		const FEonformTerrainValue* Input = InputPtr ? *InputPtr : nullptr;
@@ -88,7 +172,7 @@ namespace
 		if (Input->Type == EEonformTerrainValueType::ScalarField)
 		{
 			FEonformScalarField Result;
-			if (!BlurProcessField(Node, Input->ScalarField, Result, Error)) return false;
+			if (!BlurProcessField(Node, Input->ScalarField, Context, Result, Error)) return false;
 			Out.Outputs.Add(TEXT("Out"), FEonformTerrainValue::MakeScalarField(MoveTemp(Result)));
 			return true;
 		}
@@ -103,7 +187,7 @@ namespace
 			}
 
 			FEonformScalarField ResultHeight;
-			if (!BlurProcessField(Node, *Height, ResultHeight, Error)) return false;
+			if (!BlurProcessField(Node, *Height, Context, ResultHeight, Error)) return false;
 			ResultHeight.Descriptor.Name = EonformTerrainFieldNames::Height;
 			FEonformTerrainDataset Dataset = Input->TerrainDataset;
 			if (!Dataset.SetScalarField(MoveTemp(ResultHeight)))

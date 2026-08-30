@@ -85,10 +85,11 @@ namespace
 		FEonformTerrainGenerationPlan Plan;
 		if (!FEonformTerrainGenerationPlanRegistry::Get(Plan)) return false;
 
-		const FEonformTerrainRegionalSupportReport Support = FEonformTerrainRegionalSupport::Analyze(Plan.Recipe);
+		const FIntPoint FullResolution = Options.TargetResolution;
+		const FEonformTerrainRegionalSupportReport Support =
+			FEonformTerrainRegionalSupport::Analyze(Plan.Recipe, FullResolution);
 		if (!Support.bSupported || Support.RequiredBorderSamples < 0) return false;
 
-		const FIntPoint FullResolution = Options.TargetResolution;
 		if (StartSample.X < 0 || StartSample.Y < 0
 			|| EndSample.X >= FullResolution.X || EndSample.Y >= FullResolution.Y
 			|| EndSample.X <= StartSample.X || EndSample.Y <= StartSample.Y)

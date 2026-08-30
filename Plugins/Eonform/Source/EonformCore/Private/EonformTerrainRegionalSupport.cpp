@@ -1,5 +1,84 @@
 #include "EonformTerrainRegionalSupport.h"
 
+#include "EonformBlurNode.h"
+
+namespace
+{
+	bool AuditNode(
+		const FEonformTerrainNode& Node,
+		const FIntPoint& ReferenceResolution,
+		int32& OutLocalBorderSamples,
+		FString& OutReason)
+	{
+		OutLocalBorderSamples = 0;
+		OutReason.Reset();
+
+		if (Node.Type == EonformTerrainNodeTypes::PerlinNoise
+			|| Node.Type == EonformTerrainNodeTypes::Voronoi
+			|| Node.Type == EonformTerrainNodeTypes::Constant
+			|| Node.Type == EonformTerrainNodeTypes::Combine
+			|| Node.Type == EonformTerrainNodeTypes::Clamp
+			|| Node.Type == EonformTerrainNodeTypes::Invert
+			|| Node.Type == EonformTerrainNodeTypes::Threshold
+			|| Node.Type == EonformTerrainNodeTypes::Terrace)
+		{
+			return true;
+		}
+
+		if (Node.Type == EonformTerrainNodeTypes::Blur)
+		{
+			const int32 Radius = EonformBlurNode::ResolveRadiusSamples(Node, ReferenceResolution);
+			if (Radius == INDEX_NONE)
+			{
+				OutReason = TEXT("regional Blur with non-zero Radius requires a valid full-world reference resolution");
+				return false;
+			}
+			OutLocalBorderSamples = Radius;
+			return true;
+		}
+
+		if (Node.Type == EonformTerrainNodeTypes::Ridge)
+		{
+			// Ridge resolves displaced samples lazily in the full-world reference
+			// lattice and shares its exact whole-field reduction through the
+			// generation-plan summary cache, so it consumes no external halo.
+			return true;
+		}
+
+		if (Node.Type == EonformTerrainNodeTypes::Mountain)
+		{
+			const FName Style = Node.GetName(TEXT("Style"), TEXT("Eroded"));
+			const FName Bulk = Node.GetName(TEXT("Bulk"), TEXT("Medium"));
+			if (Style == TEXT("Basic") && Bulk == TEXT("Medium"))
+			{
+				return true;
+			}
+			OutReason = TEXT("regional Mountain currently requires Style=Basic and Bulk=Medium; erosion, strata, and global bulk reductions are not region-equivalent yet");
+			return false;
+		}
+
+		if (Node.Type == EonformTerrainNodeTypes::AutoLevel || Node.Type == EonformTerrainNodeTypes::Equalize)
+		{
+			OutReason = TEXT("global normalization requires cached world statistics");
+			return false;
+		}
+
+		if (Node.Type == EonformTerrainNodeTypes::HydraulicErosion
+			|| Node.Type == EonformTerrainNodeTypes::Rivers
+			|| Node.Type == EonformTerrainNodeTypes::FlowMap
+			|| Node.Type == EonformTerrainNodeTypes::FlowMapClassic)
+		{
+			OutReason = TEXT("hydrology requires macro/global drainage state before independent regional refinement");
+			return false;
+		}
+
+		OutReason = FString::Printf(
+			TEXT("node type '%s' has not yet been proven region-equivalent"),
+			*Node.Type.ToString());
+		return false;
+	}
+}
+
 FString FEonformTerrainRegionalSupportReport::Describe() const
 {
 	if (bSupported) return TEXT("All reachable terrain nodes support independent regional evaluation.");
@@ -8,6 +87,13 @@ FString FEonformTerrainRegionalSupportReport::Describe() const
 }
 
 FEonformTerrainRegionalSupportReport FEonformTerrainRegionalSupport::Analyze(const FEonformTerrainRecipe& Recipe)
+{
+	return Analyze(Recipe, FIntPoint::ZeroValue);
+}
+
+FEonformTerrainRegionalSupportReport FEonformTerrainRegionalSupport::Analyze(
+	const FEonformTerrainRecipe& Recipe,
+	const FIntPoint& ReferenceResolution)
 {
 	FEonformTerrainRegionalSupportReport Report;
 
@@ -23,78 +109,80 @@ FEonformTerrainRegionalSupportReport FEonformTerrainRegionalSupport::Analyze(con
 	};
 	Visit(Recipe.OutputNode);
 
+	TMap<FGuid, int32> LocalBorders;
 	for (const FEonformTerrainNode& Node : Recipe.Nodes)
 	{
 		if (!Reachable.Contains(Node.Id)) continue;
 
-		bool bNodeSupported = false;
+		int32 LocalBorderSamples = 0;
 		FString Reason;
-
-		if (Node.Type == EonformTerrainNodeTypes::PerlinNoise
-			|| Node.Type == EonformTerrainNodeTypes::Voronoi
-			|| Node.Type == EonformTerrainNodeTypes::Constant)
-		{
-			bNodeSupported = true;
-		}
-		else if (Node.Type == EonformTerrainNodeTypes::Combine
-			|| Node.Type == EonformTerrainNodeTypes::Clamp
-			|| Node.Type == EonformTerrainNodeTypes::Invert
-			|| Node.Type == EonformTerrainNodeTypes::Threshold
-			|| Node.Type == EonformTerrainNodeTypes::Terrace)
-		{
-			bNodeSupported = true;
-		}
-		else if (Node.Type == EonformTerrainNodeTypes::Ridge)
-		{
-			// Ridge owns a streamed reference-lattice evaluator for its exact
-			// Voronoi -> Perlin -> Terrace -> FractalWarp -> Max ->
-			// DirectionalWarp -> FractalWarp -> Min chain. Its recovered final
-			// whole-field minimum is reduced once over the legacy Ridge lattice and
-			// shared by every requested region through the generation-plan summary
-			// cache. No neighbourhood halo is required because displaced samples are
-			// resolved lazily in full-world reference coordinates.
-			bNodeSupported = true;
-		}
-		else if (Node.Type == EonformTerrainNodeTypes::Mountain)
-		{
-			const FName Style = Node.GetName(TEXT("Style"), TEXT("Eroded"));
-			const FName Bulk = Node.GetName(TEXT("Bulk"), TEXT("Medium"));
-			if (Style == TEXT("Basic") && Bulk == TEXT("Medium"))
-			{
-				// The Mountain core resolves its three Ridge fields and pre-warp
-				// dependencies lazily in the full reference lattice. No external
-				// neighbourhood border is required. Erosion, strata and non-medium
-				// bulk variants remain fail-closed until their global contracts exist.
-				bNodeSupported = true;
-			}
-			else
-			{
-				Reason = TEXT("regional Mountain currently requires Style=Basic and Bulk=Medium; erosion, strata, and global bulk reductions are not region-equivalent yet");
-			}
-		}
-		else if (Node.Type == EonformTerrainNodeTypes::AutoLevel || Node.Type == EonformTerrainNodeTypes::Equalize)
-		{
-			Reason = TEXT("global normalization requires cached world statistics");
-		}
-		else if (Node.Type == EonformTerrainNodeTypes::HydraulicErosion
-			|| Node.Type == EonformTerrainNodeTypes::Rivers
-			|| Node.Type == EonformTerrainNodeTypes::FlowMap
-			|| Node.Type == EonformTerrainNodeTypes::FlowMapClassic)
-		{
-			Reason = TEXT("hydrology requires macro/global drainage state before independent regional refinement");
-		}
-		else
-		{
-			Reason = FString::Printf(TEXT("node type '%s' has not yet been proven region-equivalent"), *Node.Type.ToString());
-		}
-
-		if (!bNodeSupported)
+		if (!AuditNode(Node, ReferenceResolution, LocalBorderSamples, Reason))
 		{
 			Report.UnsupportedNodes.Add(Node.Id);
 			Report.Reasons.Add(FString::Printf(TEXT("%s: %s"), *Node.Type.ToString(), *Reason));
+			continue;
 		}
+		LocalBorders.Add(Node.Id, LocalBorderSamples);
 	}
 
-	Report.bSupported = Report.UnsupportedNodes.IsEmpty();
+	if (!Report.UnsupportedNodes.IsEmpty())
+	{
+		Report.bSupported = false;
+		return Report;
+	}
+
+	TMap<FGuid, int32> RequiredBorderCache;
+	TSet<FGuid> Visiting;
+	TFunction<bool(const FGuid&, int32&)> ResolveRequiredBorder = [&](const FGuid& NodeId, int32& OutRequiredBorder)
+	{
+		if (const int32* Cached = RequiredBorderCache.Find(NodeId))
+		{
+			OutRequiredBorder = *Cached;
+			return true;
+		}
+		if (Visiting.Contains(NodeId))
+		{
+			Report.UnsupportedNodes.AddUnique(NodeId);
+			Report.Reasons.AddUnique(TEXT("regional dependency analysis encountered a cycle"));
+			return false;
+		}
+
+		const int32* LocalBorder = LocalBorders.Find(NodeId);
+		if (!LocalBorder)
+		{
+			Report.UnsupportedNodes.AddUnique(NodeId);
+			Report.Reasons.AddUnique(TEXT("regional dependency analysis could not resolve a reachable node"));
+			return false;
+		}
+
+		Visiting.Add(NodeId);
+		int32 MaxUpstreamBorder = 0;
+		for (const FEonformTerrainConnection& Connection : Recipe.Connections)
+		{
+			if (Connection.ToNode != NodeId) continue;
+			int32 UpstreamBorder = 0;
+			if (!ResolveRequiredBorder(Connection.FromNode, UpstreamBorder))
+			{
+				Visiting.Remove(NodeId);
+				return false;
+			}
+			MaxUpstreamBorder = FMath::Max(MaxUpstreamBorder, UpstreamBorder);
+		}
+		Visiting.Remove(NodeId);
+
+		OutRequiredBorder = MaxUpstreamBorder + *LocalBorder;
+		RequiredBorderCache.Add(NodeId, OutRequiredBorder);
+		return true;
+	};
+
+	int32 OutputBorder = 0;
+	if (!ResolveRequiredBorder(Recipe.OutputNode, OutputBorder))
+	{
+		Report.bSupported = false;
+		return Report;
+	}
+
+	Report.RequiredBorderSamples = OutputBorder;
+	Report.bSupported = true;
 	return Report;
 }
