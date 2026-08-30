@@ -89,6 +89,23 @@ namespace EonformTerrainRegionGridPrivate
 		return true;
 	}
 
+	uint64 GetPlanningSignature()
+	{
+		const FEonformTerrainOutputEditorState& State = FEonformTerrainOutputEditorState::Get();
+		const FEonformTerrainGraphOutputSettings& Settings = State.GetSettings();
+		uint64 Signature = State.GetPublishedAnalysisRevision();
+		auto Mix = [&Signature](uint64 Value)
+		{
+			Signature ^= Value + 0x9e3779b97f4a7c15ull + (Signature << 6) + (Signature >> 2);
+		};
+		Mix(static_cast<uint64>(Settings.OutputResolution));
+		Mix(static_cast<uint64>(Settings.SectionsX));
+		Mix(static_cast<uint64>(Settings.SectionsY));
+		Mix(static_cast<uint64>(Settings.SectionLayout));
+		Mix(static_cast<uint64>(Settings.SectionComplexity));
+		return Signature;
+	}
+
 	bool ResolveCurrentBuildInput(
 		FEonformTerrainDatasetSnapshot& OutSnapshot,
 		FEonformMeshTerrainOutputSettings& OutSettings,
@@ -164,6 +181,61 @@ namespace EonformTerrainRegionGridPrivate
 		OutError.Reset();
 		return true;
 	}
+
+	bool EnsurePlannedRegions(FString* OutReason = nullptr)
+	{
+		FEonformTerrainDatasetSnapshot Snapshot;
+		FEonformMeshTerrainOutputSettings Settings;
+		FString Error;
+		if (!ResolveCurrentBuildInput(Snapshot, Settings, Error))
+		{
+			if (OutReason) *OutReason = Error;
+			return false;
+		}
+
+		const FEonformScalarField* Height = Snapshot.Dataset.FindScalarField(EonformTerrainFieldNames::Height);
+		if (!Height || !Height->IsValid())
+		{
+			if (OutReason) *OutReason = TEXT("The evaluated terrain has no valid Height field.");
+			return false;
+		}
+
+		const FIntPoint Resolution = Settings.TargetResolution.X > 1 && Settings.TargetResolution.Y > 1
+			? Settings.TargetResolution
+			: Height->Domain.Dimensions;
+		const FEonformMeshTerrainLayoutEstimate Layout = FEonformMeshTerrainOutput::EstimateLayout(Resolution, Settings);
+		if (!Layout.bValid)
+		{
+			if (OutReason) *OutReason = TEXT("The current Mesh Terrain region layout is invalid.");
+			return false;
+		}
+
+		if (!FEonformTerrainRegionRegistry::BeginCurrentPlan(Resolution, Layout.Sections, &Error))
+		{
+			if (OutReason) *OutReason = Error;
+			return false;
+		}
+
+		const int32 IntervalsX = Resolution.X - 1;
+		const int32 IntervalsY = Resolution.Y - 1;
+		for (int32 SectionY = 0; SectionY < Layout.Sections.Y; ++SectionY)
+		{
+			const int32 StartY = (SectionY * IntervalsY) / Layout.Sections.Y;
+			const int32 EndY = ((SectionY + 1) * IntervalsY) / Layout.Sections.Y;
+			for (int32 SectionX = 0; SectionX < Layout.Sections.X; ++SectionX)
+			{
+				const int32 StartX = (SectionX * IntervalsX) / Layout.Sections.X;
+				const int32 EndX = ((SectionX + 1) * IntervalsX) / Layout.Sections.X;
+				FEonformTerrainRegionRegistry::RegisterCurrentRegion(
+					FIntPoint(SectionX, SectionY),
+					FIntPoint(StartX, StartY),
+					FIntPoint(EndX, EndY));
+			}
+		}
+
+		if (OutReason) OutReason->Reset();
+		return true;
+	}
 }
 
 using namespace EonformTerrainRegionGridPrivate;
@@ -197,7 +269,7 @@ void SEonformTerrainRegionGrid::Construct(const FArguments& InArgs)
 			+ SHorizontalBox::Slot().AutoWidth().Padding(0.0f, 0.0f, 4.0f, 0.0f)
 			[
 				SNew(SButton)
-				.Text(FText::FromString(TEXT("Regenerate Selected")))
+				.Text(FText::FromString(TEXT("Generate Selected")))
 				.IsEnabled(this, &SEonformTerrainRegionGrid::HasSelection)
 				.OnClicked(this, &SEonformTerrainRegionGrid::RegenerateSelected)
 			]
@@ -241,7 +313,11 @@ void SEonformTerrainRegionGrid::Tick(
 	SCompoundWidget::Tick(AllottedGeometry, InCurrentTime, InDeltaTime);
 	SyncSelectionFromEditor();
 	const uint64 Serial = FEonformTerrainRegionRegistry::GetChangeSerial();
-	if (Serial != LastChangeSerial) Rebuild();
+	const uint64 PlanningSignature = GetPlanningSignature();
+	if (Serial != LastChangeSerial || PlanningSignature != LastPlanningSignature)
+	{
+		Rebuild();
+	}
 }
 
 FReply SEonformTerrainRegionGrid::HandleRegionClicked(FIntPoint Coordinate)
@@ -450,8 +526,12 @@ void SEonformTerrainRegionGrid::SyncSelectionFromEditor()
 
 void SEonformTerrainRegionGrid::Rebuild()
 {
-	LastChangeSerial = FEonformTerrainRegionRegistry::GetChangeSerial();
 	if (!Grid.IsValid()) return;
+
+	FString PlanningReason;
+	EnsurePlannedRegions(&PlanningReason);
+	LastChangeSerial = FEonformTerrainRegionRegistry::GetChangeSerial();
+	LastPlanningSignature = GetPlanningSignature();
 	Grid->ClearChildren();
 
 	FEonformTerrainRegionPlanIdentity Identity;
@@ -461,7 +541,12 @@ void SEonformTerrainRegionGrid::Rebuild()
 		LatestGridDimensions = FIntPoint::ZeroValue;
 		Grid->AddSlot(0, 0)
 		[
-			SNew(STextBlock).Text(FText::FromString(TEXT("Generate regional terrain to populate controls.")))
+			SNew(STextBlock)
+			.AutoWrapText(true)
+			.Text(FText::FromString(
+				PlanningReason.IsEmpty()
+					? TEXT("Connect a regional-compatible terrain graph to populate region controls.")
+					: PlanningReason))
 		];
 		return;
 	}
