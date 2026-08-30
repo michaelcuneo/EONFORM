@@ -307,6 +307,46 @@ namespace
 	}
 }
 
+bool FEonformRidgeGenerator::SampleRegionalReference(
+	const FEonformGridDomain& RidgeReferenceDomain,
+	const FEonformRidgeSettings& Settings,
+	const TArray<FIntPoint>& ReferenceCoordinates,
+	const TSharedPtr<FEonformTerrainGlobalSummaryCache, ESPMode::ThreadSafe>& SummaryCache,
+	uint64 SummaryKey,
+	TArray<float>& OutValues,
+	FString* OutError)
+{
+	if (!RidgeReferenceDomain.IsValid())
+	{
+		if (OutError) *OutError = TEXT("Regional Ridge sampling requires a valid reference domain.");
+		return false;
+	}
+
+	FRidgePointEvaluator Evaluator(RidgeReferenceDomain.Dimensions, Settings, true, OutError);
+	if (!Evaluator.IsValid()) return false;
+
+	float Minimum = 1.0f;
+	if (!ResolveExactMinimum(
+		RidgeReferenceDomain.Dimensions,
+		Settings,
+		SummaryCache,
+		SummaryKey,
+		Minimum,
+		OutError)) return false;
+
+	OutValues.SetNumUninitialized(ReferenceCoordinates.Num());
+	for (int32 I = 0; I < ReferenceCoordinates.Num(); ++I)
+	{
+		const FIntPoint Coordinate(
+			FMath::Clamp(ReferenceCoordinates[I].X, 0, RidgeReferenceDomain.Dimensions.X - 1),
+			FMath::Clamp(ReferenceCoordinates[I].Y, 0, RidgeReferenceDomain.Dimensions.Y - 1));
+		OutValues[I] = Evaluator.Final(Coordinate.X, Coordinate.Y, Minimum);
+	}
+
+	if (OutError) OutError->Reset();
+	return true;
+}
+
 bool FEonformRidgeGenerator::GenerateRegional(
 	const FEonformGridDomain& TargetDomain,
 	const FEonformGridDomain& RidgeReferenceDomain,

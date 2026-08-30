@@ -57,7 +57,20 @@ FEonformTerrainRegionalSupportReport FEonformTerrainRegionalSupport::Analyze(con
 		}
 		else if (Node.Type == EonformTerrainNodeTypes::Mountain)
 		{
-			Reason = TEXT("Mountain still requires its compound Ridge construction to adopt the streamed Ridge contract");
+			const FName Style = Node.GetName(TEXT("Style"), TEXT("Eroded"));
+			const FName Bulk = Node.GetName(TEXT("Bulk"), TEXT("Medium"));
+			if (Style == TEXT("Basic") && Bulk == TEXT("Medium"))
+			{
+				// The Mountain core resolves its three Ridge fields and pre-warp
+				// dependencies lazily in the full reference lattice. No external
+				// neighbourhood border is required. Erosion, strata and non-medium
+				// bulk variants remain fail-closed until their global contracts exist.
+				bNodeSupported = true;
+			}
+			else
+			{
+				Reason = TEXT("regional Mountain currently requires Style=Basic and Bulk=Medium; erosion, strata, and global bulk reductions are not region-equivalent yet");
+			}
 		}
 		else if (Node.Type == EonformTerrainNodeTypes::AutoLevel || Node.Type == EonformTerrainNodeTypes::Equalize)
 		{

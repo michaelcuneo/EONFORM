@@ -51,6 +51,21 @@ public:
 		uint64 SummaryKey,
 		FEonformScalarField& OutHeight,
 		FString* OutError = nullptr);
+
+	/**
+	 * Evaluate exact final Ridge values at integer coordinates of the virtual
+	 * full-world Ridge lattice. Compound nodes use this to resolve only the
+	 * displaced dependency samples they actually need instead of materialising
+	 * a guessed neighbourhood halo or duplicating Ridge internals.
+	 */
+	static bool SampleRegionalReference(
+		const FEonformGridDomain& RidgeReferenceDomain,
+		const FEonformRidgeSettings& Settings,
+		const TArray<FIntPoint>& ReferenceCoordinates,
+		const TSharedPtr<FEonformTerrainGlobalSummaryCache, ESPMode::ThreadSafe>& SummaryCache,
+		uint64 SummaryKey,
+		TArray<float>& OutValues,
+		FString* OutError = nullptr);
 };
 
 void RegisterEonformRidgeNode();

@@ -2,6 +2,7 @@
 
 #include "EonformGridDomain.h"
 #include "EonformHydraulicErosion.h"
+#include "EonformMountainRegional.h"
 #include "EonformRidgeNode.h"
 #include "EonformScalarField.h"
 #include "EonformTerrainDerivedData.h"
@@ -123,6 +124,44 @@ namespace
 			FIntPoint(Width, Height),
 			FVector2d(-WorldWidthCm * 0.5, -WorldDepthCm * 0.5),
 			FVector2d(WorldWidthCm * 0.5, WorldDepthCm * 0.5));
+	}
+
+	FIntPoint ResolveMountainReferenceResolution(const FEonformTerrainEvaluationContext& Context)
+	{
+		const FIntPoint Requested = Context.ReferenceResolution.X > 1 && Context.ReferenceResolution.Y > 1
+			? Context.ReferenceResolution
+			: Context.TargetResolution;
+		const int32 Width = FMath::Clamp(Requested.X > 1 ? Requested.X : 257, 2, 4097);
+		const int32 Height = FMath::Clamp(Requested.Y > 1 ? Requested.Y : Width, 2, 4097);
+		return FIntPoint(Width, Height);
+	}
+
+	FEonformGridDomain BuildMountainReferenceDomain(const FEonformTerrainEvaluationContext& Context)
+	{
+		const FIntPoint Dimensions = ResolveMountainReferenceResolution(Context);
+		const FEonformGridDomain Reference = Context.ResolveReferenceDomain(
+			Dimensions,
+			FVector2d(-50000.0, -50000.0),
+			FVector2d(50000.0, 50000.0));
+		if (!Reference.IsValid()) return FEonformGridDomain();
+		return FEonformGridDomain::Make(Dimensions, Reference.WorldMin, Reference.WorldMax);
+	}
+
+	FEonformGridDomain BuildMountainTargetDomain(
+		const FEonformTerrainEvaluationContext& Context,
+		const FEonformGridDomain& ReferenceDomain)
+	{
+		FIntPoint Dimensions = Context.TargetResolution;
+		if (Dimensions.X < 2 || Dimensions.Y < 2) Dimensions = ReferenceDomain.Dimensions;
+		if (Context.HasRegion())
+		{
+			return FEonformGridDomain::Make(
+				Dimensions,
+				Context.Region.WorldMinCm,
+				Context.Region.WorldMaxCm,
+				Context.Region.BorderSamples);
+		}
+		return FEonformGridDomain::Make(Dimensions, ReferenceDomain.WorldMin, ReferenceDomain.WorldMax);
 	}
 
 	float ResolveHeightScale(const FEonformTerrainEvaluationContext& Context)
@@ -415,10 +454,9 @@ namespace
 		const float XCenter = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("X"), 0.5)), 0.0f, 1.0f);
 		const float YCenter = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Y"), 0.5)), 0.0f, 1.0f);
 
-		const FEonformGridDomain Domain = BuildMountainDomain(Context);
-		if (!Domain.IsValid())
+		if (Context.HasRegion() && (Style != TEXT("Basic") || Bulk != TEXT("Medium")))
 		{
-			Error = TEXT("Mountain produced an invalid evaluation domain.");
+			Error = TEXT("Regional Mountain currently requires Style=Basic and Bulk=Medium; erosion, strata, and global bulk reductions remain fail-closed.");
 			return false;
 		}
 
@@ -427,34 +465,71 @@ namespace
 		const FEonformRidgeSettings RidgeSettings1 = MakeMountainRidgeSettings(RidgeRandom, 1, Seed + 1);
 		const FEonformRidgeSettings RidgeSettings2 = MakeMountainRidgeSettings(RidgeRandom, 2, Seed + 3);
 
-		FEonformScalarField Ridge0;
-		FEonformScalarField Ridge1;
-		FEonformScalarField Ridge2;
-		if (!FEonformRidgeGenerator::Generate(Domain, RidgeSettings0, Ridge0, &Error)
-			|| !FEonformRidgeGenerator::Generate(Domain, RidgeSettings1, Ridge1, &Error)
-			|| !FEonformRidgeGenerator::Generate(Domain, RidgeSettings2, Ridge2, &Error))
+		FEonformScalarField Height;
+		if (Context.HasRegion())
 		{
-			Error = Error.IsEmpty() ? TEXT("Mountain could not generate its Ridge fields.") : Error;
-			return false;
-		}
-
-		FEonformScalarField Height = MakeHeightField(Domain);
-		for (int32 Y = 0; Y < Domain.Dimensions.Y; ++Y)
-		{
-			for (int32 X = 0; X < Domain.Dimensions.X; ++X)
+			const FEonformGridDomain ReferenceDomain = BuildMountainReferenceDomain(Context);
+			const FEonformGridDomain TargetDomain = BuildMountainTargetDomain(Context, ReferenceDomain);
+			if (!ReferenceDomain.IsValid() || !TargetDomain.IsValid())
 			{
-				Height.AtInterior(X, Y) = Ridge0.AtInterior(X, Y) + Ridge1.AtInterior(X, Y) + Ridge2.AtInterior(X, Y);
+				Error = TEXT("Mountain produced an invalid regional evaluation domain.");
+				return false;
 			}
+			if (!EonformMountainRegional::GenerateCore(
+				TargetDomain,
+				ReferenceDomain,
+				RidgeSettings0,
+				RidgeSettings1,
+				RidgeSettings2,
+				MountainScale,
+				XCenter,
+				YCenter,
+				Seed + 27,
+				Style != TEXT("Old"),
+				Node.Id,
+				Context.GlobalSummaryCache,
+				Height,
+				&Error)) return false;
+		}
+		else
+		{
+			const FEonformGridDomain Domain = BuildMountainDomain(Context);
+			if (!Domain.IsValid())
+			{
+				Error = TEXT("Mountain produced an invalid evaluation domain.");
+				return false;
+			}
+
+			FEonformScalarField Ridge0;
+			FEonformScalarField Ridge1;
+			FEonformScalarField Ridge2;
+			if (!FEonformRidgeGenerator::Generate(Domain, RidgeSettings0, Ridge0, &Error)
+				|| !FEonformRidgeGenerator::Generate(Domain, RidgeSettings1, Ridge1, &Error)
+				|| !FEonformRidgeGenerator::Generate(Domain, RidgeSettings2, Ridge2, &Error))
+			{
+				Error = Error.IsEmpty() ? TEXT("Mountain could not generate its Ridge fields.") : Error;
+				return false;
+			}
+
+			Height = MakeHeightField(Domain);
+			for (int32 Y = 0; Y < Domain.Dimensions.Y; ++Y)
+			{
+				for (int32 X = 0; X < Domain.Dimensions.X; ++X)
+				{
+					Height.AtInterior(X, Y) = Ridge0.AtInterior(X, Y) + Ridge1.AtInterior(X, Y) + Ridge2.AtInterior(X, Y);
+				}
+			}
+
+			EonformTerrainProceduralOps::ApplyRadialGradientMultiply(
+				Height,
+				static_cast<float>(Domain.Dimensions.X) * XCenter,
+				static_cast<float>(Domain.Dimensions.Y) * YCenter,
+				static_cast<float>(Domain.Dimensions.X) * MountainScale,
+				1.0f);
+
+			if (Style != TEXT("Old") && !ApplyMountainPreWarp(Height, Seed + 27, Error)) return false;
 		}
 
-		EonformTerrainProceduralOps::ApplyRadialGradientMultiply(
-			Height,
-			static_cast<float>(Domain.Dimensions.X) * XCenter,
-			static_cast<float>(Domain.Dimensions.Y) * YCenter,
-			static_cast<float>(Domain.Dimensions.X) * MountainScale,
-			1.0f);
-
-		if (Style != TEXT("Old") && !ApplyMountainPreWarp(Height, Seed + 27, Error)) return false;
 		for (float& Value : Height.Values) Value *= HeightAmount;
 
 		const float HeightScale = ResolveHeightScale(Context);
