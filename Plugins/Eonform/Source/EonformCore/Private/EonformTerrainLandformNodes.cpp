@@ -5,6 +5,7 @@
 #include "EonformMountainRegional.h"
 #include "EonformRidgeNode.h"
 #include "EonformScalarField.h"
+#include "EonformTerrainContext.h"
 #include "EonformTerrainDerivedData.h"
 #include "EonformTerrainEvaluator.h"
 #include "EonformTerrainFieldNames.h"
@@ -328,17 +329,26 @@ namespace
 		}
 	}
 
-	void ApplyBulk(FEonformScalarField& Height, FName Bulk)
+	float ApplyBulkValue(float Value, FName Bulk, float MaxHeight)
+	{
+		if (Bulk == TEXT("Medium") || MaxHeight <= UE_SMALL_NUMBER) return Value;
+		const float Exponent = Bulk == TEXT("Low") ? 1.34f : 0.76f;
+		const float H01 = FMath::Clamp(Value / MaxHeight, 0.0f, 1.0f);
+		return FMath::Pow(H01, Exponent) * MaxHeight;
+	}
+
+	void ApplyBulk(FEonformScalarField& Height, FName Bulk, float KnownMaximum = 0.0f)
 	{
 		if (Bulk == TEXT("Medium")) return;
-		float MaxHeight = 0.0f;
-		for (const float Value : Height.Values) MaxHeight = FMath::Max(MaxHeight, Value);
+		float MaxHeight = KnownMaximum;
+		if (MaxHeight <= UE_SMALL_NUMBER)
+		{
+			for (const float Value : Height.Values) MaxHeight = FMath::Max(MaxHeight, Value);
+		}
 		if (MaxHeight <= UE_SMALL_NUMBER) return;
-		const float Exponent = Bulk == TEXT("Low") ? 1.34f : 0.76f;
 		for (float& Value : Height.Values)
 		{
-			const float H01 = FMath::Clamp(Value / MaxHeight, 0.0f, 1.0f);
-			Value = FMath::Pow(H01, Exponent) * MaxHeight;
+			Value = ApplyBulkValue(Value, Bulk, MaxHeight);
 		}
 	}
 
@@ -376,9 +386,27 @@ namespace
 		return true;
 	}
 
-	bool RebuildSemantics(FEonformTerrainDataset& Dataset, float HeightScale, const FEonformTerrainPhysicalMetrics& Metrics, FString& Error)
+	bool RebuildSemantics(
+		FEonformTerrainDataset& Dataset,
+		float HeightScale,
+		const FEonformTerrainPhysicalMetrics& Metrics,
+		const FEonformTerrainContextEvaluationScope* EvaluationScope,
+		FString& Error)
 	{
-		if (!FEonformTerrainDerivedData::EnsureContext(Dataset, HeightScale, Metrics, &Error)) return false;
+		if (EvaluationScope)
+		{
+			const FEonformScalarField* HeightForContext = Dataset.FindScalarField(EonformTerrainFieldNames::Height);
+			if (!HeightForContext
+				|| !FEonformTerrainContext::Analyze(*HeightForContext, HeightScale, Metrics, *EvaluationScope, Dataset, &Error))
+			{
+				return false;
+			}
+		}
+		else if (!FEonformTerrainDerivedData::EnsureContext(Dataset, HeightScale, Metrics, &Error))
+		{
+			return false;
+		}
+
 		const FEonformScalarField* Height = Dataset.FindScalarField(EonformTerrainFieldNames::Height);
 		const FEonformScalarField* Slope = Dataset.FindScalarField(EonformTerrainFieldNames::SlopeDegrees);
 		const FEonformScalarField* Concavity = Dataset.FindScalarField(EonformTerrainFieldNames::Concavity);
@@ -389,8 +417,13 @@ namespace
 			return false;
 		}
 
-		float MaxHeight = 0.0f;
-		for (const float Value : Height->Values) MaxHeight = FMath::Max(MaxHeight, Value);
+		float MaxHeight = EvaluationScope && EvaluationScope->bUseGlobalHeightRange
+			? EvaluationScope->GlobalMaximumHeight
+			: 0.0f;
+		if (!EvaluationScope || !EvaluationScope->bUseGlobalHeightRange)
+		{
+			for (const float Value : Height->Values) MaxHeight = FMath::Max(MaxHeight, Value);
+		}
 		const float Denominator = FMath::Max(MaxHeight, UE_SMALL_NUMBER);
 		auto MakeField = [Height](FName Name)
 		{
@@ -453,10 +486,17 @@ namespace
 		const int32 Seed = static_cast<int32>(Node.GetInteger(TEXT("Seed"), 1337));
 		const float XCenter = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("X"), 0.5)), 0.0f, 1.0f);
 		const float YCenter = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Y"), 0.5)), 0.0f, 1.0f);
+		const FEonformTerrainValue* const* InputPtr = Inputs.Find(TEXT("In"));
+		const bool bHasInputMultiply = InputPtr && *InputPtr;
 
-		if (Context.HasRegion() && (Style != TEXT("Basic") || Bulk != TEXT("Medium")))
+		if (Context.HasRegion() && Style != TEXT("Basic"))
 		{
-			Error = TEXT("Regional Mountain currently requires Style=Basic and Bulk=Medium; erosion, strata, and global bulk reductions remain fail-closed.");
+			Error = TEXT("Regional Mountain currently requires Style=Basic; erosion-backed styles remain fail-closed until their global process state is cached.");
+			return false;
+		}
+		if (Context.HasRegion() && bHasInputMultiply)
+		{
+			Error = TEXT("Regional Mountain with a connected In multiplier requires a generic upstream whole-world summary and remains fail-closed.");
 			return false;
 		}
 
@@ -466,6 +506,8 @@ namespace
 		const FEonformRidgeSettings RidgeSettings2 = MakeMountainRidgeSettings(RidgeRandom, 2, Seed + 3);
 
 		FEonformScalarField Height;
+		FEonformTerrainContextEvaluationScope RegionalSemanticScope;
+		float RegionalBulkMaximum = 0.0f;
 		if (Context.HasRegion())
 		{
 			const FEonformGridDomain ReferenceDomain = BuildMountainReferenceDomain(Context);
@@ -473,6 +515,11 @@ namespace
 			if (!ReferenceDomain.IsValid() || !TargetDomain.IsValid())
 			{
 				Error = TEXT("Mountain produced an invalid regional evaluation domain.");
+				return false;
+			}
+			if (TargetDomain.BorderSamples < 1)
+			{
+				Error = TEXT("Regional Mountain requires one scheduler border sample for exact semantic derivatives.");
 				return false;
 			}
 			if (!EonformMountainRegional::GenerateCore(
@@ -485,11 +532,38 @@ namespace
 				XCenter,
 				YCenter,
 				Seed + 27,
-				Style != TEXT("Old"),
+				true,
 				Node.Id,
 				Context.GlobalSummaryCache,
 				Height,
 				&Error)) return false;
+
+			float CoreMinimum = 0.0f;
+			float CoreMaximum = 0.0f;
+			if (!EonformMountainRegional::ResolveCoreRange(
+				ReferenceDomain,
+				RidgeSettings0,
+				RidgeSettings1,
+				RidgeSettings2,
+				MountainScale,
+				XCenter,
+				YCenter,
+				Seed + 27,
+				true,
+				Node.Id,
+				Context.GlobalSummaryCache,
+				CoreMinimum,
+				CoreMaximum,
+				&Error)) return false;
+
+			const float ScaledMinimum = CoreMinimum * HeightAmount;
+			const float ScaledMaximum = CoreMaximum * HeightAmount;
+			RegionalBulkMaximum = ScaledMaximum;
+			RegionalSemanticScope.ReferenceResolution = ReferenceDomain.Dimensions;
+			RegionalSemanticScope.ReferenceDomain = ReferenceDomain;
+			RegionalSemanticScope.bUseGlobalHeightRange = true;
+			RegionalSemanticScope.GlobalMinimumHeight = ApplyBulkValue(ScaledMinimum, Bulk, ScaledMaximum);
+			RegionalSemanticScope.GlobalMaximumHeight = ApplyBulkValue(ScaledMaximum, Bulk, ScaledMaximum);
 		}
 		else
 		{
@@ -536,7 +610,7 @@ namespace
 		FEonformTerrainDataset Dataset;
 		if (!ApplyStyleErosion(Height, Dataset, Style, bReduceDetails, Seed, HeightScale, Context, Error)) return false;
 		if (Style == TEXT("Strata")) ApplyStrataProfile(Height, bReduceDetails, Seed);
-		ApplyBulk(Height, Bulk);
+		ApplyBulk(Height, Bulk, Context.HasRegion() ? RegionalBulkMaximum : 0.0f);
 		if (!ApplyInputMultiply(Height, Inputs, Error)) return false;
 
 		Height.Descriptor.Name = EonformTerrainFieldNames::Height;
@@ -545,7 +619,12 @@ namespace
 			Error = TEXT("Mountain could not publish Height.");
 			return false;
 		}
-		if (!RebuildSemantics(Dataset, HeightScale, Context.PhysicalMetrics, Error)) return false;
+		if (!RebuildSemantics(
+			Dataset,
+			HeightScale,
+			Context.PhysicalMetrics,
+			Context.HasRegion() ? &RegionalSemanticScope : nullptr,
+			Error)) return false;
 
 		auto Publish = [&](FName OutputName, FName FieldName)
 		{

@@ -36,6 +36,22 @@ namespace
 		OutField = *Existing;
 		return true;
 	}
+
+	FIntPoint ResolveReferenceCoordinate(
+		const FEonformGridDomain& Domain,
+		const FVector2d& World)
+	{
+		const FVector2d Size = Domain.WorldSize();
+		return FIntPoint(
+			FMath::Clamp(
+				FMath::RoundToInt((World.X - Domain.WorldMin.X) / Size.X * static_cast<double>(Domain.Dimensions.X - 1)),
+				0,
+				Domain.Dimensions.X - 1),
+			FMath::Clamp(
+				FMath::RoundToInt((World.Y - Domain.WorldMin.Y) / Size.Y * static_cast<double>(Domain.Dimensions.Y - 1)),
+				0,
+				Domain.Dimensions.Y - 1));
+	}
 }
 
 bool FEonformTerrainContext::Analyze(
@@ -51,6 +67,23 @@ bool FEonformTerrainContext::Analyze(
 	const FEonformScalarField& Height,
 	float HeightScale,
 	const FEonformTerrainPhysicalMetrics& PhysicalMetrics,
+	FEonformTerrainDataset& InOutDataset,
+	FString* OutError)
+{
+	return Analyze(
+		Height,
+		HeightScale,
+		PhysicalMetrics,
+		FEonformTerrainContextEvaluationScope(),
+		InOutDataset,
+		OutError);
+}
+
+bool FEonformTerrainContext::Analyze(
+	const FEonformScalarField& Height,
+	float HeightScale,
+	const FEonformTerrainPhysicalMetrics& PhysicalMetrics,
+	const FEonformTerrainContextEvaluationScope& EvaluationScope,
 	FEonformTerrainDataset& InOutDataset,
 	FString* OutError)
 {
@@ -70,7 +103,22 @@ bool FEonformTerrainContext::Analyze(
 		return Fail(TEXT("Terrain Context received an invalid Height domain."));
 	}
 
-	const FVector2d PhysicalCellSizeMeters = PhysicalMetrics.ResolveSampleSpacingMeters(Dimensions, DomainCellSize);
+	const bool bRegional = EvaluationScope.IsRegional();
+	if (bRegional && Height.Domain.BorderSamples < 1)
+	{
+		return Fail(TEXT("Regional Terrain Context requires one scheduler border sample for exact derivatives."));
+	}
+	if (EvaluationScope.bUseGlobalHeightRange
+		&& (!FMath::IsFinite(EvaluationScope.GlobalMinimumHeight)
+			|| !FMath::IsFinite(EvaluationScope.GlobalMaximumHeight)
+			|| EvaluationScope.GlobalMaximumHeight < EvaluationScope.GlobalMinimumHeight))
+	{
+		return Fail(TEXT("Terrain Context received an invalid global Height range."));
+	}
+
+	const FIntPoint PhysicalResolution = bRegional ? EvaluationScope.ReferenceResolution : Dimensions;
+	const FVector2d PhysicalFallbackCellSize = bRegional ? EvaluationScope.ReferenceDomain.GetCellSize() : DomainCellSize;
+	const FVector2d PhysicalCellSizeMeters = PhysicalMetrics.ResolveSampleSpacingMeters(PhysicalResolution, PhysicalFallbackCellSize);
 	const double PhysicalHeightScaleMeters = PhysicalMetrics.ResolveElevationScaleMeters(HeightScale);
 	if (PhysicalCellSizeMeters.X <= UE_DOUBLE_SMALL_NUMBER || PhysicalCellSizeMeters.Y <= UE_DOUBLE_SMALL_NUMBER
 		|| PhysicalHeightScaleMeters <= UE_DOUBLE_SMALL_NUMBER)
@@ -92,14 +140,22 @@ bool FEonformTerrainContext::Analyze(
 	if (!bHasFoothill) Foothill = MakeField(Height.Domain, EonformTerrainFieldNames::Foothill);
 	if (!bHasPlains) Plains = MakeField(Height.Domain, EonformTerrainFieldNames::Plains);
 
-	float MinHeight = TNumericLimits<float>::Max();
-	float MaxHeight = TNumericLimits<float>::Lowest();
-	for (const float Value : Height.Values)
+	float MinHeight = EvaluationScope.bUseGlobalHeightRange
+		? EvaluationScope.GlobalMinimumHeight
+		: TNumericLimits<float>::Max();
+	float MaxHeight = EvaluationScope.bUseGlobalHeightRange
+		? EvaluationScope.GlobalMaximumHeight
+		: TNumericLimits<float>::Lowest();
+	if (!EvaluationScope.bUseGlobalHeightRange)
 	{
-		MinHeight = FMath::Min(MinHeight, Value);
-		MaxHeight = FMath::Max(MaxHeight, Value);
+		for (const float Value : Height.Values)
+		{
+			MinHeight = FMath::Min(MinHeight, Value);
+			MaxHeight = FMath::Max(MaxHeight, Value);
+		}
 	}
 	const float HeightRange = FMath::Max(MaxHeight - MinHeight, UE_SMALL_NUMBER);
+	const int32 Border = Height.Domain.BorderSamples;
 
 	for (int32 Y = 0; Y < Dimensions.Y; ++Y)
 	{
@@ -108,15 +164,48 @@ bool FEonformTerrainContext::Analyze(
 			const float Center = Height.AtInterior(X, Y);
 			Elevation.AtInterior(X, Y) = FMath::Clamp((Center - MinHeight) / HeightRange, 0.0f, 1.0f);
 
-			const int32 XL = FMath::Max(0, X - 1);
-			const int32 XR = FMath::Min(Dimensions.X - 1, X + 1);
-			const int32 YD = FMath::Max(0, Y - 1);
-			const int32 YU = FMath::Min(Dimensions.Y - 1, Y + 1);
+			float Left = Center;
+			float Right = Center;
+			float Down = Center;
+			float Up = Center;
+			int32 HorizontalSpan = 0;
+			int32 VerticalSpan = 0;
+			FIntPoint ReferenceCoordinate(X, Y);
 
-			const double DX = static_cast<double>(Height.AtInterior(XR, Y) - Height.AtInterior(XL, Y)) * PhysicalHeightScaleMeters
-				/ FMath::Max(static_cast<double>(XR - XL) * PhysicalCellSizeMeters.X, UE_DOUBLE_SMALL_NUMBER);
-			const double DY = static_cast<double>(Height.AtInterior(X, YU) - Height.AtInterior(X, YD)) * PhysicalHeightScaleMeters
-				/ FMath::Max(static_cast<double>(YU - YD) * PhysicalCellSizeMeters.Y, UE_DOUBLE_SMALL_NUMBER);
+			if (bRegional)
+			{
+				ReferenceCoordinate = ResolveReferenceCoordinate(
+					EvaluationScope.ReferenceDomain,
+					Height.Domain.InteriorSampleToWorld(X, Y));
+				const bool bHasLeft = ReferenceCoordinate.X > 0;
+				const bool bHasRight = ReferenceCoordinate.X < EvaluationScope.ReferenceResolution.X - 1;
+				const bool bHasDown = ReferenceCoordinate.Y > 0;
+				const bool bHasUp = ReferenceCoordinate.Y < EvaluationScope.ReferenceResolution.Y - 1;
+				if (bHasLeft) Left = Height.AtStorage(X + Border - 1, Y + Border);
+				if (bHasRight) Right = Height.AtStorage(X + Border + 1, Y + Border);
+				if (bHasDown) Down = Height.AtStorage(X + Border, Y + Border - 1);
+				if (bHasUp) Up = Height.AtStorage(X + Border, Y + Border + 1);
+				HorizontalSpan = static_cast<int32>(bHasLeft) + static_cast<int32>(bHasRight);
+				VerticalSpan = static_cast<int32>(bHasDown) + static_cast<int32>(bHasUp);
+			}
+			else
+			{
+				const int32 XL = FMath::Max(0, X - 1);
+				const int32 XR = FMath::Min(Dimensions.X - 1, X + 1);
+				const int32 YD = FMath::Max(0, Y - 1);
+				const int32 YU = FMath::Min(Dimensions.Y - 1, Y + 1);
+				Left = Height.AtInterior(XL, Y);
+				Right = Height.AtInterior(XR, Y);
+				Down = Height.AtInterior(X, YD);
+				Up = Height.AtInterior(X, YU);
+				HorizontalSpan = XR - XL;
+				VerticalSpan = YU - YD;
+			}
+
+			const double DX = static_cast<double>(Right - Left) * PhysicalHeightScaleMeters
+				/ FMath::Max(static_cast<double>(HorizontalSpan) * PhysicalCellSizeMeters.X, UE_DOUBLE_SMALL_NUMBER);
+			const double DY = static_cast<double>(Up - Down) * PhysicalHeightScaleMeters
+				/ FMath::Max(static_cast<double>(VerticalSpan) * PhysicalCellSizeMeters.Y, UE_DOUBLE_SMALL_NUMBER);
 			const double Gradient = FMath::Sqrt(DX * DX + DY * DY);
 			Slope.AtInterior(X, Y) = static_cast<float>(FMath::RadiansToDegrees(FMath::Atan(Gradient)));
 
@@ -127,11 +216,23 @@ bool FEonformTerrainContext::Analyze(
 				for (int32 OX = -1; OX <= 1; ++OX)
 				{
 					if (OX == 0 && OY == 0) continue;
-					const int32 NX = X + OX;
-					const int32 NY = Y + OY;
-					if (NX < 0 || NX >= Dimensions.X || NY < 0 || NY >= Dimensions.Y) continue;
-					NeighborSum += Height.AtInterior(NX, NY);
-					++NeighborCount;
+					if (bRegional)
+					{
+						const int32 RX = ReferenceCoordinate.X + OX;
+						const int32 RY = ReferenceCoordinate.Y + OY;
+						if (RX < 0 || RX >= EvaluationScope.ReferenceResolution.X
+							|| RY < 0 || RY >= EvaluationScope.ReferenceResolution.Y) continue;
+						NeighborSum += Height.AtStorage(X + Border + OX, Y + Border + OY);
+						++NeighborCount;
+					}
+					else
+					{
+						const int32 NX = X + OX;
+						const int32 NY = Y + OY;
+						if (NX < 0 || NX >= Dimensions.X || NY < 0 || NY >= Dimensions.Y) continue;
+						NeighborSum += Height.AtInterior(NX, NY);
+						++NeighborCount;
+					}
 				}
 			}
 

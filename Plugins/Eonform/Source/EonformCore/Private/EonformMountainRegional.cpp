@@ -47,6 +47,16 @@ namespace
 		return Key;
 	}
 
+	uint64 MountainCoreRangeSummaryKey(const FGuid& NodeId, bool bMaximum)
+	{
+		const uint64 High = (static_cast<uint64>(NodeId.A) << 32) | static_cast<uint64>(NodeId.B);
+		const uint64 Low = (static_cast<uint64>(NodeId.C) << 32) | static_cast<uint64>(NodeId.D);
+		uint64 Key = High ^ ((Low << 17) | (Low >> 47));
+		Key ^= 0x4D4F554E52414E47ull;
+		Key ^= bMaximum ? 0xA11CE5A1F00D0001ull : 0xA11CE5A1F00D0002ull;
+		return Key;
+	}
+
 	float RadialMultiplier(const FVector2D& Coordinate, const FIntPoint& Dimensions, float MountainScale, float XCenter, float YCenter)
 	{
 		const float CenterX = static_cast<float>(Dimensions.X) * XCenter;
@@ -217,4 +227,101 @@ bool EonformMountainRegional::GenerateCore(
 
 	if (OutError) OutError->Reset();
 	return OutHeight.IsValid();
+}
+
+bool EonformMountainRegional::ResolveCoreRange(
+	const FEonformGridDomain& ReferenceDomain,
+	const FEonformRidgeSettings& RidgeSettings0,
+	const FEonformRidgeSettings& RidgeSettings1,
+	const FEonformRidgeSettings& RidgeSettings2,
+	float MountainScale,
+	float XCenter,
+	float YCenter,
+	int32 WarpSeed,
+	bool bApplyPreWarp,
+	const FGuid& MountainNodeId,
+	const TSharedPtr<FEonformTerrainGlobalSummaryCache, ESPMode::ThreadSafe>& SummaryCache,
+	float& OutMinimum,
+	float& OutMaximum,
+	FString* OutError)
+{
+	if (!ReferenceDomain.IsValid() || !SummaryCache.IsValid())
+	{
+		if (OutError) *OutError = TEXT("Mountain core range requires a valid reference domain and shared summary cache.");
+		return false;
+	}
+
+	const uint64 MinimumKey = MountainCoreRangeSummaryKey(MountainNodeId, false);
+	const uint64 MaximumKey = MountainCoreRangeSummaryKey(MountainNodeId, true);
+	float CachedMinimum = 0.0f;
+	float CachedMaximum = 0.0f;
+	if (SummaryCache->Find(MinimumKey, CachedMinimum) && SummaryCache->Find(MaximumKey, CachedMaximum))
+	{
+		OutMinimum = CachedMinimum;
+		OutMaximum = CachedMaximum;
+		if (OutError) OutError->Reset();
+		return true;
+	}
+
+	float Minimum = TNumericLimits<float>::Max();
+	float Maximum = TNumericLimits<float>::Lowest();
+	for (int32 Row = 0; Row < ReferenceDomain.Dimensions.Y; Row += 2)
+	{
+		int32 Row0 = Row;
+		int32 Row1 = FMath::Min(Row + 1, ReferenceDomain.Dimensions.Y - 1);
+		if (Row0 == Row1)
+		{
+			Row0 = FMath::Max(0, Row0 - 1);
+		}
+
+		const FVector2d WorldMin = ReferenceDomain.InteriorSampleToWorld(0, Row0);
+		const FVector2d WorldMax = ReferenceDomain.InteriorSampleToWorld(ReferenceDomain.Dimensions.X - 1, Row1);
+		const FEonformGridDomain RowDomain = FEonformGridDomain::Make(
+			FIntPoint(ReferenceDomain.Dimensions.X, 2),
+			WorldMin,
+			WorldMax);
+
+		FEonformScalarField Rows;
+		if (!GenerateCore(
+			RowDomain,
+			ReferenceDomain,
+			RidgeSettings0,
+			RidgeSettings1,
+			RidgeSettings2,
+			MountainScale,
+			XCenter,
+			YCenter,
+			WarpSeed,
+			bApplyPreWarp,
+			MountainNodeId,
+			SummaryCache,
+			Rows,
+			OutError))
+		{
+			return false;
+		}
+
+		for (int32 Y = 0; Y < Rows.Domain.Dimensions.Y; ++Y)
+		{
+			for (int32 X = 0; X < Rows.Domain.Dimensions.X; ++X)
+			{
+				const float Value = Rows.AtInterior(X, Y);
+				Minimum = FMath::Min(Minimum, Value);
+				Maximum = FMath::Max(Maximum, Value);
+			}
+		}
+	}
+
+	if (!FMath::IsFinite(Minimum) || !FMath::IsFinite(Maximum) || Maximum < Minimum)
+	{
+		if (OutError) *OutError = TEXT("Mountain core range reduction produced invalid extrema.");
+		return false;
+	}
+
+	SummaryCache->Store(MinimumKey, Minimum);
+	SummaryCache->Store(MaximumKey, Maximum);
+	OutMinimum = Minimum;
+	OutMaximum = Maximum;
+	if (OutError) OutError->Reset();
+	return true;
 }

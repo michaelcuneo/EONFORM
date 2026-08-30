@@ -9,7 +9,32 @@
 
 namespace
 {
+	bool HasConnectedInput(
+		const FEonformTerrainRecipe& Recipe,
+		const FGuid& NodeId,
+		FName InputName)
+	{
+		for (const FEonformTerrainConnection& Connection : Recipe.Connections)
+		{
+			if (Connection.ToNode == NodeId && Connection.ToInput == InputName) return true;
+		}
+		return false;
+	}
+
+	bool HasConnectedSemanticOutput(
+		const FEonformTerrainRecipe& Recipe,
+		const FGuid& NodeId)
+	{
+		for (const FEonformTerrainConnection& Connection : Recipe.Connections)
+		{
+			if (Connection.FromNode != NodeId) continue;
+			if (Connection.FromOutput != TEXT("Out") && Connection.FromOutput != TEXT("Terrain")) return true;
+		}
+		return false;
+	}
+
 	bool AuditNode(
+		const FEonformTerrainRecipe& Recipe,
 		const FEonformTerrainNode& Node,
 		const FIntPoint& ReferenceResolution,
 		int32& OutLocalBorderSamples,
@@ -83,18 +108,39 @@ namespace
 		if (Node.Type == EonformTerrainNodeTypes::Mountain)
 		{
 			const FName Style = Node.GetName(TEXT("Style"), TEXT("Eroded"));
-			const FName Bulk = Node.GetName(TEXT("Bulk"), TEXT("Medium"));
-			if (Style == TEXT("Basic") && Bulk == TEXT("Medium"))
+			if (Style != TEXT("Basic"))
 			{
-				return true;
+				OutReason = TEXT("regional Mountain currently requires Style=Basic; erosion-backed styles require cached global process state");
+				return false;
 			}
-			OutReason = TEXT("regional Mountain currently requires Style=Basic and Bulk=Medium; erosion, strata, and global bulk reductions are not region-equivalent yet");
+			if (HasConnectedInput(Recipe, Node.Id, TEXT("In")))
+			{
+				OutReason = TEXT("regional Mountain with a connected In multiplier requires a generic upstream whole-world summary");
+				return false;
+			}
+			if (HasConnectedSemanticOutput(Recipe, Node.Id))
+			{
+				OutReason = TEXT("regional Mountain semantic scalar outputs are exact on region interiors but do not yet publish processed guard bands for downstream neighbourhood nodes");
+				return false;
+			}
+
+			// The procedural core is sampled directly from the virtual full-world
+			// lattice and its min/max are streamed into the shared summary cache.
+			// One local sample remains necessary for exact Terrain Context slope and
+			// curvature semantics published by Mountain.
+			OutLocalBorderSamples = 1;
+			return true;
+		}
+
+		if (Node.Type == EonformTerrainNodeTypes::AutoLevel)
+		{
+			OutReason = TEXT("regional AutoLevel requires an exact upstream whole-world min/max summary prepass");
 			return false;
 		}
 
-		if (Node.Type == EonformTerrainNodeTypes::AutoLevel || Node.Type == EonformTerrainNodeTypes::Equalize)
+		if (Node.Type == EonformTerrainNodeTypes::Equalize)
 		{
-			OutReason = TEXT("global normalization requires cached world statistics");
+			OutReason = TEXT("regional Equalize requires the exact whole-world value distribution/ranks, not only scalar extrema");
 			return false;
 		}
 
@@ -151,7 +197,7 @@ FEonformTerrainRegionalSupportReport FEonformTerrainRegionalSupport::Analyze(
 
 		int32 LocalBorderSamples = 0;
 		FString Reason;
-		if (!AuditNode(Node, ReferenceResolution, LocalBorderSamples, Reason))
+		if (!AuditNode(Recipe, Node, ReferenceResolution, LocalBorderSamples, Reason))
 		{
 			Report.UnsupportedNodes.Add(Node.Id);
 			Report.Reasons.Add(FString::Printf(TEXT("%s: %s"), *Node.Type.ToString(), *Reason));
