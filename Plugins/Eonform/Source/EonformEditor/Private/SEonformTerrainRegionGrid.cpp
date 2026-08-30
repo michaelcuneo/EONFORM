@@ -16,7 +16,7 @@
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/Text/STextBlock.h"
 
-namespace
+namespace EonformTerrainRegionGridPrivate
 {
 	constexpr double OutputCentimetersPerKilometer = 100000.0;
 	constexpr double OutputCentimetersPerMeter = 100.0;
@@ -165,6 +165,8 @@ namespace
 		return true;
 	}
 }
+
+using namespace EonformTerrainRegionGridPrivate;
 
 void SEonformTerrainRegionGrid::Construct(const FArguments& InArgs)
 {
