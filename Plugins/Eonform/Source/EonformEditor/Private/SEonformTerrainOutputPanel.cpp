@@ -163,6 +163,8 @@ bool SEonformTerrainOutputPanel::ApplyPhysicalScale(
 	const double TargetDepthCm = State.WorldDepthKilometers * OutputCentimetersPerKilometer;
 	const double TargetElevationCm = State.ElevationScaleMeters * OutputCentimetersPerMeter;
 
+	InOutSettings.SourceId = Snapshot.SourceId;
+	InOutSettings.SourceRevision = Snapshot.Revision;
 	InOutSettings.HorizontalScale = 1.0;
 	InOutSettings.HorizontalScaleXY = FVector2d(TargetWidthCm / SourceWidth, TargetDepthCm / SourceDepth);
 	InOutSettings.VerticalScale = TargetElevationCm / FMath::Max(static_cast<double>(Snapshot.Metadata.HeightScale), UE_DOUBLE_SMALL_NUMBER);
