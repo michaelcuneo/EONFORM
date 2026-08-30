@@ -18,8 +18,8 @@ bool FEonformTerrainRegionRegistry::RequestRegion(
 	const FEonformTerrainRegionId& Id,
 	const FIntPoint& GridDimensions,
 	const FIntRect& SampleBounds,
-	uint64 RequestedRevision,
-	EEonformTerrainRegionQuality TargetQuality)
+	const FIntPoint& TargetResolution,
+	uint64 RequestedRevision)
 {
 	if (!Id.IsValid()
 		|| GridDimensions.X <= 0
@@ -28,6 +28,8 @@ bool FEonformTerrainRegionRegistry::RequestRegion(
 		|| Id.Coordinate.Y < 0
 		|| Id.Coordinate.X >= GridDimensions.X
 		|| Id.Coordinate.Y >= GridDimensions.Y
+		|| TargetResolution.X <= 1
+		|| TargetResolution.Y <= 1
 		|| RequestedRevision == 0)
 	{
 		return false;
@@ -38,14 +40,14 @@ bool FEonformTerrainRegionRegistry::RequestRegion(
 	Snapshot.Id = Id;
 	Snapshot.GridDimensions = GridDimensions;
 	Snapshot.SampleBounds = SampleBounds;
+	Snapshot.TargetResolution = TargetResolution;
 	Snapshot.RequestedRevision = RequestedRevision;
-	Snapshot.TargetQuality = TargetQuality;
 	Snapshot.Stage = EEonformTerrainRegionStage::Queued;
 	Snapshot.Operation = NAME_None;
 	Snapshot.Progress = FEonformTerrainRegionProgress();
 	Snapshot.Error.Reset();
-	Snapshot.bDirty = Snapshot.bHasResidentQuality
-		&& (Snapshot.ResidentRevision != RequestedRevision || Snapshot.ResidentQuality != TargetQuality);
+	Snapshot.bDirty = Snapshot.bHasResidentResolution
+		&& (Snapshot.ResidentRevision != RequestedRevision || Snapshot.ResidentResolution != TargetResolution);
 	return true;
 }
 
@@ -64,10 +66,7 @@ bool FEonformTerrainRegionRegistry::SetStage(
 	Snapshot->Stage = Stage;
 	Snapshot->Operation = Operation;
 	Snapshot->Error.Reset();
-	if (Stage != EEonformTerrainRegionStage::Resident)
-	{
-		Snapshot->Progress = FEonformTerrainRegionProgress();
-	}
+	Snapshot->Progress = FEonformTerrainRegionProgress();
 	return true;
 }
 
@@ -109,11 +108,15 @@ bool FEonformTerrainRegionRegistry::ClearProgress(const FEonformTerrainRegionId&
 bool FEonformTerrainRegionRegistry::CommitRegion(
 	const FEonformTerrainRegionId& Id,
 	uint64 ResidentRevision,
-	EEonformTerrainRegionQuality ResidentQuality,
+	const FIntPoint& ResidentResolution,
 	int32 VertexCount,
 	int32 TriangleCount)
 {
-	if (ResidentRevision == 0 || VertexCount < 0 || TriangleCount < 0)
+	if (ResidentRevision == 0
+		|| ResidentResolution.X <= 1
+		|| ResidentResolution.Y <= 1
+		|| VertexCount < 0
+		|| TriangleCount < 0)
 	{
 		return false;
 	}
@@ -127,11 +130,11 @@ bool FEonformTerrainRegionRegistry::CommitRegion(
 
 	Snapshot->Residency = EEonformTerrainRegionResidency::Loaded;
 	Snapshot->Stage = EEonformTerrainRegionStage::Resident;
-	Snapshot->bHasResidentQuality = true;
-	Snapshot->ResidentQuality = ResidentQuality;
+	Snapshot->bHasResidentResolution = true;
+	Snapshot->ResidentResolution = ResidentResolution;
 	Snapshot->ResidentRevision = ResidentRevision;
 	Snapshot->bDirty = Snapshot->ResidentRevision != Snapshot->RequestedRevision
-		|| Snapshot->ResidentQuality != Snapshot->TargetQuality;
+		|| Snapshot->ResidentResolution != Snapshot->TargetResolution;
 	Snapshot->Operation = NAME_None;
 	Snapshot->Progress = FEonformTerrainRegionProgress();
 	Snapshot->Error.Reset();
@@ -153,7 +156,7 @@ bool FEonformTerrainRegionRegistry::FailRegion(const FEonformTerrainRegionId& Id
 	Snapshot->Operation = NAME_None;
 	Snapshot->Progress = FEonformTerrainRegionProgress();
 	Snapshot->Error = Error;
-	Snapshot->bDirty = Snapshot->bHasResidentQuality;
+	Snapshot->bDirty = Snapshot->bHasResidentResolution;
 	return true;
 }
 
@@ -184,7 +187,8 @@ bool FEonformTerrainRegionRegistry::MarkUnloaded(const FEonformTerrainRegionId& 
 
 	Snapshot->Residency = EEonformTerrainRegionResidency::Unloaded;
 	Snapshot->Stage = EEonformTerrainRegionStage::Idle;
-	Snapshot->bHasResidentQuality = false;
+	Snapshot->bHasResidentResolution = false;
+	Snapshot->ResidentResolution = FIntPoint::ZeroValue;
 	Snapshot->ResidentRevision = 0;
 	Snapshot->Operation = NAME_None;
 	Snapshot->Progress = FEonformTerrainRegionProgress();
