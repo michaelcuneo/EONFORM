@@ -134,17 +134,6 @@ namespace
 		return FMath::Max(Context.HeightScale, 1.0f);
 	}
 
-	FEonformScalarField MakeHeightField(const FEonformGridDomain& Domain)
-	{
-		FEonformFieldDescriptor Descriptor;
-		Descriptor.Name = EonformTerrainFieldNames::Height;
-		Descriptor.Unit = EEonformFieldUnit::Normalized;
-		Descriptor.Interpolation = EEonformInterpolation::Bilinear;
-		FEonformScalarField Field;
-		Field.Initialize(Domain, Descriptor, 0.0f);
-		return Field;
-	}
-
 	FEonformRidgeSettings MakeMountainRidgeSettings(FRandomStream& Random, int32 Layer, int32 Seed)
 	{
 		FEonformRidgeSettings Settings;
@@ -427,24 +416,42 @@ namespace
 		const FEonformRidgeSettings RidgeSettings1 = MakeMountainRidgeSettings(RidgeRandom, 1, Seed + 1);
 		const FEonformRidgeSettings RidgeSettings2 = MakeMountainRidgeSettings(RidgeRandom, 2, Seed + 3);
 
-		FEonformScalarField Ridge0;
-		FEonformScalarField Ridge1;
-		FEonformScalarField Ridge2;
-		if (!FEonformRidgeGenerator::Generate(Domain, RidgeSettings0, Ridge0, &Error)
-			|| !FEonformRidgeGenerator::Generate(Domain, RidgeSettings1, Ridge1, &Error)
-			|| !FEonformRidgeGenerator::Generate(Domain, RidgeSettings2, Ridge2, &Error))
+		FEonformScalarField Height;
+		if (!FEonformRidgeGenerator::Generate(Domain, RidgeSettings0, Height, &Error))
 		{
 			Error = Error.IsEmpty() ? TEXT("Mountain could not generate its Ridge fields.") : Error;
 			return false;
 		}
 
-		FEonformScalarField Height = MakeHeightField(Domain);
-		for (int32 Y = 0; Y < Domain.Dimensions.Y; ++Y)
+		FEonformScalarField RidgeScratch;
+		if (!FEonformRidgeGenerator::Generate(Domain, RidgeSettings1, RidgeScratch, &Error))
 		{
-			for (int32 X = 0; X < Domain.Dimensions.X; ++X)
-			{
-				Height.AtInterior(X, Y) = Ridge0.AtInterior(X, Y) + Ridge1.AtInterior(X, Y) + Ridge2.AtInterior(X, Y);
-			}
+			Error = Error.IsEmpty() ? TEXT("Mountain could not generate its Ridge fields.") : Error;
+			return false;
+		}
+		if (RidgeScratch.Values.Num() != Height.Values.Num())
+		{
+			Error = TEXT("Mountain Ridge layers produced incompatible field sizes.");
+			return false;
+		}
+		for (int32 I = 0; I < Height.Values.Num(); ++I)
+		{
+			Height.Values[I] += RidgeScratch.Values[I];
+		}
+
+		if (!FEonformRidgeGenerator::Generate(Domain, RidgeSettings2, RidgeScratch, &Error))
+		{
+			Error = Error.IsEmpty() ? TEXT("Mountain could not generate its Ridge fields.") : Error;
+			return false;
+		}
+		if (RidgeScratch.Values.Num() != Height.Values.Num())
+		{
+			Error = TEXT("Mountain Ridge layers produced incompatible field sizes.");
+			return false;
+		}
+		for (int32 I = 0; I < Height.Values.Num(); ++I)
+		{
+			Height.Values[I] += RidgeScratch.Values[I];
 		}
 
 		EonformTerrainProceduralOps::ApplyRadialGradientMultiply(
