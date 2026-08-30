@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Widgets/SCompoundWidget.h"
 
+class STextBlock;
 class SUniformGridPanel;
 
 class SEonformTerrainRegionGrid : public SCompoundWidget
@@ -16,6 +17,25 @@ public:
 
 private:
 	void Rebuild();
+	FReply HandleRegionClicked(FIntPoint Coordinate);
+	FReply RegenerateSelected();
+	FReply UnloadSelected();
+	FReply SelectActorsForSelected();
+	FReply ClearSelection();
+	void ApplySelectionToEditor();
+	void SyncSelectionFromEditor();
+	void AddRectangularSelection(const FIntPoint& A, const FIntPoint& B, bool bAdditive);
+	TArray<FIntPoint> GetSelectedRegions() const;
+	FText GetSelectionText() const;
+	FText GetActionStatusText() const;
+	bool HasSelection() const;
+
 	uint64 LastChangeSerial = 0;
+	FIntPoint LatestGridDimensions = FIntPoint::ZeroValue;
+	TSet<FIntPoint> SelectedRegions;
+	TSet<FIntPoint> LastEditorRegionSelection;
+	FIntPoint SelectionAnchor = FIntPoint::ZeroValue;
+	bool bHasSelectionAnchor = false;
+	FString ActionStatus;
 	TSharedPtr<SUniformGridPanel> Grid;
 };

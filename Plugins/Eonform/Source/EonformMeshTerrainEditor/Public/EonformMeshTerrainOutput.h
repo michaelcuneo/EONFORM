@@ -24,31 +24,14 @@ enum class EEonformMeshTerrainSectionComplexity : uint8
 
 struct FEonformMeshTerrainOutputSettings
 {
-	/** Legacy uniform XY multiplier. New physical output uses HorizontalScaleXY. */
 	double HorizontalScale = 1.0;
-
-	/** Independent X/Y physical scale multipliers. */
 	FVector2d HorizontalScaleXY = FVector2d(1.0, 1.0);
-
-	/** 1.0 preserves EONFORM's authored elevation. */
 	double VerticalScale = 1.0;
-
-	/** Zero means use the evaluated Height field resolution. */
 	FIntPoint TargetResolution = FIntPoint::ZeroValue;
-
-	/** Automatic is the safe default; Explicit exposes Sections directly. */
 	EEonformMeshTerrainSectionLayout SectionLayout = EEonformMeshTerrainSectionLayout::Automatic;
-
-	/** Target base-region complexity used when SectionLayout is Automatic. */
 	EEonformMeshTerrainSectionComplexity SectionComplexity = EEonformMeshTerrainSectionComplexity::Balanced;
-
-	/** Explicit base-region layout. Ignored when SectionLayout is Automatic. */
 	FIntPoint Sections = FIntPoint(1, 1);
-
-	/** Native UE 5.8 Mesh Partition Definition asset. */
 	TObjectPtr<UObject> MeshPartitionDefinition = nullptr;
-
-	/** Optional existing Mesh Partition actor to update. */
 	TObjectPtr<AActor> TargetMeshPartition = nullptr;
 };
 
@@ -76,11 +59,6 @@ struct FEonformMeshTerrainBuildResult
 	int32 SectionCount = 0;
 };
 
-/**
- * Editor-only output backend that publishes an evaluated EONFORM terrain dataset
- * directly into UE 5.8 Mesh Terrain while keeping Epic's experimental types
- * isolated inside EonformMeshTerrainEditor.
- */
 class EONFORMMESHTERRAINEDITOR_API FEonformMeshTerrainOutput
 {
 public:
@@ -90,14 +68,30 @@ public:
 		float HeightScale,
 		const FEonformMeshTerrainOutputSettings& Settings = FEonformMeshTerrainOutputSettings());
 
-	/** Resolve automatic/explicit base-region layout and complexity estimates for a known sample resolution. */
+	/** Re-evaluate and replace only the requested base-region coordinates. */
+	static FEonformMeshTerrainBuildResult BuildRegions(
+		UWorld* World,
+		const FEonformTerrainDataset& Dataset,
+		float HeightScale,
+		const FEonformMeshTerrainOutputSettings& Settings,
+		const TArray<FIntPoint>& RegionIndices);
+
+	/** Remove only the requested Mesh Terrain base-region materialisations. */
+	static int32 UnloadRegions(
+		UWorld* World,
+		const TArray<FIntPoint>& RegionIndices,
+		FString* OutError = nullptr);
+
+	/** Find the materialised actor for one deterministic base-region coordinate. */
+	static AActor* FindRegionActor(UWorld* World, const FIntPoint& RegionIndex);
+
+	/** Resolve a deterministic base-region coordinate from an EONFORM region actor. */
+	static bool TryGetRegionIndex(const AActor* Actor, FIntPoint& OutRegionIndex);
+
 	static FEonformMeshTerrainLayoutEstimate EstimateLayout(
 		const FIntPoint& Resolution,
 		const FEonformMeshTerrainOutputSettings& Settings = FEonformMeshTerrainOutputSettings());
 
-	/** Triangle budget represented by an automatic section-complexity preset. */
 	static int32 GetTargetTrianglesPerSection(EEonformMeshTerrainSectionComplexity Complexity);
-
-	/** Used by the editor asset picker without exposing MeshPartition headers to EonformEditor. */
 	static UClass* GetMeshPartitionDefinitionClass();
 };
