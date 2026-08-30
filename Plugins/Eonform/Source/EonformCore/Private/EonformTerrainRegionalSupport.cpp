@@ -134,8 +134,15 @@ namespace
 
 		if (Node.Type == EonformTerrainNodeTypes::AutoLevel)
 		{
-			OutReason = TEXT("regional AutoLevel requires an exact upstream whole-world min/max summary prepass");
-			return false;
+			if (!HasConnectedInput(Recipe, Node.Id, TEXT("Input")))
+			{
+				OutReason = TEXT("regional AutoLevel requires a connected Input for whole-world summary evaluation");
+				return false;
+			}
+			// AutoLevel consumes no additional neighbourhood halo. Its exact
+			// whole-world extrema are resolved lazily from the connected upstream
+			// branch and cached for all regions in the generation plan.
+			return true;
 		}
 
 		if (Node.Type == EonformTerrainNodeTypes::Equalize)

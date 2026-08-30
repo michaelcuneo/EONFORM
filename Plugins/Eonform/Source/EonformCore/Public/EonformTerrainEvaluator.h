@@ -79,6 +79,13 @@ struct EONFORMCORE_API FEonformTerrainEvaluationContext
 	/** External context revision mixed into incremental signatures. */
 	uint64 CacheContextRevision = 0;
 
+	/**
+	 * Transient graph pointer installed by FEonformTerrainEvaluator while a node
+	 * executes. Global-summary nodes use this to resolve their connected upstream
+	 * output without owning or duplicating graph traversal logic.
+	 */
+	const FEonformTerrainRecipe* ActiveRecipe = nullptr;
+
 	bool HasRegion() const
 	{
 		return Region.IsValid();
@@ -162,6 +169,13 @@ struct EONFORMCORE_API FEonformTerrainNodeEvaluation
 {
 	TMap<FName, FEonformTerrainValue> Outputs;
 
+	FEonformTerrainValue* FindOutput(FName Name)
+	{
+		if (FEonformTerrainValue* Exact = Outputs.Find(Name)) return Exact;
+		if (Name == TEXT("Terrain")) return Outputs.Find(TEXT("Out"));
+		return nullptr;
+	}
+
 	const FEonformTerrainValue* FindOutput(FName Name) const
 	{
 		if (const FEonformTerrainValue* Exact = Outputs.Find(Name)) return Exact;
@@ -214,6 +228,19 @@ public:
 	static FEonformTerrainEvaluationResult Evaluate(
 		const FEonformTerrainRecipe& Recipe,
 		const FEonformTerrainEvaluationContext& Context);
+
+	/**
+	 * Evaluates one exact graph output, including scalar ports. This is the shared
+	 * graph traversal used by global-summary prepasses; it intentionally does not
+	 * require the requested port to be a Terrain value.
+	 */
+	static bool EvaluateOutput(
+		const FEonformTerrainRecipe& Recipe,
+		const FEonformTerrainEvaluationContext& Context,
+		const FGuid& NodeId,
+		FName OutputName,
+		FEonformTerrainValue& OutValue,
+		FString* OutError = nullptr);
 
 	static FEonformTerrainEvaluationResult EvaluateIncremental(
 		const FEonformTerrainRecipe& Recipe,

@@ -514,6 +514,131 @@ const FEonformTerrainNodeEvaluator* FEonformTerrainNodeRegistry::Find(FName Node
 	return Registry.Find(NodeType);
 }
 
+bool FEonformTerrainEvaluator::EvaluateOutput(
+	const FEonformTerrainRecipe& Recipe,
+	const FEonformTerrainEvaluationContext& Context,
+	const FGuid& NodeId,
+	FName OutputName,
+	FEonformTerrainValue& OutValue,
+	FString* OutError)
+{
+	FString Error;
+	if (!Recipe.Validate(&Error))
+	{
+		if (OutError) *OutError = Error;
+		return false;
+	}
+	if (!NodeId.IsValid() || !Recipe.FindNode(NodeId))
+	{
+		if (OutError) *OutError = TEXT("Evaluator could not resolve the requested output node id.");
+		return false;
+	}
+
+	FEonformTerrainNodeRegistry::RegisterBuiltIns();
+	FEonformTerrainEvaluationContext EffectiveContext = Context;
+	EffectiveContext.ActiveRecipe = &Recipe;
+
+	TMap<FGuid, FEonformTerrainNodeEvaluation> Cache;
+	TSet<FGuid> Visiting;
+	TFunction<bool(const FGuid&)> EvaluateNode = [&](const FGuid& CurrentNodeId) -> bool
+	{
+		if (Cache.Contains(CurrentNodeId)) return true;
+		if (Visiting.Contains(CurrentNodeId))
+		{
+			Error = TEXT("Terrain recipe contains a dependency cycle.");
+			return false;
+		}
+		const FEonformTerrainNode* Node = Recipe.FindNode(CurrentNodeId);
+		if (!Node)
+		{
+			Error = TEXT("Evaluator could not resolve a node id.");
+			return false;
+		}
+
+		Visiting.Add(CurrentNodeId);
+		FEonformTerrainNodeInputs RawInputs;
+		for (const FEonformTerrainConnection& Connection : Recipe.Connections)
+		{
+			if (Connection.ToNode != CurrentNodeId) continue;
+			if (!EvaluateNode(Connection.FromNode))
+			{
+				Visiting.Remove(CurrentNodeId);
+				return false;
+			}
+			const FEonformTerrainNodeEvaluation* SourceEvaluation = Cache.Find(Connection.FromNode);
+			const FEonformTerrainValue* SourceOutput = SourceEvaluation ? SourceEvaluation->FindOutput(Connection.FromOutput) : nullptr;
+			if (!SourceOutput || !SourceOutput->IsValid())
+			{
+				Error = FString::Printf(TEXT("Node connection references missing or invalid output '%s'."), *Connection.FromOutput.ToString());
+				Visiting.Remove(CurrentNodeId);
+				return false;
+			}
+			RawInputs.Add(Connection.ToInput, SourceOutput);
+		}
+
+		TMap<FName, FEonformTerrainValue> OwnedInputs;
+		FEonformTerrainNodeInputs Inputs;
+		if (!EonformTerrainDomainScaling::NormalizeInputs(RawInputs, EffectiveContext, OwnedInputs, Inputs, &Error))
+		{
+			Visiting.Remove(CurrentNodeId);
+			return false;
+		}
+
+		FEonformTerrainNodeEvaluator Evaluator;
+		{
+			FScopeLock Lock(&RegistryMutex);
+			const FEonformTerrainNodeEvaluator* Found = FEonformTerrainNodeRegistry::Find(Node->Type);
+			if (!Found)
+			{
+				Error = FString::Printf(TEXT("No evaluator registered for node type '%s'."), *Node->Type.ToString());
+				Visiting.Remove(CurrentNodeId);
+				return false;
+			}
+			Evaluator = *Found;
+		}
+
+		FEonformTerrainNodeEvaluation NodeResult;
+		if (!Evaluator(*Node, Inputs, EffectiveContext, NodeResult, Error))
+		{
+			Visiting.Remove(CurrentNodeId);
+			return false;
+		}
+		if (NodeResult.Outputs.IsEmpty())
+		{
+			Error = FString::Printf(TEXT("Node '%s' produced no outputs."), *Node->Type.ToString());
+			Visiting.Remove(CurrentNodeId);
+			return false;
+		}
+		if (!EonformTerrainDomainScaling::NormalizeOutputs(NodeResult, EffectiveContext, &Error))
+		{
+			Visiting.Remove(CurrentNodeId);
+			return false;
+		}
+		Cache.Add(CurrentNodeId, MoveTemp(NodeResult));
+		Visiting.Remove(CurrentNodeId);
+		return true;
+	};
+
+	if (!EvaluateNode(NodeId))
+	{
+		if (OutError) *OutError = Error;
+		return false;
+	}
+	FEonformTerrainNodeEvaluation* Evaluation = Cache.Find(NodeId);
+	FEonformTerrainValue* Value = Evaluation ? Evaluation->FindOutput(OutputName) : nullptr;
+	if (!Value || !Value->IsValid())
+	{
+		if (OutError)
+		{
+			*OutError = FString::Printf(TEXT("Requested output '%s' is missing or invalid."), *OutputName.ToString());
+		}
+		return false;
+	}
+	OutValue = MoveTemp(*Value);
+	if (OutError) OutError->Reset();
+	return true;
+}
+
 FEonformTerrainEvaluationResult FEonformTerrainEvaluator::Evaluate(
 	const FEonformTerrainRecipe& Recipe,
 	const FEonformTerrainEvaluationContext& Context)
@@ -526,74 +651,16 @@ FEonformTerrainEvaluationResult FEonformTerrainEvaluator::Evaluate(
 		BuildFlatTerrainResult(Context, Result);
 		return Result;
 	}
-	FEonformTerrainNodeRegistry::RegisterBuiltIns();
-	TMap<FGuid, FEonformTerrainNodeEvaluation> Cache;
-	TSet<FGuid> Visiting;
-	TFunction<bool(const FGuid&)> EvaluateNode = [&](const FGuid& NodeId) -> bool
-	{
-		if (Cache.Contains(NodeId)) return true;
-		if (Visiting.Contains(NodeId))
-		{
-			Result.Error = TEXT("Terrain recipe contains a dependency cycle.");
-			return false;
-		}
-		const FEonformTerrainNode* Node = Recipe.FindNode(NodeId);
-		if (!Node)
-		{
-			Result.Error = TEXT("Evaluator could not resolve a node id.");
-			return false;
-		}
-		Visiting.Add(NodeId);
-		FEonformTerrainNodeInputs RawInputs;
-		for (const FEonformTerrainConnection& Connection : Recipe.Connections)
-		{
-			if (Connection.ToNode != NodeId) continue;
-			if (!EvaluateNode(Connection.FromNode)) return false;
-			const FEonformTerrainNodeEvaluation* SourceEvaluation = Cache.Find(Connection.FromNode);
-			const FEonformTerrainValue* SourceOutput = SourceEvaluation ? SourceEvaluation->FindOutput(Connection.FromOutput) : nullptr;
-			if (!SourceOutput || !SourceOutput->IsValid())
-			{
-				Result.Error = FString::Printf(TEXT("Node connection references missing or invalid output '%s'."), *Connection.FromOutput.ToString());
-				return false;
-			}
-			RawInputs.Add(Connection.ToInput, SourceOutput);
-		}
-		TMap<FName, FEonformTerrainValue> OwnedInputs;
-		FEonformTerrainNodeInputs Inputs;
-		if (!EonformTerrainDomainScaling::NormalizeInputs(RawInputs, Context, OwnedInputs, Inputs, &Result.Error)) return false;
-		FEonformTerrainNodeEvaluator Evaluator;
-		{
-			FScopeLock Lock(&RegistryMutex);
-			const FEonformTerrainNodeEvaluator* Found = FEonformTerrainNodeRegistry::Find(Node->Type);
-			if (!Found)
-			{
-				Result.Error = FString::Printf(TEXT("No evaluator registered for node type '%s'."), *Node->Type.ToString());
-				return false;
-			}
-			Evaluator = *Found;
-		}
-		FEonformTerrainNodeEvaluation NodeResult;
-		if (!Evaluator(*Node, Inputs, Context, NodeResult, Result.Error)) return false;
-		if (NodeResult.Outputs.IsEmpty())
-		{
-			Result.Error = FString::Printf(TEXT("Node '%s' produced no outputs."), *Node->Type.ToString());
-			return false;
-		}
-		if (!EonformTerrainDomainScaling::NormalizeOutputs(NodeResult, Context, &Result.Error)) return false;
-		Cache.Add(NodeId, MoveTemp(NodeResult));
-		Visiting.Remove(NodeId);
-		return true;
-	};
-	if (!EvaluateNode(Recipe.OutputNode)) return Result;
-	const FEonformTerrainNodeEvaluation* Output = Cache.Find(Recipe.OutputNode);
-	const FEonformTerrainValue* TerrainOutput = Output ? Output->FindOutput(TEXT("Terrain")) : nullptr;
-	if (!TerrainOutput || TerrainOutput->Type != EEonformTerrainValueType::Terrain || !TerrainOutput->IsValid())
+
+	FEonformTerrainValue TerrainOutput;
+	if (!EvaluateOutput(Recipe, Context, Recipe.OutputNode, TEXT("Terrain"), TerrainOutput, &Result.Error)) return Result;
+	if (TerrainOutput.Type != EEonformTerrainValueType::Terrain || !TerrainOutput.IsValid())
 	{
 		Result.Error = TEXT("Recipe output node produced no Terrain output.");
 		return Result;
 	}
-	Result.Dataset = TerrainOutput->TerrainDataset;
-	Result.HeightScale = TerrainOutput->HeightScale;
+	Result.Dataset = MoveTemp(TerrainOutput.TerrainDataset);
+	Result.HeightScale = TerrainOutput.HeightScale;
 	Result.bSuccess = true;
 	return Result;
 }
