@@ -10,6 +10,7 @@
 #include "GameFramework/Actor.h"
 #include "EonformMeshTerrainBridgeActor.h"
 #include "EonformTerrainFieldNames.h"
+#include "EonformTerrainRegionRegistry.h"
 #include "Materials/MaterialInterface.h"
 #include "MeshPartition.h"
 #include "MeshPartitionDefinition.h"
@@ -26,6 +27,7 @@ namespace
 	const FName EonformBaseRegionTag(TEXT("EONFORM.MeshTerrain.BaseRegion"));
 	const FName EonformMeshTerrainFolder(TEXT("EONFORM/Mesh Terrain"));
 	const FName EonformBaseRegionsFolder(TEXT("EONFORM/Mesh Terrain/Base Regions"));
+	const FName EonformMeshTerrainOperation(TEXT("MeshTerrain"));
 
 	bool HasSatMapColor(const FEonformTerrainDataset& Dataset)
 	{
@@ -206,6 +208,7 @@ FEonformMeshTerrainBuildResult FEonformMeshTerrainOutput::Build(
 
 	const FIntPoint Sections = Layout.Sections;
 	const int32 RequiredRegionCount = static_cast<int32>(Layout.SectionCount);
+	const bool bTrackRegions = !Settings.SourceId.IsNone() && Settings.SourceRevision > 0;
 	const bool bHasSatMapColor = HasSatMapColor(Dataset);
 	UMaterialInterface* SatMapDebugMaterial = bHasSatMapColor ? ResolveSatMapDebugMaterial() : nullptr;
 
@@ -285,6 +288,28 @@ FEonformMeshTerrainBuildResult FEonformMeshTerrainOutput::Build(
 
 	const int32 IntervalsX = Resolution.X - 1;
 	const int32 IntervalsY = Resolution.Y - 1;
+
+	if (bTrackRegions)
+	{
+		for (int32 SectionY = 0; SectionY < Sections.Y; ++SectionY)
+		{
+			const int32 StartY = (SectionY * IntervalsY) / Sections.Y;
+			const int32 EndY = ((SectionY + 1) * IntervalsY) / Sections.Y;
+			for (int32 SectionX = 0; SectionX < Sections.X; ++SectionX)
+			{
+				const int32 StartX = (SectionX * IntervalsX) / Sections.X;
+				const int32 EndX = ((SectionX + 1) * IntervalsX) / Sections.X;
+				const FEonformTerrainRegionId RegionId{ Settings.SourceId, FIntPoint(SectionX, SectionY) };
+				FEonformTerrainRegionRegistry::RequestRegion(
+					RegionId,
+					Sections,
+					FIntRect(StartX, StartY, EndX + 1, EndY + 1),
+					FIntPoint(EndX - StartX + 1, EndY - StartY + 1),
+					Settings.SourceRevision);
+			}
+		}
+	}
+
 	int32 RegionIndex = 0;
 	for (int32 SectionY = 0; SectionY < Sections.Y; ++SectionY)
 	{
@@ -294,16 +319,29 @@ FEonformMeshTerrainBuildResult FEonformMeshTerrainOutput::Build(
 		{
 			const int32 StartX = (SectionX * IntervalsX) / Sections.X;
 			const int32 EndX = ((SectionX + 1) * IntervalsX) / Sections.X;
+			const FIntPoint RegionResolution(EndX - StartX + 1, EndY - StartY + 1);
+			const FEonformTerrainRegionId RegionId{ Settings.SourceId, FIntPoint(SectionX, SectionY) };
+			if (bTrackRegions)
+			{
+				FEonformTerrainRegionRegistry::SetStage(RegionId, EEonformTerrainRegionStage::Meshing, EonformMeshTerrainOperation);
+			}
+
 			FDynamicMesh3 SectionMesh;
 			FString MaterializeError;
 			if (!FEonformTerrainMeshMaterializer::BuildDynamicMeshRegion(Dataset, MeshOptions, FIntPoint(StartX, StartY), FIntPoint(EndX, EndY), SectionMesh, &MaterializeError))
 			{
 				Result.Message = FString::Printf(TEXT("Mesh Terrain base region %d,%d failed: %s"), SectionX, SectionY, *MaterializeError);
+				if (bTrackRegions) FEonformTerrainRegionRegistry::FailRegion(RegionId, Result.Message);
 				return Result;
 			}
 
 			const int32 RegionVertexCount = SectionMesh.VertexCount();
 			const int32 RegionTriangleCount = SectionMesh.TriangleCount();
+			if (bTrackRegions)
+			{
+				FEonformTerrainRegionRegistry::SetStage(RegionId, EEonformTerrainRegionStage::Committing, EonformMeshTerrainOperation);
+			}
+
 			AActor* RegionActor = ExistingBaseRegions.IsValidIndex(RegionIndex) ? ExistingBaseRegions[RegionIndex] : nullptr;
 			if (!RegionActor)
 			{
@@ -314,6 +352,7 @@ FEonformMeshTerrainBuildResult FEonformMeshTerrainOutput::Build(
 				if (!RegionActor)
 				{
 					Result.Message = FString::Printf(TEXT("Failed to create EONFORM Mesh Terrain base region actor %d,%d."), SectionX, SectionY);
+					if (bTrackRegions) FEonformTerrainRegionRegistry::FailRegion(RegionId, Result.Message);
 					return Result;
 				}
 			}
@@ -328,12 +367,14 @@ FEonformMeshTerrainBuildResult FEonformMeshTerrainOutput::Build(
 			if (!RegionRoot)
 			{
 				Result.Message = TEXT("Failed to create or resolve an EONFORM base region scene root.");
+				if (bTrackRegions) FEonformTerrainRegionRegistry::FailRegion(RegionId, Result.Message);
 				return Result;
 			}
 			UMeshProviderModifier* MeshProvider = EnsureRegionProvider(RegionActor, RegionRoot);
 			if (!MeshProvider)
 			{
 				Result.Message = TEXT("Failed to create or resolve the UE 5.8 Mesh Provider modifier for an EONFORM base region.");
+				if (bTrackRegions) FEonformTerrainRegionRegistry::FailRegion(RegionId, Result.Message);
 				return Result;
 			}
 			MeshProvider->Modify();
@@ -343,6 +384,19 @@ FEonformMeshTerrainBuildResult FEonformMeshTerrainOutput::Build(
 				MeshProvider->SetMaterial(0, SatMapDebugMaterial);
 			}
 			MeshProvider->SetMesh(MoveTemp(SectionMesh), true);
+
+			// Resident means EONFORM has committed this provider mesh. Mesh Partition
+			// may still rebuild its editor preview asynchronously after SetMesh.
+			if (bTrackRegions)
+			{
+				FEonformTerrainRegionRegistry::CommitRegion(
+					RegionId,
+					Settings.SourceRevision,
+					RegionResolution,
+					RegionVertexCount,
+					RegionTriangleCount);
+			}
+
 			Result.VertexCount += RegionVertexCount;
 			Result.TriangleCount += RegionTriangleCount;
 			++Result.SectionCount;
@@ -358,6 +412,20 @@ FEonformMeshTerrainBuildResult FEonformMeshTerrainOutput::Build(
 		for (UMeshProviderModifier* Provider : ExtraProviders) ClearProviderMesh(Provider);
 		ExtraActor->Modify();
 		ExtraActor->Destroy();
+	}
+
+	if (bTrackRegions)
+	{
+		TArray<FEonformTerrainRegionSnapshot> SourceRegions;
+		FEonformTerrainRegionRegistry::GetSourceRegions(Settings.SourceId, SourceRegions);
+		for (const FEonformTerrainRegionSnapshot& Snapshot : SourceRegions)
+		{
+			if (Snapshot.Id.Coordinate.X >= Sections.X || Snapshot.Id.Coordinate.Y >= Sections.Y)
+			{
+				FEonformTerrainRegionRegistry::BeginEviction(Snapshot.Id);
+				FEonformTerrainRegionRegistry::MarkUnloaded(Snapshot.Id);
+			}
+		}
 	}
 
 	// SetMesh can create/rebuild preview sections asynchronously. Refresh the
