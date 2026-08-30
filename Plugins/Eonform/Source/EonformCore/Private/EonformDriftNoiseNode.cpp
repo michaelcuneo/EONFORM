@@ -17,23 +17,35 @@ namespace
 		return Port;
 	}
 
-	FEonformTerrainParameterDescriptor DriftNoiseNumber(FName Name, const TCHAR* Label, double Default, double Min, double Max)
+	FEonformTerrainParameterDescriptor DriftNoiseNumber(FName Name, const TCHAR *Label, double Default, double Min, double Max)
 	{
 		FEonformTerrainParameterDescriptor P;
-		P.Name = Name; P.DisplayName = Label; P.Type = EEonformTerrainParameterType::Number; P.DefaultNumber = Default;
-		P.bHasMinimum = true; P.Minimum = Min; P.bHasMaximum = true; P.Maximum = Max;
+		P.Name = Name;
+		P.DisplayName = Label;
+		P.Type = EEonformTerrainParameterType::Number;
+		P.DefaultNumber = Default;
+		P.bHasMinimum = true;
+		P.Minimum = Min;
+		P.bHasMaximum = true;
+		P.Maximum = Max;
 		return P;
 	}
 
-	FEonformTerrainParameterDescriptor DriftNoiseInteger(FName Name, const TCHAR* Label, int64 Default, int64 Min, int64 Max)
+	FEonformTerrainParameterDescriptor DriftNoiseInteger(FName Name, const TCHAR *Label, int64 Default, int64 Min, int64 Max)
 	{
 		FEonformTerrainParameterDescriptor P;
-		P.Name = Name; P.DisplayName = Label; P.Type = EEonformTerrainParameterType::Integer; P.DefaultInteger = Default;
-		P.bHasMinimum = true; P.Minimum = static_cast<double>(Min); P.bHasMaximum = true; P.Maximum = static_cast<double>(Max);
+		P.Name = Name;
+		P.DisplayName = Label;
+		P.Type = EEonformTerrainParameterType::Integer;
+		P.DefaultInteger = Default;
+		P.bHasMinimum = true;
+		P.Minimum = static_cast<double>(Min);
+		P.bHasMaximum = true;
+		P.Maximum = static_cast<double>(Max);
 		return P;
 	}
 
-	float DriftNoiseSample(const FVector2D& P, float Scale, float Turbulence, float DirectionDeg, int32 Seed)
+	float DriftNoiseSample(const FVector2D &P, float Scale, float Turbulence, float DirectionDeg, int32 Seed)
 	{
 		const float A = FMath::DegreesToRadians(DirectionDeg);
 		const FVector2D Dir(FMath::Cos(A), FMath::Sin(A));
@@ -44,9 +56,9 @@ namespace
 		return FMath::PerlinNoise2D(FVector2D(Along + Warp, Across * 0.45f + Seed * 0.021f));
 	}
 
-	bool EvaluateDriftNoiseNode(const FEonformTerrainNode& Node, const FEonformTerrainNodeInputs&, const FEonformTerrainEvaluationContext&, FEonformTerrainNodeEvaluation& Out, FString& Error)
+	bool EvaluateDriftNoiseNode(const FEonformTerrainNode &Node, const FEonformTerrainNodeInputs &, const FEonformTerrainEvaluationContext &, FEonformTerrainNodeEvaluation &Out, FString &Error)
 	{
-		const int32 Resolution = FMath::Clamp<int32>(static_cast<int32>(Node.GetInteger(TEXT("Resolution"), 257)), 2, 1025);
+		const int32 Resolution = FMath::Clamp<int32>(static_cast<int32>(Node.GetInteger(TEXT("Resolution"), 257)), 2, 4097);
 		const float WorldSize = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("WorldSize"), 100000.0)), 1.0f, 10000000.0f);
 		const float HeightScale = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("HeightScale"), 8000.0)), 1.0f, 1000000.0f);
 		const int32 Passes = FMath::Clamp<int32>(static_cast<int32>(Node.GetInteger(TEXT("Passes"), 4)), 1, 16);
@@ -62,9 +74,17 @@ namespace
 
 		const double Half = static_cast<double>(WorldSize) * 0.5;
 		const FEonformGridDomain Domain = FEonformGridDomain::Make(FIntPoint(Resolution, Resolution), FVector2d(-Half, -Half), FVector2d(Half, Half));
-		if (!Domain.IsValid()) { Error = TEXT("DriftNoise produced an invalid grid domain."); return false; }
-		FEonformFieldDescriptor D; D.Name = EonformTerrainFieldNames::Height; D.Unit = EEonformFieldUnit::Normalized; D.Interpolation = EEonformInterpolation::Bilinear;
-		FEonformScalarField Field; Field.Initialize(Domain, D);
+		if (!Domain.IsValid())
+		{
+			Error = TEXT("DriftNoise produced an invalid grid domain.");
+			return false;
+		}
+		FEonformFieldDescriptor D;
+		D.Name = EonformTerrainFieldNames::Height;
+		D.Unit = EEonformFieldUnit::Normalized;
+		D.Interpolation = EEonformInterpolation::Bilinear;
+		FEonformScalarField Field;
+		Field.Initialize(Domain, D);
 
 		for (int32 Y = 0; Y < Resolution; ++Y)
 		{
@@ -92,9 +112,17 @@ namespace
 		}
 
 		FEonformTerrainDataset Dataset;
-		if (!Dataset.SetScalarField(MoveTemp(Field))) { Error = TEXT("DriftNoise could not publish Height."); return false; }
+		if (!Dataset.SetScalarField(MoveTemp(Field)))
+		{
+			Error = TEXT("DriftNoise could not publish Height.");
+			return false;
+		}
 		FEonformTerrainValue Result = FEonformTerrainValue::MakeTerrain(MoveTemp(Dataset), HeightScale);
-		if (!Result.IsValid()) { Error = TEXT("DriftNoise produced invalid terrain."); return false; }
+		if (!Result.IsValid())
+		{
+			Error = TEXT("DriftNoise produced invalid terrain.");
+			return false;
+		}
 		Out.Outputs.Add(TEXT("Out"), MoveTemp(Result));
 		return true;
 	}

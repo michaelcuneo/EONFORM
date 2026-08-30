@@ -8,21 +8,22 @@
 
 namespace
 {
-	FEonformTerrainPortDescriptor ConeTerrainPort(FName Name, const TCHAR* DisplayName = nullptr)
+	FEonformTerrainPortDescriptor ConeTerrainPort(FName Name, const TCHAR *DisplayName = nullptr)
 	{
 		FEonformTerrainPortDescriptor Port;
 		Port.Name = Name;
 		Port.DataType = TEXT("Terrain");
-		if (DisplayName) Port.DisplayName = DisplayName;
+		if (DisplayName)
+			Port.DisplayName = DisplayName;
 		return Port;
 	}
 
 	FEonformTerrainParameterDescriptor ConeNumberParameter(
-		FName Name,
-		const TCHAR* DisplayName,
-		double DefaultValue,
-		double Minimum,
-		double Maximum)
+			FName Name,
+			const TCHAR *DisplayName,
+			double DefaultValue,
+			double Minimum,
+			double Maximum)
 	{
 		FEonformTerrainParameterDescriptor Parameter;
 		Parameter.Name = Name;
@@ -37,13 +38,13 @@ namespace
 	}
 
 	bool EvaluateConeNode(
-		const FEonformTerrainNode& Node,
-		const FEonformTerrainNodeInputs&,
-		const FEonformTerrainEvaluationContext&,
-		FEonformTerrainNodeEvaluation& Out,
-		FString& Error)
+			const FEonformTerrainNode &Node,
+			const FEonformTerrainNodeInputs &,
+			const FEonformTerrainEvaluationContext &,
+			FEonformTerrainNodeEvaluation &Out,
+			FString &Error)
 	{
-		const int32 Resolution = FMath::Clamp<int32>(static_cast<int32>(Node.GetInteger(TEXT("Resolution"), 257)), 2, 1025);
+		const int32 Resolution = FMath::Clamp<int32>(static_cast<int32>(Node.GetInteger(TEXT("Resolution"), 257)), 2, 4097);
 		const float WorldSize = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("WorldSize"), 100000.0)), 1.0f, 10000000.0f);
 		const float HeightScale = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("HeightScale"), 8000.0)), 1.0f, 1000000.0f);
 
@@ -54,9 +55,9 @@ namespace
 
 		const double HalfWorldSize = static_cast<double>(WorldSize) * 0.5;
 		const FEonformGridDomain Domain = FEonformGridDomain::Make(
-			FIntPoint(Resolution, Resolution),
-			FVector2d(-HalfWorldSize, -HalfWorldSize),
-			FVector2d(HalfWorldSize, HalfWorldSize));
+				FIntPoint(Resolution, Resolution),
+				FVector2d(-HalfWorldSize, -HalfWorldSize),
+				FVector2d(HalfWorldSize, HalfWorldSize));
 		if (!Domain.IsValid())
 		{
 			Error = TEXT("Cone produced an invalid grid domain.");

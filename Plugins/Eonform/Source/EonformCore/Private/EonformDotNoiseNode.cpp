@@ -8,16 +8,17 @@
 
 namespace
 {
-	FEonformTerrainPortDescriptor DotNoiseTerrainPort(FName Name, const TCHAR* DisplayName = nullptr)
+	FEonformTerrainPortDescriptor DotNoiseTerrainPort(FName Name, const TCHAR *DisplayName = nullptr)
 	{
 		FEonformTerrainPortDescriptor Port;
 		Port.Name = Name;
 		Port.DataType = TEXT("Terrain");
-		if (DisplayName) Port.DisplayName = DisplayName;
+		if (DisplayName)
+			Port.DisplayName = DisplayName;
 		return Port;
 	}
 
-	FEonformTerrainParameterDescriptor DotNoiseNumberParameter(FName Name, const TCHAR* DisplayName, double DefaultValue, double Minimum, double Maximum)
+	FEonformTerrainParameterDescriptor DotNoiseNumberParameter(FName Name, const TCHAR *DisplayName, double DefaultValue, double Minimum, double Maximum)
 	{
 		FEonformTerrainParameterDescriptor Parameter;
 		Parameter.Name = Name;
@@ -31,7 +32,7 @@ namespace
 		return Parameter;
 	}
 
-	FEonformTerrainParameterDescriptor DotNoiseIntegerParameter(FName Name, const TCHAR* DisplayName, int64 DefaultValue, int64 Minimum, int64 Maximum)
+	FEonformTerrainParameterDescriptor DotNoiseIntegerParameter(FName Name, const TCHAR *DisplayName, int64 DefaultValue, int64 Minimum, int64 Maximum)
 	{
 		FEonformTerrainParameterDescriptor Parameter;
 		Parameter.Name = Name;
@@ -45,14 +46,15 @@ namespace
 		return Parameter;
 	}
 
-	FEonformTerrainParameterDescriptor DotNoiseNameParameter(FName Name, const TCHAR* DisplayName, FName DefaultValue, std::initializer_list<FName> Options)
+	FEonformTerrainParameterDescriptor DotNoiseNameParameter(FName Name, const TCHAR *DisplayName, FName DefaultValue, std::initializer_list<FName> Options)
 	{
 		FEonformTerrainParameterDescriptor Parameter;
 		Parameter.Name = Name;
 		Parameter.DisplayName = DisplayName;
 		Parameter.Type = EEonformTerrainParameterType::Name;
 		Parameter.DefaultName = DefaultValue;
-		for (const FName Option : Options) Parameter.NameOptions.Add(Option);
+		for (const FName Option : Options)
+			Parameter.NameOptions.Add(Option);
 		return Parameter;
 	}
 
@@ -77,20 +79,28 @@ namespace
 
 	float DotNoiseBlend(float A, float B, FName Mode)
 	{
-		if (Mode == TEXT("Blend")) return FMath::Lerp(A, B, 0.5f);
-		if (Mode == TEXT("Add")) return A + B;
-		if (Mode == TEXT("Subtract")) return A - B;
-		if (Mode == TEXT("Difference")) return FMath::Abs(A - B);
-		if (Mode == TEXT("Multiply")) return A * B;
-		if (Mode == TEXT("Screen")) return 1.0f - (1.0f - A) * (1.0f - B);
-		if (Mode == TEXT("Max")) return FMath::Max(A, B);
-		if (Mode == TEXT("Min")) return FMath::Min(A, B);
+		if (Mode == TEXT("Blend"))
+			return FMath::Lerp(A, B, 0.5f);
+		if (Mode == TEXT("Add"))
+			return A + B;
+		if (Mode == TEXT("Subtract"))
+			return A - B;
+		if (Mode == TEXT("Difference"))
+			return FMath::Abs(A - B);
+		if (Mode == TEXT("Multiply"))
+			return A * B;
+		if (Mode == TEXT("Screen"))
+			return 1.0f - (1.0f - A) * (1.0f - B);
+		if (Mode == TEXT("Max"))
+			return FMath::Max(A, B);
+		if (Mode == TEXT("Min"))
+			return FMath::Min(A, B);
 		return B;
 	}
 
-	bool EvaluateDotNoiseNode(const FEonformTerrainNode& Node, const FEonformTerrainNodeInputs&, const FEonformTerrainEvaluationContext&, FEonformTerrainNodeEvaluation& Out, FString& Error)
+	bool EvaluateDotNoiseNode(const FEonformTerrainNode &Node, const FEonformTerrainNodeInputs &, const FEonformTerrainEvaluationContext &, FEonformTerrainNodeEvaluation &Out, FString &Error)
 	{
-		const int32 Resolution = FMath::Clamp<int32>(static_cast<int32>(Node.GetInteger(TEXT("Resolution"), 257)), 2, 1025);
+		const int32 Resolution = FMath::Clamp<int32>(static_cast<int32>(Node.GetInteger(TEXT("Resolution"), 257)), 2, 4097);
 		const float WorldSize = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("WorldSize"), 100000.0)), 1.0f, 10000000.0f);
 		const float HeightScale = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("HeightScale"), 8000.0)), 1.0f, 1000000.0f);
 		const FName Style = Node.GetName(TEXT("Style"), TEXT("Dot"));
@@ -189,12 +199,12 @@ void RegisterEonformDotNoiseNode()
 	Descriptor.Category = TEXT("Primitive");
 	Descriptor.Description = TEXT("Generates layered dot or square stamp noise with configurable blending.");
 	Descriptor.Outputs.Add(DotNoiseTerrainPort(TEXT("Out"), TEXT("Out")));
-	Descriptor.Parameters.Add(DotNoiseNameParameter(TEXT("Style"), TEXT("Style"), TEXT("Dot"), { TEXT("Dot"), TEXT("Square") }));
+	Descriptor.Parameters.Add(DotNoiseNameParameter(TEXT("Style"), TEXT("Style"), TEXT("Dot"), {TEXT("Dot"), TEXT("Square")}));
 	Descriptor.Parameters.Add(DotNoiseIntegerParameter(TEXT("Iterations"), TEXT("Iterations"), 3, 1, 16));
 	Descriptor.Parameters.Add(DotNoiseNumberParameter(TEXT("Multiplier"), TEXT("Multiplier"), 1.0, 0.1, 16.0));
 	Descriptor.Parameters.Add(DotNoiseNumberParameter(TEXT("Size"), TEXT("Size"), 0.08, 0.001, 1.0));
 	Descriptor.Parameters.Add(DotNoiseNumberParameter(TEXT("Height"), TEXT("Height"), 1.0, -4.0, 4.0));
-	Descriptor.Parameters.Add(DotNoiseNameParameter(TEXT("BlendMode"), TEXT("Blend Mode"), TEXT("Max"), { TEXT("None"), TEXT("Blend"), TEXT("Add"), TEXT("Subtract"), TEXT("Difference"), TEXT("Multiply"), TEXT("Screen"), TEXT("Max"), TEXT("Min") }));
+	Descriptor.Parameters.Add(DotNoiseNameParameter(TEXT("BlendMode"), TEXT("Blend Mode"), TEXT("Max"), {TEXT("None"), TEXT("Blend"), TEXT("Add"), TEXT("Subtract"), TEXT("Difference"), TEXT("Multiply"), TEXT("Screen"), TEXT("Max"), TEXT("Min")}));
 	Descriptor.Parameters.Add(DotNoiseIntegerParameter(TEXT("Seed"), TEXT("Seed"), 1337, -2147483647, 2147483647));
 	FEonformTerrainNodeDescriptorRegistry::Register(Descriptor);
 	FEonformTerrainNodeRegistry::Register(EonformTerrainNodeTypes::DotNoise, EvaluateDotNoiseNode);

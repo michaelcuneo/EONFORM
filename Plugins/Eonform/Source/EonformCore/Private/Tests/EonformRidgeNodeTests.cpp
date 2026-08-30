@@ -35,9 +35,10 @@ namespace EonformRidgeNodeTests
 		return FEonformTerrainEvaluator::Evaluate(Recipe, Context);
 	}
 
-	double MeanAbsoluteDifference(const FEonformScalarField& A, const FEonformScalarField& B)
+	double MeanAbsoluteDifference(const FEonformScalarField &A, const FEonformScalarField &B)
 	{
-		if (!A.IsValid() || !B.IsValid() || A.Domain != B.Domain) return 0.0;
+		if (!A.IsValid() || !B.IsValid() || A.Domain != B.Domain)
+			return 0.0;
 		double Sum = 0.0;
 		for (int32 Y = 0; Y < A.Domain.Dimensions.Y; ++Y)
 		{
@@ -49,7 +50,7 @@ namespace EonformRidgeNodeTests
 		return Sum / FMath::Max(1, A.Domain.GetInteriorSampleCount());
 	}
 
-	float FieldRange(const FEonformScalarField& Field)
+	float FieldRange(const FEonformScalarField &Field)
 	{
 		float MinValue = TNumericLimits<float>::Max();
 		float MaxValue = TNumericLimits<float>::Lowest();
@@ -60,14 +61,37 @@ namespace EonformRidgeNodeTests
 		}
 		return MaxValue - MinValue;
 	}
+
+	float FieldMeanAbsoluteNeighborDifference(const FEonformScalarField &Field)
+	{
+		double Sum = 0.0;
+		int32 Count = 0;
+		for (int32 Y = 0; Y < Field.Domain.Dimensions.Y; ++Y)
+		{
+			for (int32 X = 0; X < Field.Domain.Dimensions.X; ++X)
+			{
+				if (X > 0)
+				{
+					Sum += FMath::Abs(static_cast<double>(Field.AtInterior(X, Y) - Field.AtInterior(X - 1, Y)));
+					++Count;
+				}
+				if (Y > 0)
+				{
+					Sum += FMath::Abs(static_cast<double>(Field.AtInterior(X, Y) - Field.AtInterior(X, Y - 1)));
+					++Count;
+				}
+			}
+		}
+		return Count > 0 ? static_cast<float>(Sum / Count) : 0.0f;
+	}
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FEonformRidgeContractTest,
-	"Eonform.Core.Graph.Ridge.Contract",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+		FEonformRidgeContractTest,
+		"Eonform.Core.Graph.Ridge.Contract",
+		EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-bool FEonformRidgeContractTest::RunTest(const FString& Parameters)
+bool FEonformRidgeContractTest::RunTest(const FString &Parameters)
 {
 	RegisterEonformRidgeNode();
 	FEonformTerrainNodeDescriptor Descriptor;
@@ -77,30 +101,31 @@ bool FEonformRidgeContractTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Ridge exposes exactly six authored controls"), Descriptor.Parameters.Num(), 6);
 
 	const TArray<FName> Expected = {
-		TEXT("Scale"), TEXT("Height"), TEXT("Definition"), TEXT("Seed"), TEXT("ScaleX"), TEXT("ScaleY")
-	};
+			TEXT("Scale"), TEXT("Height"), TEXT("Definition"), TEXT("Seed"), TEXT("ScaleX"), TEXT("ScaleY")};
 	for (const FName Name : Expected)
 	{
 		TestTrue(*FString::Printf(TEXT("Ridge exposes %s"), *Name.ToString()), Descriptor.Parameters.ContainsByPredicate(
-			[Name](const FEonformTerrainParameterDescriptor& P) { return P.Name == Name; }));
+																																							 [Name](const FEonformTerrainParameterDescriptor &P)
+																																							 { return P.Name == Name; }));
 	}
 	TestFalse(TEXT("Resolution is build context, not a Ridge UI parameter"), Descriptor.Parameters.ContainsByPredicate(
-		[](const FEonformTerrainParameterDescriptor& P) { return P.Name == TEXT("Resolution"); }));
+																																							 [](const FEonformTerrainParameterDescriptor &P)
+																																							 { return P.Name == TEXT("Resolution"); }));
 	return true;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FEonformRidgeResolutionTest,
-	"Eonform.Core.Graph.Ridge.Resolution",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+		FEonformRidgeResolutionTest,
+		"Eonform.Core.Graph.Ridge.Resolution",
+		EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-bool FEonformRidgeResolutionTest::RunTest(const FString& Parameters)
+bool FEonformRidgeResolutionTest::RunTest(const FString &Parameters)
 {
 	using namespace EonformRidgeNodeTests;
 	const FIntPoint Requested(73, 61);
 	const FEonformTerrainEvaluationResult Result = EvaluateRidge(0.4f, 4451, Requested);
 	TestTrue(TEXT("Ridge evaluates"), Result.bSuccess);
-	const FEonformScalarField* Height = Result.Dataset.FindScalarField(EonformTerrainFieldNames::Height);
+	const FEonformScalarField *Height = Result.Dataset.FindScalarField(EonformTerrainFieldNames::Height);
 	TestNotNull(TEXT("Ridge publishes Height"), Height);
 	if (Height)
 	{
@@ -111,19 +136,19 @@ bool FEonformRidgeResolutionTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FEonformRidgeDefinitionTest,
-	"Eonform.Core.Graph.Ridge.Definition",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+		FEonformRidgeDefinitionTest,
+		"Eonform.Core.Graph.Ridge.Definition",
+		EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-bool FEonformRidgeDefinitionTest::RunTest(const FString& Parameters)
+bool FEonformRidgeDefinitionTest::RunTest(const FString &Parameters)
 {
 	using namespace EonformRidgeNodeTests;
 	const FEonformTerrainEvaluationResult Soft = EvaluateRidge(0.15f, 4451, FIntPoint(97, 97));
 	const FEonformTerrainEvaluationResult Defined = EvaluateRidge(0.85f, 4451, FIntPoint(97, 97));
 	TestTrue(TEXT("Low-definition Ridge evaluates"), Soft.bSuccess);
 	TestTrue(TEXT("High-definition Ridge evaluates"), Defined.bSuccess);
-	const FEonformScalarField* A = Soft.Dataset.FindScalarField(EonformTerrainFieldNames::Height);
-	const FEonformScalarField* B = Defined.Dataset.FindScalarField(EonformTerrainFieldNames::Height);
+	const FEonformScalarField *A = Soft.Dataset.FindScalarField(EonformTerrainFieldNames::Height);
+	const FEonformScalarField *B = Defined.Dataset.FindScalarField(EonformTerrainFieldNames::Height);
 	if (A && B)
 	{
 		TestTrue(TEXT("Definition materially changes Ridge morphology"), MeanAbsoluteDifference(*A, *B) > 0.001);
@@ -132,19 +157,19 @@ bool FEonformRidgeDefinitionTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FEonformRidgeDeterminismTest,
-	"Eonform.Core.Graph.Ridge.Determinism",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+		FEonformRidgeDeterminismTest,
+		"Eonform.Core.Graph.Ridge.Determinism",
+		EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-bool FEonformRidgeDeterminismTest::RunTest(const FString& Parameters)
+bool FEonformRidgeDeterminismTest::RunTest(const FString &Parameters)
 {
 	using namespace EonformRidgeNodeTests;
 	const FEonformTerrainEvaluationResult AResult = EvaluateRidge(0.4f, 99217, FIntPoint(65, 65));
 	const FEonformTerrainEvaluationResult BResult = EvaluateRidge(0.4f, 99217, FIntPoint(65, 65));
 	TestTrue(TEXT("First deterministic Ridge evaluates"), AResult.bSuccess);
 	TestTrue(TEXT("Second deterministic Ridge evaluates"), BResult.bSuccess);
-	const FEonformScalarField* A = AResult.Dataset.FindScalarField(EonformTerrainFieldNames::Height);
-	const FEonformScalarField* B = BResult.Dataset.FindScalarField(EonformTerrainFieldNames::Height);
+	const FEonformScalarField *A = AResult.Dataset.FindScalarField(EonformTerrainFieldNames::Height);
+	const FEonformScalarField *B = BResult.Dataset.FindScalarField(EonformTerrainFieldNames::Height);
 	if (A && B)
 	{
 		TestTrue(TEXT("Same Ridge seed/settings are deterministic"), MeanAbsoluteDifference(*A, *B) <= UE_SMALL_NUMBER);
@@ -153,21 +178,20 @@ bool FEonformRidgeDeterminismTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FEonformRidgeVoronoiRangeCompatibilityTest,
-	"Eonform.Core.Graph.Ridge.VoronoiRangeCompatibility",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+		FEonformRidgeVoronoiRangeCompatibilityTest,
+		"Eonform.Core.Graph.Ridge.VoronoiRangeCompatibility",
+		EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-bool FEonformRidgeVoronoiRangeCompatibilityTest::RunTest(const FString& Parameters)
+bool FEonformRidgeVoronoiRangeCompatibilityTest::RunTest(const FString &Parameters)
 {
 	constexpr float RidgeScale = 0.75f;
-	constexpr float RidgeVoronoiScaleCoefficient = 1.05f;
 	const FEonformGridDomain Domain = FEonformGridDomain::Make(
-		FIntPoint(97, 97),
-		FVector2d(-600000.0, -400000.0),
-		FVector2d(600000.0, 400000.0));
+			FIntPoint(97, 97),
+			FVector2d(-600000.0, -400000.0),
+			FVector2d(600000.0, 400000.0));
 
 	EonformTerrainProceduralOps::FVoronoiSettings Settings;
-	Settings.Scale = 1.0f - RidgeScale * RidgeVoronoiScaleCoefficient;
+	Settings.Scale = RidgeScale;
 	Settings.Function = TEXT("Euclidean");
 	Settings.Form = TEXT("P");
 	Settings.Gain = 0.5f;
@@ -183,25 +207,27 @@ bool FEonformRidgeVoronoiRangeCompatibilityTest::RunTest(const FString& Paramete
 	FEonformScalarField Structure;
 	FString Error;
 	TestTrue(TEXT("Ridge Voronoi source evaluates"), EonformVoronoi::Generate(Domain, Settings, 1.0f, Structure, &Error));
-	if (!Structure.IsValid()) return false;
+	if (!Structure.IsValid())
+		return false;
 
 	int32 AtOrAboveScale = 0;
 	for (const float Value : Structure.Values)
 	{
-		if (Value >= RidgeScale) ++AtOrAboveScale;
+		if (Value >= RidgeScale)
+			++AtOrAboveScale;
 	}
 	TestTrue(
-		TEXT("Ridge Voronoi source does not globally saturate the Ridge Scale ceiling"),
-		AtOrAboveScale * 2 < Structure.Values.Num());
+			TEXT("Ridge Voronoi source does not globally saturate the Ridge Scale ceiling"),
+			AtOrAboveScale * 2 < Structure.Values.Num());
 	return true;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FEonformRidgeRangeRetentionTest,
-	"Eonform.Core.Graph.Ridge.RangeRetention",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+		FEonformRidgeRangeRetentionTest,
+		"Eonform.Core.Graph.Ridge.RangeRetention",
+		EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-bool FEonformRidgeRangeRetentionTest::RunTest(const FString& Parameters)
+bool FEonformRidgeRangeRetentionTest::RunTest(const FString &Parameters)
 {
 	using namespace EonformRidgeNodeTests;
 	const FEonformTerrainEvaluationResult DefaultResult = EvaluateRidge(0.4f, 4451, FIntPoint(97, 97), 0.75f);
@@ -209,17 +235,18 @@ bool FEonformRidgeRangeRetentionTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Default Ridge evaluates"), DefaultResult.bSuccess);
 	TestTrue(TEXT("Low-scale Ridge evaluates"), LowScaleResult.bSuccess);
 
-	const FEonformScalarField* DefaultHeight = DefaultResult.Dataset.FindScalarField(EonformTerrainFieldNames::Height);
-	const FEonformScalarField* LowScaleHeight = LowScaleResult.Dataset.FindScalarField(EonformTerrainFieldNames::Height);
+	const FEonformScalarField *DefaultHeight = DefaultResult.Dataset.FindScalarField(EonformTerrainFieldNames::Height);
+	const FEonformScalarField *LowScaleHeight = LowScaleResult.Dataset.FindScalarField(EonformTerrainFieldNames::Height);
 	TestNotNull(TEXT("Default Ridge publishes Height"), DefaultHeight);
 	TestNotNull(TEXT("Low-scale Ridge publishes Height"), LowScaleHeight);
 	if (DefaultHeight)
 	{
-		TestTrue(TEXT("Default Ridge retains vertical variation"), FieldRange(*DefaultHeight) > 0.05f);
+		TestTrue(TEXT("Default Ridge retains mountain-scale vertical variation"), FieldRange(*DefaultHeight) > 0.20f);
+		TestTrue(TEXT("Default Ridge retains local spatial relief"), FieldMeanAbsoluteNeighborDifference(*DefaultHeight) > 0.001f);
 	}
 	if (LowScaleHeight)
 	{
-		TestTrue(TEXT("Low-scale Ridge does not collapse to a plane"), FieldRange(*LowScaleHeight) > 0.01f);
+		TestTrue(TEXT("Low-scale Ridge does not collapse to a plane"), FieldRange(*LowScaleHeight) > 0.15f);
 	}
 	return true;
 }

@@ -10,6 +10,7 @@ namespace EonformTerrainNodeTypes
 	EONFORMCORE_API extern const FName Cellular;
 	EONFORMCORE_API extern const FName Cellular3D;
 	EONFORMCORE_API extern const FName Cone;
+	EONFORMCORE_API extern const FName Crater;
 	EONFORMCORE_API extern const FName Constant;
 	EONFORMCORE_API extern const FName Cracks;
 	EONFORMCORE_API extern const FName DotNoise;
@@ -24,15 +25,19 @@ namespace EonformTerrainNodeTypes
 	EONFORMCORE_API extern const FName Noise;
 	EONFORMCORE_API extern const FName Object;
 	EONFORMCORE_API extern const FName Pattern;
+	EONFORMCORE_API extern const FName Plateau;
 	EONFORMCORE_API extern const FName RadialGradient;
 	EONFORMCORE_API extern const FName Shape;
 	EONFORMCORE_API extern const FName TileInput;
+	EONFORMCORE_API extern const FName Island;
 	EONFORMCORE_API extern const FName Voronoi;
 	EONFORMCORE_API extern const FName WaveShine;
 
 	// EONFORM high-level Terrain landforms/composites.
+	EONFORMCORE_API extern const FName Canyon;
 	EONFORMCORE_API extern const FName Ridge;
 	EONFORMCORE_API extern const FName Mountain;
+	EONFORMCORE_API extern const FName Volcano;
 
 	EONFORMCORE_API extern const FName TerrainShape;
 	EONFORMCORE_API extern const FName TerrainContext;
@@ -163,29 +168,40 @@ USTRUCT(BlueprintType)
 struct EONFORMCORE_API FEonformTerrainNode
 {
 	GENERATED_BODY()
-	UPROPERTY(EditAnywhere, Category="Terrain Node") FGuid Id;
-	UPROPERTY(EditAnywhere, Category="Terrain Node") FName Type = NAME_None;
-	UPROPERTY(EditAnywhere, Category="Terrain Node") TMap<FName, double> NumericParameters;
-	UPROPERTY(EditAnywhere, Category="Terrain Node") TMap<FName, int64> IntegerParameters;
-	UPROPERTY(EditAnywhere, Category="Terrain Node") TMap<FName, bool> BoolParameters;
-	UPROPERTY(EditAnywhere, Category="Terrain Node") TMap<FName, FName> NameParameters;
-	UPROPERTY(EditAnywhere, Category="Terrain Node") TMap<FName, FLinearColor> ColorParameters;
+	UPROPERTY(EditAnywhere, Category = "Terrain Node")
+	FGuid Id;
+	UPROPERTY(EditAnywhere, Category = "Terrain Node")
+	FName Type = NAME_None;
+	UPROPERTY(EditAnywhere, Category = "Terrain Node")
+	TMap<FName, double> NumericParameters;
+	UPROPERTY(EditAnywhere, Category = "Terrain Node")
+	TMap<FName, int64> IntegerParameters;
+	UPROPERTY(EditAnywhere, Category = "Terrain Node")
+	TMap<FName, bool> BoolParameters;
+	UPROPERTY(EditAnywhere, Category = "Terrain Node")
+	TMap<FName, FName> NameParameters;
+	UPROPERTY(EditAnywhere, Category = "Terrain Node")
+	TMap<FName, FLinearColor> ColorParameters;
 	bool IsValid() const;
 	double GetNumber(FName Name, double DefaultValue) const;
 	int64 GetInteger(FName Name, int64 DefaultValue) const;
 	bool GetBool(FName Name, bool DefaultValue) const;
 	FName GetName(FName Name, FName DefaultValue = NAME_None) const;
-	FLinearColor GetColor(FName Name, const FLinearColor& DefaultValue = FLinearColor::White) const;
+	FLinearColor GetColor(FName Name, const FLinearColor &DefaultValue = FLinearColor::White) const;
 };
 
 USTRUCT(BlueprintType)
 struct EONFORMCORE_API FEonformTerrainConnection
 {
 	GENERATED_BODY()
-	UPROPERTY(EditAnywhere, Category="Terrain Connection") FGuid FromNode;
-	UPROPERTY(EditAnywhere, Category="Terrain Connection") FName FromOutput = NAME_None;
-	UPROPERTY(EditAnywhere, Category="Terrain Connection") FGuid ToNode;
-	UPROPERTY(EditAnywhere, Category="Terrain Connection") FName ToInput = NAME_None;
+	UPROPERTY(EditAnywhere, Category = "Terrain Connection")
+	FGuid FromNode;
+	UPROPERTY(EditAnywhere, Category = "Terrain Connection")
+	FName FromOutput = NAME_None;
+	UPROPERTY(EditAnywhere, Category = "Terrain Connection")
+	FGuid ToNode;
+	UPROPERTY(EditAnywhere, Category = "Terrain Connection")
+	FName ToInput = NAME_None;
 	bool IsValid() const;
 };
 
@@ -203,11 +219,15 @@ struct EONFORMCORE_API FEonformTerrainRecipe
 		Connections.Reserve(16);
 	}
 
-	UPROPERTY(EditAnywhere, Category="Terrain Recipe") int32 Version = 1;
-	UPROPERTY(EditAnywhere, Category="Terrain Recipe") FGuid OutputNode;
-	UPROPERTY(EditAnywhere, Category="Terrain Recipe") TArray<FEonformTerrainNode> Nodes;
-	UPROPERTY(EditAnywhere, Category="Terrain Recipe") TArray<FEonformTerrainConnection> Connections;
-	const FEonformTerrainNode* FindNode(const FGuid& NodeId) const;
-	bool Validate(FString* OutError = nullptr) const;
+	UPROPERTY(EditAnywhere, Category = "Terrain Recipe")
+	int32 Version = 1;
+	UPROPERTY(EditAnywhere, Category = "Terrain Recipe")
+	FGuid OutputNode;
+	UPROPERTY(EditAnywhere, Category = "Terrain Recipe")
+	TArray<FEonformTerrainNode> Nodes;
+	UPROPERTY(EditAnywhere, Category = "Terrain Recipe")
+	TArray<FEonformTerrainConnection> Connections;
+	const FEonformTerrainNode *FindNode(const FGuid &NodeId) const;
+	bool Validate(FString *OutError = nullptr) const;
 	uint32 GetDeterministicHash() const;
 };

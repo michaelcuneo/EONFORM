@@ -69,10 +69,11 @@
 
 namespace
 {
-	void ApplyCurrentEonformPublicMetadata(FName Type, const TCHAR* DisplayName, const TCHAR* Category, bool bHidden = false)
+	void ApplyCurrentEonformPublicMetadata(FName Type, const TCHAR *DisplayName, const TCHAR *Category, bool bHidden = false)
 	{
 		FEonformTerrainNodeDescriptor Descriptor;
-		if (!FEonformTerrainNodeDescriptorRegistry::Get(Type, Descriptor)) return;
+		if (!FEonformTerrainNodeDescriptorRegistry::Get(Type, Descriptor))
+			return;
 		Descriptor.DisplayName = DisplayName;
 		Descriptor.Category = Category;
 		Descriptor.bHiddenInGraph = bHidden;
@@ -91,6 +92,7 @@ public:
 		RegisterEonformCellularNode();
 		RegisterEonformCellular3DNode();
 		RegisterEonformConeNode();
+		RegisterEonformCraterNode();
 		RegisterEonformConstantNode();
 		RegisterEonformCracksNode();
 		RegisterEonformDotNoiseNode();
@@ -102,10 +104,12 @@ public:
 		RegisterEonformHemisphereNode();
 		RegisterEonformLinearGradientNode();
 		RegisterEonformLineNoiseNode();
+		RegisterEonformIslandNode();
 		RegisterEonformMultiFractalNode();
 		RegisterEonformNoiseNode();
 		RegisterEonformObjectNode();
 		RegisterEonformPatternNode();
+		RegisterEonformPlateauNode();
 		RegisterEonformRadialGradientNode();
 		RegisterEonformShapeNode();
 		RegisterEonformTileInputNode();

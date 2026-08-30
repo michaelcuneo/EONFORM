@@ -8,16 +8,17 @@
 
 namespace
 {
-	FEonformTerrainPortDescriptor CellularTerrainPort(FName Name, const TCHAR* DisplayName = nullptr)
+	FEonformTerrainPortDescriptor CellularTerrainPort(FName Name, const TCHAR *DisplayName = nullptr)
 	{
 		FEonformTerrainPortDescriptor Port;
 		Port.Name = Name;
 		Port.DataType = TEXT("Terrain");
-		if (DisplayName) Port.DisplayName = DisplayName;
+		if (DisplayName)
+			Port.DisplayName = DisplayName;
 		return Port;
 	}
 
-	FEonformTerrainParameterDescriptor CellularNumberParameter(FName Name, const TCHAR* DisplayName, double DefaultValue, double Minimum, double Maximum)
+	FEonformTerrainParameterDescriptor CellularNumberParameter(FName Name, const TCHAR *DisplayName, double DefaultValue, double Minimum, double Maximum)
 	{
 		FEonformTerrainParameterDescriptor Parameter;
 		Parameter.Name = Name;
@@ -31,7 +32,7 @@ namespace
 		return Parameter;
 	}
 
-	FEonformTerrainParameterDescriptor CellularIntegerParameter(FName Name, const TCHAR* DisplayName, int64 DefaultValue, int64 Minimum, int64 Maximum)
+	FEonformTerrainParameterDescriptor CellularIntegerParameter(FName Name, const TCHAR *DisplayName, int64 DefaultValue, int64 Minimum, int64 Maximum)
 	{
 		FEonformTerrainParameterDescriptor Parameter;
 		Parameter.Name = Name;
@@ -45,14 +46,15 @@ namespace
 		return Parameter;
 	}
 
-	FEonformTerrainParameterDescriptor CellularNameParameter(FName Name, const TCHAR* DisplayName, FName DefaultValue, std::initializer_list<FName> Options)
+	FEonformTerrainParameterDescriptor CellularNameParameter(FName Name, const TCHAR *DisplayName, FName DefaultValue, std::initializer_list<FName> Options)
 	{
 		FEonformTerrainParameterDescriptor Parameter;
 		Parameter.Name = Name;
 		Parameter.DisplayName = DisplayName;
 		Parameter.Type = EEonformTerrainParameterType::Name;
 		Parameter.DefaultName = DefaultValue;
-		for (const FName Option : Options) Parameter.NameOptions.Add(Option);
+		for (const FName Option : Options)
+			Parameter.NameOptions.Add(Option);
 		return Parameter;
 	}
 
@@ -94,8 +96,10 @@ namespace
 		const float Euclidean = FMath::Sqrt(DX * DX + DY * DY);
 		const float Manhattan = FMath::Abs(DX) + FMath::Abs(DY);
 		const float Chebyshev = FMath::Max(FMath::Abs(DX), FMath::Abs(DY));
-		if (Metric == TEXT("Euclidian Manhattan") || Metric == TEXT("Euclidian_Manhattan")) return FMath::Lerp(Euclidean, Manhattan, Morph);
-		if (Metric == TEXT("Euclidian Chebyshev") || Metric == TEXT("Euclidian_Chebyshev")) return FMath::Lerp(Euclidean, Chebyshev, Morph);
+		if (Metric == TEXT("Euclidian Manhattan") || Metric == TEXT("Euclidian_Manhattan"))
+			return FMath::Lerp(Euclidean, Manhattan, Morph);
+		if (Metric == TEXT("Euclidian Chebyshev") || Metric == TEXT("Euclidian_Chebyshev"))
+			return FMath::Lerp(Euclidean, Chebyshev, Morph);
 		if (Metric == TEXT("Minkowski"))
 		{
 			const float P = FMath::Lerp(1.0f, 4.0f, Morph);
@@ -104,9 +108,9 @@ namespace
 		return Euclidean;
 	}
 
-	bool EvaluateCellularNode(const FEonformTerrainNode& Node, const FEonformTerrainNodeInputs&, const FEonformTerrainEvaluationContext&, FEonformTerrainNodeEvaluation& Out, FString& Error)
+	bool EvaluateCellularNode(const FEonformTerrainNode &Node, const FEonformTerrainNodeInputs &, const FEonformTerrainEvaluationContext &, FEonformTerrainNodeEvaluation &Out, FString &Error)
 	{
-		const int32 Resolution = FMath::Clamp<int32>(static_cast<int32>(Node.GetInteger(TEXT("Resolution"), 257)), 2, 1025);
+		const int32 Resolution = FMath::Clamp<int32>(static_cast<int32>(Node.GetInteger(TEXT("Resolution"), 257)), 2, 4097);
 		const float WorldSize = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("WorldSize"), 100000.0)), 1.0f, 10000000.0f);
 		const float HeightScale = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("HeightScale"), 8000.0)), 1.0f, 1000000.0f);
 		const float Size = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Size"), 0.5)), 0.001f, 10.0f);
@@ -209,8 +213,8 @@ namespace
 				{
 					const float SiteDistance = FVector2D::Distance(NearestPoint, SecondPoint);
 					const float EdgeDistance = SiteDistance > UE_SMALL_NUMBER
-						? FMath::Max((F2 * F2 - F1 * F1) / (2.0f * SiteDistance), 0.0f)
-						: 0.0f;
+																				 ? FMath::Max((F2 * F2 - F1 * F1) / (2.0f * SiteDistance), 0.0f)
+																				 : 0.0f;
 					V = FMath::Clamp(EdgeDistance * 2.0f, 0.0f, 1.0f);
 				}
 				else
@@ -252,11 +256,11 @@ void RegisterEonformCellularNode()
 	Descriptor.Parameters.Add(CellularNumberParameter(TEXT("Density"), TEXT("Density"), 1.0, 0.05, 8.0));
 	Descriptor.Parameters.Add(CellularNumberParameter(TEXT("Jitter"), TEXT("Jitter"), 1.0, 0.0, 2.0));
 	Descriptor.Parameters.Add(CellularNumberParameter(TEXT("MetricMorph"), TEXT("Metric Morph"), 0.0, 0.0, 1.0));
-	Descriptor.Parameters.Add(CellularNameParameter(TEXT("DistanceMetric"), TEXT("Distance Metric"), TEXT("Euclidian Manhattan"), { TEXT("Euclidian Manhattan"), TEXT("Euclidian Chebyshev"), TEXT("Minkowski") }));
+	Descriptor.Parameters.Add(CellularNameParameter(TEXT("DistanceMetric"), TEXT("Distance Metric"), TEXT("Euclidian Manhattan"), {TEXT("Euclidian Manhattan"), TEXT("Euclidian Chebyshev"), TEXT("Minkowski")}));
 	Descriptor.Parameters.Add(CellularNumberParameter(TEXT("CoordinateAxesJitter"), TEXT("Coordinate Axes Jitter"), 0.0, 0.0, 1.0));
 	Descriptor.Parameters.Add(CellularNumberParameter(TEXT("CAJClustering"), TEXT("CAJ Clustering"), 0.0, 0.0, 1.0));
 	Descriptor.Parameters.Add(CellularNumberParameter(TEXT("Anisotropy"), TEXT("Anisotropy"), 0.0, 0.0, 1.0));
-	Descriptor.Parameters.Add(CellularNameParameter(TEXT("DistanceFunction"), TEXT("Distance Function"), TEXT("Hash"), { TEXT("Hash"), TEXT("Distance Inv"), TEXT("Distance 2 Inv"), TEXT("Distance Diff"), TEXT("Distance to Edge") }));
+	Descriptor.Parameters.Add(CellularNameParameter(TEXT("DistanceFunction"), TEXT("Distance Function"), TEXT("Hash"), {TEXT("Hash"), TEXT("Distance Inv"), TEXT("Distance 2 Inv"), TEXT("Distance Diff"), TEXT("Distance to Edge")}));
 	Descriptor.Parameters.Add(CellularIntegerParameter(TEXT("Seed"), TEXT("Seed"), 1337, -2147483647, 2147483647));
 	FEonformTerrainNodeDescriptorRegistry::Register(Descriptor);
 	FEonformTerrainNodeRegistry::Register(EonformTerrainNodeTypes::Cellular, EvaluateCellularNode);

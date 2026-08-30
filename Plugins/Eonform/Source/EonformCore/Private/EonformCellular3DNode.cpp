@@ -8,16 +8,17 @@
 
 namespace
 {
-	FEonformTerrainPortDescriptor Cellular3DPort(FName Name, FName DataType, const TCHAR* DisplayName = nullptr)
+	FEonformTerrainPortDescriptor Cellular3DPort(FName Name, FName DataType, const TCHAR *DisplayName = nullptr)
 	{
 		FEonformTerrainPortDescriptor Port;
 		Port.Name = Name;
 		Port.DataType = DataType;
-		if (DisplayName) Port.DisplayName = DisplayName;
+		if (DisplayName)
+			Port.DisplayName = DisplayName;
 		return Port;
 	}
 
-	FEonformTerrainParameterDescriptor Cellular3DNumberParameter(FName Name, const TCHAR* DisplayName, double DefaultValue, double Minimum, double Maximum)
+	FEonformTerrainParameterDescriptor Cellular3DNumberParameter(FName Name, const TCHAR *DisplayName, double DefaultValue, double Minimum, double Maximum)
 	{
 		FEonformTerrainParameterDescriptor Parameter;
 		Parameter.Name = Name;
@@ -31,7 +32,7 @@ namespace
 		return Parameter;
 	}
 
-	FEonformTerrainParameterDescriptor Cellular3DIntegerParameter(FName Name, const TCHAR* DisplayName, int64 DefaultValue, int64 Minimum, int64 Maximum)
+	FEonformTerrainParameterDescriptor Cellular3DIntegerParameter(FName Name, const TCHAR *DisplayName, int64 DefaultValue, int64 Minimum, int64 Maximum)
 	{
 		FEonformTerrainParameterDescriptor Parameter;
 		Parameter.Name = Name;
@@ -45,7 +46,7 @@ namespace
 		return Parameter;
 	}
 
-	FEonformTerrainParameterDescriptor Cellular3DBooleanParameter(FName Name, const TCHAR* DisplayName, bool DefaultValue)
+	FEonformTerrainParameterDescriptor Cellular3DBooleanParameter(FName Name, const TCHAR *DisplayName, bool DefaultValue)
 	{
 		FEonformTerrainParameterDescriptor Parameter;
 		Parameter.Name = Name;
@@ -77,8 +78,7 @@ namespace
 
 	float Cellular3DHash01(int32 X, int32 Y, int32 Layer, int32 Seed, uint32 Salt)
 	{
-		return static_cast<float>(Cellular3DCellHash(X, Y, Layer, Seed, Salt) & 0x00ffffffU)
-			/ static_cast<float>(0x01000000U);
+		return static_cast<float>(Cellular3DCellHash(X, Y, Layer, Seed, Salt) & 0x00ffffffU) / static_cast<float>(0x01000000U);
 	}
 
 	float Cellular3DFacetDistance(float DX, float DY, float ScaleZ, uint32 Hash)
@@ -95,16 +95,17 @@ namespace
 	}
 
 	bool EvaluateCellular3DNode(
-		const FEonformTerrainNode& Node,
-		const FEonformTerrainNodeInputs& Inputs,
-		const FEonformTerrainEvaluationContext&,
-		FEonformTerrainNodeEvaluation& Out,
-		FString& Error)
+			const FEonformTerrainNode &Node,
+			const FEonformTerrainNodeInputs &Inputs,
+			const FEonformTerrainEvaluationContext &,
+			FEonformTerrainNodeEvaluation &Out,
+			FString &Error)
 	{
-		const FEonformTerrainValue* Input = nullptr;
-		if (const FEonformTerrainValue* const* InputPtr = Inputs.Find(TEXT("Input"))) Input = *InputPtr;
+		const FEonformTerrainValue *Input = nullptr;
+		if (const FEonformTerrainValue *const *InputPtr = Inputs.Find(TEXT("Input")))
+			Input = *InputPtr;
 
-		const FEonformScalarField* InputHeight = nullptr;
+		const FEonformScalarField *InputHeight = nullptr;
 		float HeightScale = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("HeightScale"), 8000.0)), 1.0f, 1000000.0f);
 		FEonformGridDomain Domain;
 		if (Input && Input->Type == EEonformTerrainValueType::Terrain && Input->IsValid())
@@ -120,13 +121,13 @@ namespace
 		}
 		else
 		{
-			const int32 Resolution = FMath::Clamp<int32>(static_cast<int32>(Node.GetInteger(TEXT("Resolution"), 257)), 2, 1025);
+			const int32 Resolution = FMath::Clamp<int32>(static_cast<int32>(Node.GetInteger(TEXT("Resolution"), 257)), 2, 4097);
 			const float WorldSize = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("WorldSize"), 100000.0)), 1.0f, 10000000.0f);
 			const double HalfWorldSize = static_cast<double>(WorldSize) * 0.5;
 			Domain = FEonformGridDomain::Make(
-				FIntPoint(Resolution, Resolution),
-				FVector2d(-HalfWorldSize, -HalfWorldSize),
-				FVector2d(HalfWorldSize, HalfWorldSize));
+					FIntPoint(Resolution, Resolution),
+					FVector2d(-HalfWorldSize, -HalfWorldSize),
+					FVector2d(HalfWorldSize, HalfWorldSize));
 		}
 
 		if (!Domain.IsValid())
@@ -201,14 +202,13 @@ namespace
 						for (int32 CX = BaseX - 2; CX <= BaseX + 2; ++CX)
 						{
 							const uint32 CellHash = Cellular3DCellHash(CX, CY, Layer, Seed, 0x3d77U);
-							const float FeatureX = static_cast<float>(CX) + 0.5f
-								+ (Cellular3DHash01(CX, CY, Layer, Seed, 0x41a7U) - 0.5f) * JitterX;
-							const float FeatureY = static_cast<float>(CY) + 0.5f
-								+ (Cellular3DHash01(CX, CY, Layer, Seed, 0x72b9U) - 0.5f) * JitterY;
+							const float FeatureX = static_cast<float>(CX) + 0.5f + (Cellular3DHash01(CX, CY, Layer, Seed, 0x41a7U) - 0.5f) * JitterX;
+							const float FeatureY = static_cast<float>(CY) + 0.5f + (Cellular3DHash01(CX, CY, Layer, Seed, 0x72b9U) - 0.5f) * JitterY;
 							const float DX = PX - FeatureX;
 							const float DY = PY - FeatureY;
 							const float Radial = FMath::Sqrt(DX * DX + DY * DY);
-							if (Radial > 1.75f) continue;
+							if (Radial > 1.75f)
+								continue;
 
 							const float BaseZ = (static_cast<float>(Layer) + 0.35f) / static_cast<float>(Layers);
 							const float ZVariation = (Cellular3DHash01(CX, CY, Layer, Seed, 0xa3d1U) - 0.5f) * 0.8f * JitterZ;
