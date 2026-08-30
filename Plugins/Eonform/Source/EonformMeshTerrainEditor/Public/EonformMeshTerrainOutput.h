@@ -36,6 +36,12 @@ struct FEonformMeshTerrainOutputSettings
 	/** Zero means use the evaluated Height field resolution. */
 	FIntPoint TargetResolution = FIntPoint::ZeroValue;
 
+	/** Source snapshot identity used by runtime region diagnostics. */
+	FName SourceId = NAME_None;
+
+	/** Source snapshot revision used by runtime region diagnostics. */
+	uint64 SourceRevision = 0;
+
 	/** Automatic is the safe default; Explicit exposes Sections directly. */
 	EEonformMeshTerrainSectionLayout SectionLayout = EEonformMeshTerrainSectionLayout::Automatic;
 
