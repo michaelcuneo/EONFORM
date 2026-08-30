@@ -102,7 +102,7 @@ private:
 			.HeightOverride(300.0f)
 			[
 				SNew(SScrollBox)
-				.ScrollBarAlwaysVisible(true)
+				.AlwaysShowScrollbar(true)
 				+ SScrollBox::Slot()
 				[
 					SNew(SVerticalBox)
