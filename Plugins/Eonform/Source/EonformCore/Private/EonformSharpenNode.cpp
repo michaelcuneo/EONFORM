@@ -1,5 +1,6 @@
 #include "EonformSharpenNode.h"
 
+#include "EonformRegionalFieldSampling.h"
 #include "EonformTerrainEvaluator.h"
 #include "EonformTerrainFieldNames.h"
 #include "EonformTerrainNodeDescriptor.h"
@@ -42,14 +43,12 @@ namespace
 		return Parameter;
 	}
 
-	float SharpenSampleClamped(const FEonformScalarField& Field, int32 X, int32 Y)
-	{
-		return Field.AtInterior(
-			FMath::Clamp(X, 0, Field.Domain.Dimensions.X - 1),
-			FMath::Clamp(Y, 0, Field.Domain.Dimensions.Y - 1));
-	}
-
-	bool SharpenHeightField(const FEonformTerrainNode& Node, const FEonformScalarField& Source, FEonformScalarField& OutField, FString& Error)
+	bool SharpenHeightField(
+		const FEonformTerrainNode& Node,
+		const FEonformScalarField& Source,
+		const FEonformTerrainEvaluationContext& Context,
+		FEonformScalarField& OutField,
+		FString& Error)
 	{
 		if (!Source.IsValid())
 		{
@@ -64,30 +63,52 @@ namespace
 			return false;
 		}
 		const float Amount = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("Amount"), 0.5)), 0.0f, 2.0f);
-		OutField = Source;
-		for (int32 Y = 0; Y < Source.Domain.Dimensions.Y; ++Y)
+		const int32 RequiredBorder = EonformSharpenNode::RequiredBorderSamples(Node);
+		if (Context.HasRegion() && Source.Domain.BorderSamples < RequiredBorder)
 		{
-			for (int32 X = 0; X < Source.Domain.Dimensions.X; ++X)
+			Error = TEXT("Regional Sharpen requires one dependency-border sample when Amount is non-zero.");
+			return false;
+		}
+		if (RequiredBorder == 0)
+		{
+			OutField = Source;
+			return true;
+		}
+
+		FEonformGridDomain WorldDomain;
+		if (!EonformRegionalFieldSampling::ResolveWorldDomain(Source, Context, WorldDomain, Error)) return false;
+
+		OutField = Source;
+		const FIntPoint Storage = Source.Domain.GetStorageDimensions();
+		for (int32 Y = 0; Y < Storage.Y; ++Y)
+		{
+			for (int32 X = 0; X < Storage.X; ++X)
 			{
+				const FIntPoint CenterCoord = EonformRegionalFieldSampling::ResolveStorageCoordinate(Source, X, Y, WorldDomain);
 				float Sum = 0.0f;
 				for (int32 DY = -1; DY <= 1; ++DY)
 				{
 					for (int32 DX = -1; DX <= 1; ++DX)
 					{
-						Sum += SharpenSampleClamped(Source, X + DX, Y + DY);
+						Sum += EonformRegionalFieldSampling::SampleOffset(Source, CenterCoord, DX, DY, WorldDomain);
 					}
 				}
-				const float Center = Source.AtInterior(X, Y);
+				const float Center = Source.AtStorage(CenterCoord.X, CenterCoord.Y);
 				const float Blurred = Sum / 9.0f;
 				const float Detail = Center - Blurred;
 				const float Gain = Method == TEXT("Frequency") ? 1.5f : 1.0f;
-				OutField.AtInterior(X, Y) = FMath::Clamp(Center + Detail * Amount * Gain, -1.0f, 1.0f);
+				OutField.AtStorage(X, Y) = FMath::Clamp(Center + Detail * Amount * Gain, -1.0f, 1.0f);
 			}
 		}
 		return OutField.IsValid();
 	}
 
-	bool EvaluateSharpenNode(const FEonformTerrainNode& Node, const FEonformTerrainNodeInputs& Inputs, const FEonformTerrainEvaluationContext&, FEonformTerrainNodeEvaluation& Out, FString& Error)
+	bool EvaluateSharpenNode(
+		const FEonformTerrainNode& Node,
+		const FEonformTerrainNodeInputs& Inputs,
+		const FEonformTerrainEvaluationContext& Context,
+		FEonformTerrainNodeEvaluation& Out,
+		FString& Error)
 	{
 		const FEonformTerrainValue* const* InputPtr = Inputs.Find(TEXT("Terrain"));
 		const FEonformTerrainValue* Input = InputPtr ? *InputPtr : nullptr;
@@ -105,7 +126,7 @@ namespace
 		}
 
 		FEonformScalarField ResultHeight;
-		if (!SharpenHeightField(Node, *Height, ResultHeight, Error)) return false;
+		if (!SharpenHeightField(Node, *Height, Context, ResultHeight, Error)) return false;
 		ResultHeight.Descriptor.Name = EonformTerrainFieldNames::Height;
 
 		FEonformTerrainDataset Dataset = Input->TerrainDataset;

@@ -1,5 +1,6 @@
 #include "EonformCurvatureNode.h"
 
+#include "EonformRegionalFieldSampling.h"
 #include "EonformTerrainEvaluator.h"
 #include "EonformTerrainFieldNames.h"
 #include "EonformTerrainNodeDescriptor.h"
@@ -88,7 +89,12 @@ namespace
 		return 0.0f;
 	}
 
-	bool EvaluateCurvatureNode(const FEonformTerrainNode& Node, const FEonformTerrainNodeInputs& Inputs, const FEonformTerrainEvaluationContext&, FEonformTerrainNodeEvaluation& Out, FString& Error)
+	bool EvaluateCurvatureNode(
+		const FEonformTerrainNode& Node,
+		const FEonformTerrainNodeInputs& Inputs,
+		const FEonformTerrainEvaluationContext& Context,
+		FEonformTerrainNodeEvaluation& Out,
+		FString& Error)
 	{
 		const FEonformTerrainValue* const* InputPtr = Inputs.Find(TEXT("Terrain"));
 		const FEonformTerrainValue* Input = InputPtr ? *InputPtr : nullptr;
@@ -104,6 +110,11 @@ namespace
 			Error = TEXT("Curvature input terrain has no valid Height field.");
 			return false;
 		}
+		if (Context.HasRegion() && Height->Domain.BorderSamples < EonformCurvatureNode::RequiredBorderSamples())
+		{
+			Error = TEXT("Regional Curvature requires one dependency-border sample.");
+			return false;
+		}
 
 		const FVector2d CellSize = Height->Domain.GetCellSize();
 		if (CellSize.X <= UE_SMALL_NUMBER || CellSize.Y <= UE_SMALL_NUMBER)
@@ -111,6 +122,9 @@ namespace
 			Error = TEXT("Curvature input terrain has invalid grid spacing.");
 			return false;
 		}
+
+		FEonformGridDomain WorldDomain;
+		if (!EonformRegionalFieldSampling::ResolveWorldDomain(*Height, Context, WorldDomain, Error)) return false;
 
 		const float Minimum = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("RangeMin"), 0.0)), 0.0f, 1.0f);
 		const float Maximum = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("RangeMax"), 1.0)), Minimum, 1.0f);
@@ -130,27 +144,28 @@ namespace
 		FEonformScalarField Mask;
 		Mask.Initialize(Height->Domain, Descriptor);
 
-		const FIntPoint Dimensions = Height->Domain.Dimensions;
-		for (int32 Y = 0; Y < Dimensions.Y; ++Y)
+		const FIntPoint Storage = Height->Domain.GetStorageDimensions();
+		for (int32 Y = 0; Y < Storage.Y; ++Y)
 		{
-			for (int32 X = 0; X < Dimensions.X; ++X)
+			for (int32 X = 0; X < Storage.X; ++X)
 			{
-				const int32 XL = FMath::Max(0, X - 1);
-				const int32 XR = FMath::Min(Dimensions.X - 1, X + 1);
-				const int32 YD = FMath::Max(0, Y - 1);
-				const int32 YU = FMath::Min(Dimensions.Y - 1, Y + 1);
-				const float Center = Height->AtInterior(X, Y);
+				const FIntPoint CenterCoord = EonformRegionalFieldSampling::ResolveStorageCoordinate(*Height, X, Y, WorldDomain);
+				const float Center = Height->AtStorage(CenterCoord.X, CenterCoord.Y);
+				const float Left = EonformRegionalFieldSampling::SampleOffset(*Height, CenterCoord, -1, 0, WorldDomain);
+				const float Right = EonformRegionalFieldSampling::SampleOffset(*Height, CenterCoord, 1, 0, WorldDomain);
+				const float Down = EonformRegionalFieldSampling::SampleOffset(*Height, CenterCoord, 0, -1, WorldDomain);
+				const float Up = EonformRegionalFieldSampling::SampleOffset(*Height, CenterCoord, 0, 1, WorldDomain);
 				const float Horizontal = FMath::Clamp(
-					(Center - 0.5f * (Height->AtInterior(XL, Y) + Height->AtInterior(XR, Y))) * HeightScale
+					(Center - 0.5f * (Left + Right)) * HeightScale
 					/ FMath::Max(static_cast<float>(CellSize.X), UE_SMALL_NUMBER), 0.0f, 1.0f);
 				const float Vertical = FMath::Clamp(
-					(Center - 0.5f * (Height->AtInterior(X, YD) + Height->AtInterior(X, YU))) * HeightScale
+					(Center - 0.5f * (Down + Up)) * HeightScale
 					/ FMath::Max(static_cast<float>(CellSize.Y), UE_SMALL_NUMBER), 0.0f, 1.0f);
 
 				float Curvature = 0.5f * (Horizontal + Vertical);
 				if (Type == TEXT("Horizontal")) Curvature = Horizontal;
 				else if (Type == TEXT("Vertical")) Curvature = Vertical;
-				Mask.AtInterior(X, Y) = FMath::Clamp(CurvatureRangeWeight(Curvature, Minimum, Maximum, Falloff), 0.0f, 1.0f);
+				Mask.AtStorage(X, Y) = FMath::Clamp(CurvatureRangeWeight(Curvature, Minimum, Maximum, Falloff), 0.0f, 1.0f);
 			}
 		}
 

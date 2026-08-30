@@ -1,6 +1,11 @@
 #include "EonformTerrainRegionalSupport.h"
 
+#include "EonformAngleNode.h"
 #include "EonformBlurNode.h"
+#include "EonformCurvatureNode.h"
+#include "EonformDenoiseNode.h"
+#include "EonformSharpenNode.h"
+#include "EonformSlopeNode.h"
 
 namespace
 {
@@ -34,6 +39,36 @@ namespace
 				return false;
 			}
 			OutLocalBorderSamples = Radius;
+			return true;
+		}
+
+		if (Node.Type == EonformTerrainNodeTypes::Denoise)
+		{
+			OutLocalBorderSamples = EonformDenoiseNode::RequiredBorderSamples(Node);
+			return true;
+		}
+
+		if (Node.Type == EonformTerrainNodeTypes::Sharpen)
+		{
+			OutLocalBorderSamples = EonformSharpenNode::RequiredBorderSamples(Node);
+			return true;
+		}
+
+		if (Node.Type == EonformTerrainNodeTypes::Slope)
+		{
+			OutLocalBorderSamples = EonformSlopeNode::RequiredBorderSamples();
+			return true;
+		}
+
+		if (Node.Type == EonformTerrainNodeTypes::Curvature)
+		{
+			OutLocalBorderSamples = EonformCurvatureNode::RequiredBorderSamples();
+			return true;
+		}
+
+		if (Node.Type == EonformTerrainNodeTypes::Angle)
+		{
+			OutLocalBorderSamples = EonformAngleNode::RequiredBorderSamples();
 			return true;
 		}
 

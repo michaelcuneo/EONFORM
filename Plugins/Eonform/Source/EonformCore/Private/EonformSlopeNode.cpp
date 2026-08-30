@@ -1,5 +1,6 @@
 #include "EonformSlopeNode.h"
 
+#include "EonformRegionalFieldSampling.h"
 #include "EonformTerrainEvaluator.h"
 #include "EonformTerrainFieldNames.h"
 #include "EonformTerrainNodeDescriptor.h"
@@ -81,7 +82,12 @@ namespace
 		return 0.0f;
 	}
 
-	bool EvaluateSlopeNodeCurrent(const FEonformTerrainNode& Node, const FEonformTerrainNodeInputs& Inputs, const FEonformTerrainEvaluationContext&, FEonformTerrainNodeEvaluation& Out, FString& Error)
+	bool EvaluateSlopeNodeCurrent(
+		const FEonformTerrainNode& Node,
+		const FEonformTerrainNodeInputs& Inputs,
+		const FEonformTerrainEvaluationContext& Context,
+		FEonformTerrainNodeEvaluation& Out,
+		FString& Error)
 	{
 		const FEonformTerrainValue* const* InputPtr = Inputs.Find(TEXT("Terrain"));
 		const FEonformTerrainValue* Input = InputPtr ? *InputPtr : nullptr;
@@ -97,6 +103,11 @@ namespace
 			Error = TEXT("Slope input terrain has no valid Height field.");
 			return false;
 		}
+		if (Context.HasRegion() && Height->Domain.BorderSamples < EonformSlopeNode::RequiredBorderSamples())
+		{
+			Error = TEXT("Regional Slope requires one dependency-border sample.");
+			return false;
+		}
 
 		const FVector2d CellSize = Height->Domain.GetCellSize();
 		if (CellSize.X <= UE_SMALL_NUMBER || CellSize.Y <= UE_SMALL_NUMBER)
@@ -104,6 +115,9 @@ namespace
 			Error = TEXT("Slope input terrain has invalid grid spacing.");
 			return false;
 		}
+
+		FEonformGridDomain WorldDomain;
+		if (!EonformRegionalFieldSampling::ResolveWorldDomain(*Height, Context, WorldDomain, Error)) return false;
 
 		const float Minimum = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("RangeMin"), 0.0)), 0.0f, 90.0f);
 		const float Maximum = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("RangeMax"), 45.0)), Minimum, 90.0f);
@@ -124,26 +138,33 @@ namespace
 		FEonformScalarField Mask;
 		Mask.Initialize(Height->Domain, Descriptor);
 
-		const FIntPoint Dimensions = Height->Domain.Dimensions;
-		for (int32 Y = 0; Y < Dimensions.Y; ++Y)
+		const FIntPoint Storage = Height->Domain.GetStorageDimensions();
+		for (int32 Y = 0; Y < Storage.Y; ++Y)
 		{
-			for (int32 X = 0; X < Dimensions.X; ++X)
+			for (int32 X = 0; X < Storage.X; ++X)
 			{
-				const int32 XL = FMath::Max(0, X - 1);
-				const int32 XR = FMath::Min(Dimensions.X - 1, X + 1);
-				const int32 YD = FMath::Max(0, Y - 1);
-				const int32 YU = FMath::Min(Dimensions.Y - 1, Y + 1);
-				const float DX = (Height->AtInterior(XR, Y) - Height->AtInterior(XL, Y)) * HeightScale
-					/ FMath::Max(static_cast<float>(XR - XL) * static_cast<float>(CellSize.X), UE_SMALL_NUMBER);
-				const float DY = (Height->AtInterior(X, YU) - Height->AtInterior(X, YD)) * HeightScale
-					/ FMath::Max(static_cast<float>(YU - YD) * static_cast<float>(CellSize.Y), UE_SMALL_NUMBER);
+				const FIntPoint CenterCoord = EonformRegionalFieldSampling::ResolveStorageCoordinate(*Height, X, Y, WorldDomain);
+				const FIntPoint LeftCoord = EonformRegionalFieldSampling::ResolveStorageCoordinate(*Height, CenterCoord.X - 1, CenterCoord.Y, WorldDomain);
+				const FIntPoint RightCoord = EonformRegionalFieldSampling::ResolveStorageCoordinate(*Height, CenterCoord.X + 1, CenterCoord.Y, WorldDomain);
+				const FIntPoint DownCoord = EonformRegionalFieldSampling::ResolveStorageCoordinate(*Height, CenterCoord.X, CenterCoord.Y - 1, WorldDomain);
+				const FIntPoint UpCoord = EonformRegionalFieldSampling::ResolveStorageCoordinate(*Height, CenterCoord.X, CenterCoord.Y + 1, WorldDomain);
+
+				const float Left = Height->AtStorage(LeftCoord.X, LeftCoord.Y);
+				const float Right = Height->AtStorage(RightCoord.X, RightCoord.Y);
+				const float Down = Height->AtStorage(DownCoord.X, DownCoord.Y);
+				const float Up = Height->AtStorage(UpCoord.X, UpCoord.Y);
+				const float Center = Height->AtStorage(CenterCoord.X, CenterCoord.Y);
+
+				const float DX = (Right - Left) * HeightScale
+					/ FMath::Max(static_cast<float>(RightCoord.X - LeftCoord.X) * static_cast<float>(CellSize.X), UE_SMALL_NUMBER);
+				const float DY = (Up - Down) * HeightScale
+					/ FMath::Max(static_cast<float>(UpCoord.Y - DownCoord.Y) * static_cast<float>(CellSize.Y), UE_SMALL_NUMBER);
 				float Degrees = FMath::RadiansToDegrees(FMath::Atan(FMath::Sqrt(DX * DX + DY * DY)));
 				if (Type == TEXT("Normalized")) Degrees = FMath::Clamp(Degrees / 90.0f, 0.0f, 1.0f) * 90.0f;
 
-				const float Center = Height->AtInterior(X, Y);
-				const float LocalMean = 0.25f * (Height->AtInterior(XL, Y) + Height->AtInterior(XR, Y) + Height->AtInterior(X, YD) + Height->AtInterior(X, YU));
+				const float LocalMean = 0.25f * (Left + Right + Down + Up);
 				Degrees = FMath::Clamp(Degrees + FMath::Abs(Center - LocalMean) * 90.0f * MicroAccent, 0.0f, 90.0f);
-				Mask.AtInterior(X, Y) = SlopeNodeRangeWeight(Degrees, Minimum, Maximum, Falloff);
+				Mask.AtStorage(X, Y) = SlopeNodeRangeWeight(Degrees, Minimum, Maximum, Falloff);
 			}
 		}
 

@@ -1,5 +1,6 @@
 #include "EonformAngleNode.h"
 
+#include "EonformRegionalFieldSampling.h"
 #include "EonformTerrainEvaluator.h"
 #include "EonformTerrainFieldNames.h"
 #include "EonformTerrainNodeDescriptor.h"
@@ -81,7 +82,12 @@ namespace
 		return FMath::Abs(Delta);
 	}
 
-	bool EvaluateAngleNode(const FEonformTerrainNode& Node, const FEonformTerrainNodeInputs& Inputs, const FEonformTerrainEvaluationContext&, FEonformTerrainNodeEvaluation& Out, FString& Error)
+	bool EvaluateAngleNode(
+		const FEonformTerrainNode& Node,
+		const FEonformTerrainNodeInputs& Inputs,
+		const FEonformTerrainEvaluationContext& Context,
+		FEonformTerrainNodeEvaluation& Out,
+		FString& Error)
 	{
 		const FEonformTerrainValue* const* InputPtr = Inputs.Find(TEXT("Terrain"));
 		const FEonformTerrainValue* Input = InputPtr ? *InputPtr : nullptr;
@@ -97,6 +103,11 @@ namespace
 			Error = TEXT("Angle input terrain has no valid Height field.");
 			return false;
 		}
+		if (Context.HasRegion() && Height->Domain.BorderSamples < EonformAngleNode::RequiredBorderSamples())
+		{
+			Error = TEXT("Regional Angle requires one dependency-border sample.");
+			return false;
+		}
 
 		const FVector2d CellSize = Height->Domain.GetCellSize();
 		if (CellSize.X <= UE_SMALL_NUMBER || CellSize.Y <= UE_SMALL_NUMBER)
@@ -104,6 +115,9 @@ namespace
 			Error = TEXT("Angle input terrain has invalid grid spacing.");
 			return false;
 		}
+
+		FEonformGridDomain WorldDomain;
+		if (!EonformRegionalFieldSampling::ResolveWorldDomain(*Height, Context, WorldDomain, Error)) return false;
 
 		const float Azimuth = FMath::Fmod(FMath::Max(static_cast<float>(Node.GetNumber(TEXT("Azimuth"), 0.0)), 0.0f), 360.0f);
 		const float Minimum = FMath::Clamp(static_cast<float>(Node.GetNumber(TEXT("RangeMin"), 0.0)), 0.0f, 180.0f);
@@ -118,31 +132,32 @@ namespace
 		FEonformScalarField Mask;
 		Mask.Initialize(Height->Domain, Descriptor);
 
-		const FIntPoint Dimensions = Height->Domain.Dimensions;
-		for (int32 Y = 0; Y < Dimensions.Y; ++Y)
+		const FIntPoint Storage = Height->Domain.GetStorageDimensions();
+		for (int32 Y = 0; Y < Storage.Y; ++Y)
 		{
-			for (int32 X = 0; X < Dimensions.X; ++X)
+			for (int32 X = 0; X < Storage.X; ++X)
 			{
-				const int32 XL = FMath::Max(0, X - 1);
-				const int32 XR = FMath::Min(Dimensions.X - 1, X + 1);
-				const int32 YD = FMath::Max(0, Y - 1);
-				const int32 YU = FMath::Min(Dimensions.Y - 1, Y + 1);
+				const FIntPoint CenterCoord = EonformRegionalFieldSampling::ResolveStorageCoordinate(*Height, X, Y, WorldDomain);
+				const FIntPoint LeftCoord = EonformRegionalFieldSampling::ResolveStorageCoordinate(*Height, CenterCoord.X - 1, CenterCoord.Y, WorldDomain);
+				const FIntPoint RightCoord = EonformRegionalFieldSampling::ResolveStorageCoordinate(*Height, CenterCoord.X + 1, CenterCoord.Y, WorldDomain);
+				const FIntPoint DownCoord = EonformRegionalFieldSampling::ResolveStorageCoordinate(*Height, CenterCoord.X, CenterCoord.Y - 1, WorldDomain);
+				const FIntPoint UpCoord = EonformRegionalFieldSampling::ResolveStorageCoordinate(*Height, CenterCoord.X, CenterCoord.Y + 1, WorldDomain);
 
-				const float DX = (Height->AtInterior(XR, Y) - Height->AtInterior(XL, Y)) * HeightScale
-					/ FMath::Max(static_cast<float>(XR - XL) * static_cast<float>(CellSize.X), UE_SMALL_NUMBER);
-				const float DY = (Height->AtInterior(X, YU) - Height->AtInterior(X, YD)) * HeightScale
-					/ FMath::Max(static_cast<float>(YU - YD) * static_cast<float>(CellSize.Y), UE_SMALL_NUMBER);
+				const float DX = (Height->AtStorage(RightCoord.X, RightCoord.Y) - Height->AtStorage(LeftCoord.X, LeftCoord.Y)) * HeightScale
+					/ FMath::Max(static_cast<float>(RightCoord.X - LeftCoord.X) * static_cast<float>(CellSize.X), UE_SMALL_NUMBER);
+				const float DY = (Height->AtStorage(UpCoord.X, UpCoord.Y) - Height->AtStorage(DownCoord.X, DownCoord.Y)) * HeightScale
+					/ FMath::Max(static_cast<float>(UpCoord.Y - DownCoord.Y) * static_cast<float>(CellSize.Y), UE_SMALL_NUMBER);
 
 				if (FMath::Abs(DX) <= UE_SMALL_NUMBER && FMath::Abs(DY) <= UE_SMALL_NUMBER)
 				{
-					Mask.AtInterior(X, Y) = 0.0f;
+					Mask.AtStorage(X, Y) = 0.0f;
 					continue;
 				}
 
 				float Aspect = FMath::RadiansToDegrees(FMath::Atan2(-DX, -DY));
 				if (Aspect < 0.0f) Aspect += 360.0f;
 				const float Difference = AngleNodeAngularDistance(Aspect, Azimuth);
-				Mask.AtInterior(X, Y) = AngleNodeRangeWeight(Difference, Minimum, Maximum, Falloff);
+				Mask.AtStorage(X, Y) = AngleNodeRangeWeight(Difference, Minimum, Maximum, Falloff);
 			}
 		}
 
