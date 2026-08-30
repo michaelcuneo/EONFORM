@@ -7,6 +7,7 @@
 #include "EonformTerrainOutputEditorState.h"
 #include "Misc/MessageDialog.h"
 #include "PropertyCustomizationHelpers.h"
+#include "SEonformTerrainRegionGrid.h"
 #include "Subsystems/AssetEditorSubsystem.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SComboBox.h"
@@ -523,6 +524,11 @@ void SEonformTerrainOutputPanel::Construct(const FArguments& InArgs)
 						SNew(SNumericEntryBox<int32>).Label()[SNew(STextBlock).Text(FText::FromString(TEXT("Sections Y")))].Value_Lambda([]() { return FEonformTerrainOutputEditorState::Get().GetSettings().SectionsY; }).MinValue(1).OnValueChanged_Lambda([](int32 V) { FEonformTerrainOutputEditorState::Get().SetSectionsY(V); })
 					]
 				]
+			]
+
+			+ SVerticalBox::Slot().AutoHeight()
+			[
+				SNew(SEonformTerrainRegionGrid).SourceId(TEXT("EonformGraph"))
 			]
 
 			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 8.0f, 0.0f, 0.0f)
