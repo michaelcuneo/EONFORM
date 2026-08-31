@@ -14,6 +14,7 @@ public:
 
 	void Construct(const FArguments& InArgs);
 	virtual void Tick(const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime) override;
+	virtual FReply OnMouseWheel(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
 
 private:
 	void Rebuild();
@@ -22,6 +23,9 @@ private:
 	FReply UnloadSelected();
 	FReply SelectActorsForSelected();
 	FReply ClearSelection();
+	FReply ZoomIn();
+	FReply ZoomOut();
+	FReply ResetZoom();
 	void ApplySelectionToEditor();
 	void SyncSelectionFromEditor();
 	void AddRectangularSelection(const FIntPoint& A, const FIntPoint& B, bool bAdditive);
@@ -29,6 +33,7 @@ private:
 	FText GetLayoutSummaryText() const;
 	FText GetSelectionText() const;
 	FText GetActionStatusText() const;
+	FText GetZoomText() const;
 	bool HasSelection() const;
 
 	uint64 LastChangeSerial = 0;
@@ -38,6 +43,7 @@ private:
 	TSet<FIntPoint> LastEditorRegionSelection;
 	FIntPoint SelectionAnchor = FIntPoint::ZeroValue;
 	bool bHasSelectionAnchor = false;
+	float RegionCellSize = 88.0f;
 	FString LayoutSummary;
 	FString ActionStatus;
 	TSharedPtr<SUniformGridPanel> Grid;

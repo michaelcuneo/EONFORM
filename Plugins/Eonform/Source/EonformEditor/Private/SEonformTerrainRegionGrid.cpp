@@ -12,6 +12,7 @@
 #include "Misc/MessageDialog.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Layout/SBox.h"
+#include "Widgets/Layout/SScrollBox.h"
 #include "Widgets/Layout/SUniformGridPanel.h"
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/Text/STextBlock.h"
@@ -20,6 +21,10 @@ namespace EonformTerrainRegionGridPrivate
 {
 	constexpr double OutputCentimetersPerKilometer = 100000.0;
 	constexpr double OutputCentimetersPerMeter = 100.0;
+	constexpr float DefaultRegionCellSize = 88.0f;
+	constexpr float MinRegionCellSize = 48.0f;
+	constexpr float MaxRegionCellSize = 180.0f;
+	constexpr float RegionZoomStep = 16.0f;
 
 	struct FMeshTerrainPreviewLayout
 	{
@@ -66,6 +71,38 @@ namespace EonformTerrainRegionGridPrivate
 		}
 		while (Value >= 0);
 		return FString::Printf(TEXT("%s%d"), *Column, Coordinate.Y + 1);
+	}
+
+	FString RegionStateText(const FEonformTerrainRegionSnapshot* Snapshot, bool bLoaded)
+	{
+		if (bLoaded) return TEXT("LOADED");
+		if (!Snapshot) return TEXT("UNLOADED");
+		if (!Snapshot->Error.IsEmpty() || Snapshot->EvaluationState == EEonformTerrainRegionEvaluationState::Failed)
+		{
+			return TEXT("FAILED");
+		}
+		if (Snapshot->MaterializationState == EEonformTerrainRegionMaterializationState::Committing)
+		{
+			return TEXT("BUILDING");
+		}
+		if (Snapshot->MaterializationState == EEonformTerrainRegionMaterializationState::Evicting)
+		{
+			return TEXT("EVICTING");
+		}
+		if (Snapshot->EvaluationState == EEonformTerrainRegionEvaluationState::Evaluating)
+		{
+			return TEXT("EVALUATING");
+		}
+		if (Snapshot->EvaluationState == EEonformTerrainRegionEvaluationState::Queued)
+		{
+			return TEXT("QUEUED");
+		}
+		if (Snapshot->MaterializationState == EEonformTerrainRegionMaterializationState::Prepared
+			|| Snapshot->EvaluationState == EEonformTerrainRegionEvaluationState::Evaluated)
+		{
+			return TEXT("READY");
+		}
+		return TEXT("UNLOADED");
 	}
 
 	bool SetsEqual(const TSet<FIntPoint>& A, const TSet<FIntPoint>& B)
@@ -258,12 +295,34 @@ using namespace EonformTerrainRegionGridPrivate;
 
 void SEonformTerrainRegionGrid::Construct(const FArguments& InArgs)
 {
+	RegionCellSize = DefaultRegionCellSize;
+
 	ChildSlot
 	[
 		SNew(SVerticalBox)
 		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 8.0f, 0.0f, 4.0f)
 		[
-			SNew(STextBlock).Text(FText::FromString(TEXT("Mesh Terrain Regions")))
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
+			[
+				SNew(STextBlock).Text(FText::FromString(TEXT("Mesh Terrain Regions")))
+			]
+			+ SHorizontalBox::Slot().AutoWidth().Padding(4.0f, 0.0f)
+			[
+				SNew(SButton).Text(FText::FromString(TEXT("-"))).OnClicked(this, &SEonformTerrainRegionGrid::ZoomOut)
+			]
+			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(4.0f, 0.0f)
+			[
+				SNew(STextBlock).Text(this, &SEonformTerrainRegionGrid::GetZoomText)
+			]
+			+ SHorizontalBox::Slot().AutoWidth().Padding(4.0f, 0.0f)
+			[
+				SNew(SButton).Text(FText::FromString(TEXT("+"))).OnClicked(this, &SEonformTerrainRegionGrid::ZoomIn)
+			]
+			+ SHorizontalBox::Slot().AutoWidth().Padding(4.0f, 0.0f)
+			[
+				SNew(SButton).Text(FText::FromString(TEXT("100%"))).OnClicked(this, &SEonformTerrainRegionGrid::ResetZoom)
+			]
 		]
 		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 4.0f)
 		[
@@ -276,10 +335,18 @@ void SEonformTerrainRegionGrid::Construct(const FArguments& InArgs)
 			SNew(STextBlock).Text(this, &SEonformTerrainRegionGrid::GetSelectionText)
 		]
 		+ SVerticalBox::Slot().FillHeight(1.0f)
-		.HAlign(HAlign_Center)
-		.VAlign(VAlign_Center)
 		[
-			SAssignNew(Grid, SUniformGridPanel).SlotPadding(FMargin(1.5f))
+			SNew(SScrollBox)
+			.Orientation(Orient_Vertical)
+			+ SScrollBox::Slot()
+			[
+				SNew(SScrollBox)
+				.Orientation(Orient_Horizontal)
+				+ SScrollBox::Slot()
+				[
+					SAssignNew(Grid, SUniformGridPanel).SlotPadding(FMargin(2.0f))
+				]
+			]
 		]
 		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 6.0f, 0.0f, 0.0f)
 		[
@@ -336,6 +403,42 @@ void SEonformTerrainRegionGrid::Tick(
 	{
 		Rebuild();
 	}
+}
+
+FReply SEonformTerrainRegionGrid::OnMouseWheel(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
+{
+	if (MouseEvent.IsControlDown())
+	{
+		if (MouseEvent.GetWheelDelta() > 0.0f) return ZoomIn();
+		if (MouseEvent.GetWheelDelta() < 0.0f) return ZoomOut();
+	}
+	return SCompoundWidget::OnMouseWheel(MyGeometry, MouseEvent);
+}
+
+FReply SEonformTerrainRegionGrid::ZoomIn()
+{
+	RegionCellSize = FMath::Min(RegionCellSize + RegionZoomStep, MaxRegionCellSize);
+	Rebuild();
+	return FReply::Handled();
+}
+
+FReply SEonformTerrainRegionGrid::ZoomOut()
+{
+	RegionCellSize = FMath::Max(RegionCellSize - RegionZoomStep, MinRegionCellSize);
+	Rebuild();
+	return FReply::Handled();
+}
+
+FReply SEonformTerrainRegionGrid::ResetZoom()
+{
+	RegionCellSize = DefaultRegionCellSize;
+	Rebuild();
+	return FReply::Handled();
+}
+
+FText SEonformTerrainRegionGrid::GetZoomText() const
+{
+	return FText::FromString(FString::Printf(TEXT("%.0f%%"), (RegionCellSize / DefaultRegionCellSize) * 100.0f));
 }
 
 FReply SEonformTerrainRegionGrid::HandleRegionClicked(FIntPoint Coordinate)
@@ -593,14 +696,11 @@ void SEonformTerrainRegionGrid::Rebuild()
 	}
 
 	LayoutSummary = FString::Printf(
-		TEXT("%d x %d regions | %d total | %d loaded"),
+		TEXT("%d x %d regions | %d total | %d loaded | Ctrl+wheel to zoom"),
 		Preview.Regions.X,
 		Preview.Regions.Y,
 		Preview.Regions.X * Preview.Regions.Y,
 		LoadedRegions.Num());
-
-	const int32 MaxAxis = FMath::Max(Preview.Regions.X, Preview.Regions.Y);
-	const float CellSize = FMath::Clamp(240.0f / static_cast<float>(FMath::Max(MaxAxis, 1)), 20.0f, 60.0f);
 
 	for (int32 RegionY = 0; RegionY < Preview.Regions.Y; ++RegionY)
 	{
@@ -611,6 +711,7 @@ void SEonformTerrainRegionGrid::Rebuild()
 			const bool bLoaded = LoadedRegions.Contains(Region);
 			const bool bSelected = SelectedRegions.Contains(Region);
 			const FString Label = RegionLabel(Region);
+			const FString StateText = RegionStateText(RegionSnapshot, bLoaded);
 
 			FString Tooltip = FString::Printf(
 				TEXT("Region %s\nIndex [%d,%d]\n%s"),
@@ -624,6 +725,10 @@ void SEonformTerrainRegionGrid::Rebuild()
 					TEXT("\n%s / %s"),
 					*MaterializationStateText(RegionSnapshot->MaterializationState),
 					*EvaluationStateText(RegionSnapshot->EvaluationState));
+				if (RegionSnapshot->Progress.IsMeasured())
+				{
+					Tooltip += FString::Printf(TEXT("\n%.0f%%"), RegionSnapshot->Progress.GetFraction() * 100.0);
+				}
 				if (RegionSnapshot->VertexCount > 0 || RegionSnapshot->TriangleCount > 0)
 				{
 					Tooltip += FString::Printf(
@@ -641,22 +746,34 @@ void SEonformTerrainRegionGrid::Rebuild()
 			Grid->AddSlot(RegionX, RegionY)
 			[
 				SNew(SBox)
-				.WidthOverride(CellSize)
-				.HeightOverride(CellSize)
+				.WidthOverride(RegionCellSize)
+				.HeightOverride(RegionCellSize)
 				[
 					SNew(SButton)
-					.ContentPadding(FMargin(0.0f))
+					.ContentPadding(FMargin(4.0f))
 					.ButtonColorAndOpacity(bSelected
 						? FLinearColor(0.20f, 0.45f, 0.80f, 1.0f)
 						: bLoaded
 							? FLinearColor(0.20f, 0.62f, 0.28f, 1.0f)
-							: FLinearColor(0.23f, 0.23f, 0.23f, 1.0f))
+							: StateText == TEXT("FAILED")
+								? FLinearColor(0.70f, 0.18f, 0.18f, 1.0f)
+								: FLinearColor(0.23f, 0.23f, 0.23f, 1.0f))
 					.ToolTipText(FText::FromString(MoveTemp(Tooltip)))
 					.OnClicked_Lambda([this, Region]() { return HandleRegionClicked(Region); })
 					[
-						SNew(STextBlock)
-						.Justification(ETextJustify::Center)
-						.Text(FText::FromString(Label))
+						SNew(SVerticalBox)
+						+ SVerticalBox::Slot().FillHeight(1.0f).VAlign(VAlign_Center).HAlign(HAlign_Center)
+						[
+							SNew(STextBlock)
+							.Justification(ETextJustify::Center)
+							.Text(FText::FromString(Label))
+						]
+						+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)
+						[
+							SNew(STextBlock)
+							.Justification(ETextJustify::Center)
+							.Text(FText::FromString(StateText))
+						]
 					]
 				]
 			];
