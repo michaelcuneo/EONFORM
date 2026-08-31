@@ -9,12 +9,10 @@
 #include "EonformTerrainGraphPin.h"
 #include "SEonformTerrainInspector.h"
 #include "SEonformTerrainOutputPanel.h"
-#include "SEonformTerrainRegionGrid.h"
 #include "ToolMenus.h"
 #include "Widgets/Docking/SDockTab.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Layout/SScrollBox.h"
-#include "Widgets/SBoxPanel.h"
 
 #define LOCTEXT_NAMESPACE "FEonformEditorModule"
 
@@ -94,9 +92,9 @@ private:
 
 	TSharedRef<SDockTab> SpawnEonformTab(const FSpawnTabArgs& Args)
 	{
-		// The Inspector bottom-right slot is AutoHeight. Keep this composite bounded
-		// and scroll its contents so regional controls can never be pushed below the
-		// visible pane by the existing Terrain Output settings.
+		// Terrain Output is intentionally a compact, independently scrollable panel.
+		// Regional Terrain Control lives in the Inspector's main workspace beside
+		// the terrain preview; do not duplicate it here.
 		TSharedRef<SWidget> OutputPanel =
 			SNew(SBox)
 			.HeightOverride(300.0f)
@@ -104,15 +102,7 @@ private:
 				SNew(SScrollBox)
 				+ SScrollBox::Slot()
 				[
-					SNew(SVerticalBox)
-					+ SVerticalBox::Slot().AutoHeight()
-					[
-						SNew(SEonformTerrainRegionGrid)
-					]
-					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 8.0f, 0.0f, 0.0f)
-					[
-						SNew(SEonformTerrainOutputPanel)
-					]
+					SNew(SEonformTerrainOutputPanel)
 				]
 			];
 

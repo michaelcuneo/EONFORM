@@ -471,13 +471,15 @@ void SEonformTerrainInspector::Construct(const FArguments& InArgs)
 
 				+ SSplitter::Slot().Value(0.24f)
 				[
-					SNew(SSplitter)
-					.Orientation(Orient_Vertical)
-					+ SSplitter::Slot().Value(0.58f)
+					SNew(SVerticalBox)
+					+ SVerticalBox::Slot()
+					.FillHeight(1.0f)
 					[
 						NodeDetails
 					]
-					+ SSplitter::Slot().Value(0.42f)
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					.Padding(0.0f, 8.0f, 0.0f, 0.0f)
 					[
 						OutputPanel
 					]
@@ -582,8 +584,6 @@ void SEonformTerrainInspector::RebuildPreview()
 	double SumSquares = 0.0;
 	PreviewSampleCount = 0;
 
-	// Statistics and pixels share one bounded sampling pass. A 4K/8K source therefore
-	// costs the Inspector the same ~65K samples as a small terrain instead of millions.
 	TArray<float> SampledValues;
 	SampledValues.SetNumUninitialized(TerrainInspectorPreviewResolution * TerrainInspectorPreviewResolution);
 	for (int32 PreviewY = 0; PreviewY < TerrainInspectorPreviewResolution; ++PreviewY)

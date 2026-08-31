@@ -1,6 +1,7 @@
 #include "SEonformTerrainGraphPanel.h"
 
 #include "AssetRegistry/AssetData.h"
+#include "AssetRegistry/AssetRegistryModule.h"
 #include "AssetToolsModule.h"
 #include "ContentBrowserModule.h"
 #include "EdGraph/EdGraphPin.h"
@@ -14,6 +15,7 @@
 #include "IAssetTools.h"
 #include "IContentBrowserSingleton.h"
 #include "Modules/ModuleManager.h"
+#include "PropertyCustomizationHelpers.h"
 #include "Styling/AppStyle.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SCheckBox.h"
@@ -35,6 +37,30 @@ namespace
 			UEonformTerrainGraphAsset::StaticClass(),
 			Factory,
 			TEXT("Eonform")));
+	}
+
+	UEonformTerrainGraphAsset* FindInitialTerrainGraphAsset()
+	{
+		FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
+		TArray<FAssetData> GraphAssets;
+		AssetRegistryModule.Get().GetAssetsByClass(
+			UEonformTerrainGraphAsset::StaticClass()->GetClassPathName(),
+			GraphAssets,
+			true);
+
+		GraphAssets.Sort([](const FAssetData& A, const FAssetData& B)
+		{
+			return A.PackageName.LexicalLess(B.PackageName);
+		});
+
+		for (int32 Index = GraphAssets.Num() - 1; Index >= 0; --Index)
+		{
+			if (UEonformTerrainGraphAsset* Asset = Cast<UEonformTerrainGraphAsset>(GraphAssets[Index].GetAsset()))
+			{
+				return Asset;
+			}
+		}
+		return nullptr;
 	}
 
 	UEdGraphPin* ResolveTerrainGraphOutputPin(UEonformEditorGraphNode* Node, FName RequestedName)
@@ -99,7 +125,15 @@ void SEonformTerrainGraphPanel::Construct(const FArguments& InArgs)
 {
 	OnEvaluated = InArgs._OnEvaluated;
 	ParameterPanel = InArgs._ParameterPanel;
-	BuildDefaultRecipeAndGraph();
+
+	if (UEonformTerrainGraphAsset* InitialAsset = FindInitialTerrainGraphAsset())
+	{
+		LoadAsset(*InitialAsset);
+	}
+	else
+	{
+		BuildDefaultRecipeAndGraph();
+	}
 
 	ChildSlot
 	[
@@ -126,8 +160,22 @@ void SEonformTerrainGraphPanel::Construct(const FArguments& InArgs)
 				.FillWidth(1.0f)
 				.VAlign(VAlign_Center)
 				[
-					SNew(STextBlock)
-					.Text(this, &SEonformTerrainGraphPanel::GetAssetText)
+					SNew(SObjectPropertyEntryBox)
+					.AllowedClass(UEonformTerrainGraphAsset::StaticClass())
+					.DisplayThumbnail(false)
+					.DisplayUseSelected(true)
+					.DisplayBrowse(true)
+					.ObjectPath_Lambda([this]()
+					{
+						return CurrentAsset.IsValid() ? CurrentAsset->GetPathName() : FString();
+					})
+					.OnObjectChanged_Lambda([this](const FAssetData& AssetData)
+					{
+						if (UEonformTerrainGraphAsset* Asset = Cast<UEonformTerrainGraphAsset>(AssetData.GetAsset()))
+						{
+							LoadAsset(*Asset);
+						}
+					})
 				]
 				+ SHorizontalBox::Slot()
 				.AutoWidth()
@@ -152,14 +200,6 @@ void SEonformTerrainGraphPanel::Construct(const FArguments& InArgs)
 					SNew(SButton)
 					.Text(FText::FromString(TEXT("Save")))
 					.OnClicked(this, &SEonformTerrainGraphPanel::SaveGraphAsset)
-				]
-				+ SHorizontalBox::Slot()
-				.AutoWidth()
-				.Padding(8.0f, 0.0f, 0.0f, 0.0f)
-				[
-					SNew(SButton)
-					.Text(FText::FromString(TEXT("Evaluate Graph")))
-					.OnClicked(this, &SEonformTerrainGraphPanel::EvaluateGraph)
 				]
 			]
 
