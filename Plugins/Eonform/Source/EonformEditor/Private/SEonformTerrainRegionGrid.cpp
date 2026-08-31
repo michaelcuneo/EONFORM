@@ -11,7 +11,7 @@
 #include "GameFramework/Actor.h"
 #include "Misc/MessageDialog.h"
 #include "Widgets/Input/SButton.h"
-#include "Widgets/Layout/SBorder.h"
+#include "Widgets/Layout/SBox.h"
 #include "Widgets/Layout/SUniformGridPanel.h"
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/Text/STextBlock.h"
@@ -20,18 +20,13 @@ namespace EonformTerrainRegionGridPrivate
 {
 	constexpr double OutputCentimetersPerKilometer = 100000.0;
 	constexpr double OutputCentimetersPerMeter = 100.0;
-	constexpr int32 PreviewSectionQuads = 63;
-	constexpr int32 PreviewSectionsPerComponent = 2;
-	constexpr int32 PreviewComponentQuads = PreviewSectionQuads * PreviewSectionsPerComponent;
 
 	struct FMeshTerrainPreviewLayout
 	{
 		bool bValid = false;
 		FIntPoint Resolution = FIntPoint::ZeroValue;
-		FIntPoint Sections = FIntPoint::ZeroValue;
-		FIntPoint Components = FIntPoint::ZeroValue;
 		FIntPoint Regions = FIntPoint::ZeroValue;
-		FEonformMeshTerrainLayoutEstimate RegionEstimate;
+		FEonformMeshTerrainLayoutEstimate Estimate;
 	};
 
 	FString EvaluationStateText(EEonformTerrainRegionEvaluationState State)
@@ -58,6 +53,19 @@ namespace EonformTerrainRegionGridPrivate
 		case EEonformTerrainRegionMaterializationState::Evicting: return TEXT("Evicting");
 		default: return TEXT("Unknown");
 		}
+	}
+
+	FString RegionLabel(const FIntPoint& Coordinate)
+	{
+		FString Column;
+		int32 Value = FMath::Max(Coordinate.X, 0);
+		do
+		{
+			Column.InsertAt(0, TCHAR(TEXT('A') + (Value % 26)));
+			Value = (Value / 26) - 1;
+		}
+		while (Value >= 0);
+		return FString::Printf(TEXT("%s%d"), *Column, Coordinate.Y + 1);
 	}
 
 	bool SetsEqual(const TSet<FIntPoint>& A, const TSet<FIntPoint>& B)
@@ -134,26 +142,12 @@ namespace EonformTerrainRegionGridPrivate
 		Preview.Resolution = ResolvePreviewResolution();
 		if (Preview.Resolution.X < 2 || Preview.Resolution.Y < 2) return Preview;
 
-		const int32 QuadsX = Preview.Resolution.X - 1;
-		const int32 QuadsY = Preview.Resolution.Y - 1;
-		Preview.Sections = FIntPoint(
-			FMath::DivideAndRoundUp(QuadsX, PreviewSectionQuads),
-			FMath::DivideAndRoundUp(QuadsY, PreviewSectionQuads));
-		Preview.Components = FIntPoint(
-			FMath::DivideAndRoundUp(QuadsX, PreviewComponentQuads),
-			FMath::DivideAndRoundUp(QuadsY, PreviewComponentQuads));
-		Preview.RegionEstimate = FEonformMeshTerrainOutput::EstimateLayout(Preview.Resolution, MakeMeshTerrainSettings());
-		if (!Preview.RegionEstimate.bValid) return Preview;
-		Preview.Regions = Preview.RegionEstimate.Sections;
-		Preview.bValid = Preview.Components.X > 0 && Preview.Components.Y > 0 && Preview.Regions.X > 0 && Preview.Regions.Y > 0;
-		return Preview;
-	}
+		Preview.Estimate = FEonformMeshTerrainOutput::EstimateLayout(Preview.Resolution, MakeMeshTerrainSettings());
+		if (!Preview.Estimate.bValid) return Preview;
 
-	FIntPoint ComponentToRegion(const FIntPoint& Component, const FMeshTerrainPreviewLayout& Layout)
-	{
-		return FIntPoint(
-			FMath::Clamp((Component.X * Layout.Regions.X) / FMath::Max(Layout.Components.X, 1), 0, Layout.Regions.X - 1),
-			FMath::Clamp((Component.Y * Layout.Regions.Y) / FMath::Max(Layout.Components.Y, 1), 0, Layout.Regions.Y - 1));
+		Preview.Regions = Preview.Estimate.Sections;
+		Preview.bValid = Preview.Regions.X > 0 && Preview.Regions.Y > 0;
+		return Preview;
 	}
 
 	bool ResolveCurrentBuildInput(
@@ -269,7 +263,7 @@ void SEonformTerrainRegionGrid::Construct(const FArguments& InArgs)
 		SNew(SVerticalBox)
 		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 8.0f, 0.0f, 4.0f)
 		[
-			SNew(STextBlock).Text(FText::FromString(TEXT("Mesh Terrain Layout")))
+			SNew(STextBlock).Text(FText::FromString(TEXT("Mesh Terrain Regions")))
 		]
 		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 4.0f)
 		[
@@ -279,17 +273,13 @@ void SEonformTerrainRegionGrid::Construct(const FArguments& InArgs)
 		]
 		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 4.0f)
 		[
-			SNew(STextBlock)
-			.AutoWrapText(true)
-			.Text(FText::FromString(TEXT("Each square is a Mesh Terrain component. Components are grouped into generation regions; clicking any component selects its owning region. Loaded regions are shown directly from the editor world.")))
-		]
-		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 4.0f)
-		[
 			SNew(STextBlock).Text(this, &SEonformTerrainRegionGrid::GetSelectionText)
 		]
 		+ SVerticalBox::Slot().FillHeight(1.0f)
+		.HAlign(HAlign_Center)
+		.VAlign(VAlign_Center)
 		[
-			SAssignNew(Grid, SUniformGridPanel).SlotPadding(FMargin(1.0f))
+			SAssignNew(Grid, SUniformGridPanel).SlotPadding(FMargin(1.5f))
 		]
 		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 6.0f, 0.0f, 0.0f)
 		[
@@ -418,13 +408,13 @@ FText SEonformTerrainRegionGrid::GetLayoutSummaryText() const
 
 FText SEonformTerrainRegionGrid::GetSelectionText() const
 {
-	if (SelectedRegions.Num() == 0) return FText::FromString(TEXT("No generation regions selected."));
+	if (SelectedRegions.Num() == 0) return FText::FromString(TEXT("No regions selected."));
 	if (SelectedRegions.Num() == 1)
 	{
 		const FIntPoint Coordinate = *SelectedRegions.CreateConstIterator();
-		return FText::FromString(FString::Printf(TEXT("Selected generation region [%d,%d]."), Coordinate.X, Coordinate.Y));
+		return FText::FromString(FString::Printf(TEXT("Selected %s."), *RegionLabel(Coordinate)));
 	}
-	return FText::FromString(FString::Printf(TEXT("%d generation regions selected."), SelectedRegions.Num()));
+	return FText::FromString(FString::Printf(TEXT("%d regions selected."), SelectedRegions.Num()));
 }
 
 FText SEonformTerrainRegionGrid::GetActionStatusText() const
@@ -569,34 +559,15 @@ void SEonformTerrainRegionGrid::Rebuild()
 	if (!Preview.bValid)
 	{
 		LatestGridDimensions = FIntPoint::ZeroValue;
-		LatestComponentDimensions = FIntPoint::ZeroValue;
-		LayoutSummary = TEXT("Choose an output resolution to preview the Mesh Terrain layout.");
+		LayoutSummary = TEXT("Choose an output resolution to preview the Mesh Terrain regions.");
 		Grid->AddSlot(0, 0)
 		[
-			SNew(STextBlock)
-			.AutoWrapText(true)
-			.Text(FText::FromString(TEXT("The layout preview is driven directly by Terrain Output; no saved graph is required.")))
+			SNew(STextBlock).Text(FText::FromString(TEXT("No region layout available.")))
 		];
 		return;
 	}
 
 	LatestGridDimensions = Preview.Regions;
-	LatestComponentDimensions = Preview.Components;
-	LayoutSummary = FString::Printf(
-		TEXT("Output %d x %d | sections %d x %d at up to %d x %d quads | components %d x %d (%d x %d sections each) | generation regions %d x %d | max region ~%lld tris"),
-		Preview.Resolution.X,
-		Preview.Resolution.Y,
-		Preview.Sections.X,
-		Preview.Sections.Y,
-		PreviewSectionQuads,
-		PreviewSectionQuads,
-		Preview.Components.X,
-		Preview.Components.Y,
-		PreviewSectionsPerComponent,
-		PreviewSectionsPerComponent,
-		Preview.Regions.X,
-		Preview.Regions.Y,
-		static_cast<long long>(Preview.RegionEstimate.MaxSectionTriangleCount));
 
 	FString PlanningReason;
 	EnsurePlannedRegions(&PlanningReason);
@@ -611,20 +582,39 @@ void SEonformTerrainRegionGrid::Rebuild()
 	}
 
 	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
-	for (int32 ComponentY = 0; ComponentY < Preview.Components.Y; ++ComponentY)
+	TSet<FIntPoint> LoadedRegions;
+	for (int32 RegionY = 0; RegionY < Preview.Regions.Y; ++RegionY)
 	{
-		for (int32 ComponentX = 0; ComponentX < Preview.Components.X; ++ComponentX)
+		for (int32 RegionX = 0; RegionX < Preview.Regions.X; ++RegionX)
 		{
-			const FIntPoint Component(ComponentX, ComponentY);
-			const FIntPoint Region = ComponentToRegion(Component, Preview);
+			const FIntPoint Region(RegionX, RegionY);
+			if (World && FEonformMeshTerrainOutput::FindRegionActor(World, Region)) LoadedRegions.Add(Region);
+		}
+	}
+
+	LayoutSummary = FString::Printf(
+		TEXT("%d x %d regions | %d total | %d loaded"),
+		Preview.Regions.X,
+		Preview.Regions.Y,
+		Preview.Regions.X * Preview.Regions.Y,
+		LoadedRegions.Num());
+
+	const int32 MaxAxis = FMath::Max(Preview.Regions.X, Preview.Regions.Y);
+	const float CellSize = FMath::Clamp(240.0f / static_cast<float>(FMath::Max(MaxAxis, 1)), 20.0f, 60.0f);
+
+	for (int32 RegionY = 0; RegionY < Preview.Regions.Y; ++RegionY)
+	{
+		for (int32 RegionX = 0; RegionX < Preview.Regions.X; ++RegionX)
+		{
+			const FIntPoint Region(RegionX, RegionY);
 			const FEonformTerrainRegionSnapshot* RegionSnapshot = SnapshotByRegion.Find(Region);
-			const bool bLoaded = World && FEonformMeshTerrainOutput::FindRegionActor(World, Region) != nullptr;
+			const bool bLoaded = LoadedRegions.Contains(Region);
 			const bool bSelected = SelectedRegions.Contains(Region);
+			const FString Label = RegionLabel(Region);
 
 			FString Tooltip = FString::Printf(
-				TEXT("Component [%d,%d]\n2 x 2 sections, up to 63 x 63 quads each\nGeneration region [%d,%d]\n%s"),
-				Component.X,
-				Component.Y,
+				TEXT("Region %s\nIndex [%d,%d]\n%s"),
+				*Label,
 				Region.X,
 				Region.Y,
 				bLoaded ? TEXT("Loaded in editor world") : TEXT("Not loaded"));
@@ -634,6 +624,13 @@ void SEonformTerrainRegionGrid::Rebuild()
 					TEXT("\n%s / %s"),
 					*MaterializationStateText(RegionSnapshot->MaterializationState),
 					*EvaluationStateText(RegionSnapshot->EvaluationState));
+				if (RegionSnapshot->VertexCount > 0 || RegionSnapshot->TriangleCount > 0)
+				{
+					Tooltip += FString::Printf(
+						TEXT("\n%d verts / %d tris"),
+						RegionSnapshot->VertexCount,
+						RegionSnapshot->TriangleCount);
+				}
 				if (!RegionSnapshot->Error.IsEmpty()) Tooltip += FString::Printf(TEXT("\n%s"), *RegionSnapshot->Error);
 			}
 			else if (!PlanningReason.IsEmpty())
@@ -641,30 +638,25 @@ void SEonformTerrainRegionGrid::Rebuild()
 				Tooltip += FString::Printf(TEXT("\n%s"), *PlanningReason);
 			}
 
-			Grid->AddSlot(ComponentX, ComponentY)
+			Grid->AddSlot(RegionX, RegionY)
 			[
-				SNew(SButton)
-				.ContentPadding(FMargin(1.0f))
-				.ButtonColorAndOpacity(bSelected
-					? FLinearColor(0.20f, 0.45f, 0.80f, 1.0f)
-					: bLoaded
-						? FLinearColor(0.20f, 0.62f, 0.28f, 1.0f)
-						: FLinearColor(0.34f, 0.34f, 0.34f, 1.0f))
-				.ToolTipText(FText::FromString(MoveTemp(Tooltip)))
-				.OnClicked_Lambda([this, Region]() { return HandleRegionClicked(Region); })
+				SNew(SBox)
+				.WidthOverride(CellSize)
+				.HeightOverride(CellSize)
 				[
-					SNew(SBorder)
-					.Padding(FMargin(4.0f))
+					SNew(SButton)
+					.ContentPadding(FMargin(0.0f))
+					.ButtonColorAndOpacity(bSelected
+						? FLinearColor(0.20f, 0.45f, 0.80f, 1.0f)
+						: bLoaded
+							? FLinearColor(0.20f, 0.62f, 0.28f, 1.0f)
+							: FLinearColor(0.23f, 0.23f, 0.23f, 1.0f))
+					.ToolTipText(FText::FromString(MoveTemp(Tooltip)))
+					.OnClicked_Lambda([this, Region]() { return HandleRegionClicked(Region); })
 					[
 						SNew(STextBlock)
 						.Justification(ETextJustify::Center)
-						.Text(FText::FromString(FString::Printf(
-							TEXT("C%d,%d\nR%d,%d%s"),
-							Component.X,
-							Component.Y,
-							Region.X,
-							Region.Y,
-							bLoaded ? TEXT("\nLOADED") : TEXT(""))))
+						.Text(FText::FromString(Label))
 					]
 				]
 			];

@@ -34,7 +34,6 @@ private:
 	uint64 LastChangeSerial = 0;
 	uint64 LastPlanningSignature = 0;
 	FIntPoint LatestGridDimensions = FIntPoint::ZeroValue;
-	FIntPoint LatestComponentDimensions = FIntPoint::ZeroValue;
 	TSet<FIntPoint> SelectedRegions;
 	TSet<FIntPoint> LastEditorRegionSelection;
 	FIntPoint SelectionAnchor = FIntPoint::ZeroValue;
