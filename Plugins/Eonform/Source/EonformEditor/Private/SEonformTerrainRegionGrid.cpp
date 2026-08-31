@@ -20,6 +20,19 @@ namespace EonformTerrainRegionGridPrivate
 {
 	constexpr double OutputCentimetersPerKilometer = 100000.0;
 	constexpr double OutputCentimetersPerMeter = 100.0;
+	constexpr int32 PreviewSectionQuads = 63;
+	constexpr int32 PreviewSectionsPerComponent = 2;
+	constexpr int32 PreviewComponentQuads = PreviewSectionQuads * PreviewSectionsPerComponent;
+
+	struct FMeshTerrainPreviewLayout
+	{
+		bool bValid = false;
+		FIntPoint Resolution = FIntPoint::ZeroValue;
+		FIntPoint Sections = FIntPoint::ZeroValue;
+		FIntPoint Components = FIntPoint::ZeroValue;
+		FIntPoint Regions = FIntPoint::ZeroValue;
+		FEonformMeshTerrainLayoutEstimate RegionEstimate;
+	};
 
 	FString EvaluationStateText(EEonformTerrainRegionEvaluationState State)
 	{
@@ -47,38 +60,6 @@ namespace EonformTerrainRegionGridPrivate
 		}
 	}
 
-	FText MakeRegionText(const FEonformTerrainRegionSnapshot& Snapshot)
-	{
-		const FIntPoint Resolution = Snapshot.GetRegionResolution();
-		FString Text = FString::Printf(
-			TEXT("[%d,%d]\n%s / %s\n%d x %d samples\nref %d x %d"),
-			Snapshot.RegionIndex.X,
-			Snapshot.RegionIndex.Y,
-			*MaterializationStateText(Snapshot.MaterializationState),
-			*EvaluationStateText(Snapshot.EvaluationState),
-			Resolution.X,
-			Resolution.Y,
-			Snapshot.Key.ReferenceResolution.X,
-			Snapshot.Key.ReferenceResolution.Y);
-
-		if (Snapshot.Progress.IsMeasured())
-		{
-			Text += FString::Printf(TEXT("\n%.0f%%"), Snapshot.Progress.GetFraction() * 100.0);
-		}
-		else if (Snapshot.EvaluationState == EEonformTerrainRegionEvaluationState::Evaluating
-			|| Snapshot.MaterializationState == EEonformTerrainRegionMaterializationState::Committing)
-		{
-			Text += TEXT("\nProgress pending");
-		}
-
-		if (Snapshot.VertexCount > 0 || Snapshot.TriangleCount > 0)
-		{
-			Text += FString::Printf(TEXT("\n%d verts / %d tris"), Snapshot.VertexCount, Snapshot.TriangleCount);
-		}
-		if (!Snapshot.Error.IsEmpty()) Text += TEXT("\nERROR");
-		return FText::FromString(MoveTemp(Text));
-	}
-
 	bool SetsEqual(const TSet<FIntPoint>& A, const TSet<FIntPoint>& B)
 	{
 		if (A.Num() != B.Num()) return false;
@@ -92,18 +73,87 @@ namespace EonformTerrainRegionGridPrivate
 	uint64 GetPlanningSignature()
 	{
 		const FEonformTerrainOutputEditorState& State = FEonformTerrainOutputEditorState::Get();
-		const FEonformTerrainGraphOutputSettings& Settings = State.GetSettings();
-		uint64 Signature = State.GetPublishedAnalysisRevision();
-		auto Mix = [&Signature](uint64 Value)
-		{
-			Signature ^= Value + 0x9e3779b97f4a7c15ull + (Signature << 6) + (Signature >> 2);
-		};
-		Mix(static_cast<uint64>(Settings.OutputResolution));
-		Mix(static_cast<uint64>(Settings.SectionsX));
-		Mix(static_cast<uint64>(Settings.SectionsY));
-		Mix(static_cast<uint64>(Settings.SectionLayout));
-		Mix(static_cast<uint64>(Settings.SectionComplexity));
+		uint64 Signature = State.GetRevision();
+		Signature ^= State.GetPublishedAnalysisRevision() + 0x9e3779b97f4a7c15ull + (Signature << 6) + (Signature >> 2);
 		return Signature;
+	}
+
+	FEonformMeshTerrainOutputSettings MakeMeshTerrainSettings()
+	{
+		const FEonformTerrainGraphOutputSettings& GraphSettings = FEonformTerrainOutputEditorState::Get().GetSettings();
+		FEonformMeshTerrainOutputSettings Settings;
+		Settings.TargetResolution = GraphSettings.OutputResolution > 0
+			? FIntPoint(
+				FMath::Clamp(GraphSettings.OutputResolution, 17, 4097),
+				FMath::Clamp(GraphSettings.OutputResolution, 17, 4097))
+			: FIntPoint::ZeroValue;
+		Settings.SectionLayout = GraphSettings.SectionLayout == EEonformTerrainOutputSectionLayout::Explicit
+			? EEonformMeshTerrainSectionLayout::Explicit
+			: EEonformMeshTerrainSectionLayout::Automatic;
+		switch (GraphSettings.SectionComplexity)
+		{
+		case EEonformTerrainOutputComplexity::Responsive:
+			Settings.SectionComplexity = EEonformMeshTerrainSectionComplexity::Responsive;
+			break;
+		case EEonformTerrainOutputComplexity::Detailed:
+			Settings.SectionComplexity = EEonformMeshTerrainSectionComplexity::Detailed;
+			break;
+		case EEonformTerrainOutputComplexity::Maximum:
+			Settings.SectionComplexity = EEonformMeshTerrainSectionComplexity::Maximum;
+			break;
+		case EEonformTerrainOutputComplexity::Balanced:
+		default:
+			Settings.SectionComplexity = EEonformMeshTerrainSectionComplexity::Balanced;
+			break;
+		}
+		Settings.Sections = FIntPoint(GraphSettings.SectionsX, GraphSettings.SectionsY);
+		Settings.MeshPartitionDefinition = GraphSettings.MeshPartitionDefinition.IsValid()
+			? GraphSettings.MeshPartitionDefinition.TryLoad()
+			: nullptr;
+		return Settings;
+	}
+
+	FIntPoint ResolvePreviewResolution()
+	{
+		const FEonformTerrainGraphOutputSettings& GraphSettings = FEonformTerrainOutputEditorState::Get().GetSettings();
+		if (GraphSettings.OutputResolution > 0)
+		{
+			const int32 Resolution = FMath::Clamp(GraphSettings.OutputResolution, 17, 4097);
+			return FIntPoint(Resolution, Resolution);
+		}
+
+		FIntPoint NativeResolution;
+		return FEonformTerrainDatasetRegistry::GetHeightResolution(TEXT("EonformGraph"), NativeResolution)
+			? NativeResolution
+			: FIntPoint::ZeroValue;
+	}
+
+	FMeshTerrainPreviewLayout ResolvePreviewLayout()
+	{
+		FMeshTerrainPreviewLayout Preview;
+		Preview.Resolution = ResolvePreviewResolution();
+		if (Preview.Resolution.X < 2 || Preview.Resolution.Y < 2) return Preview;
+
+		const int32 QuadsX = Preview.Resolution.X - 1;
+		const int32 QuadsY = Preview.Resolution.Y - 1;
+		Preview.Sections = FIntPoint(
+			FMath::DivideAndRoundUp(QuadsX, PreviewSectionQuads),
+			FMath::DivideAndRoundUp(QuadsY, PreviewSectionQuads));
+		Preview.Components = FIntPoint(
+			FMath::DivideAndRoundUp(QuadsX, PreviewComponentQuads),
+			FMath::DivideAndRoundUp(QuadsY, PreviewComponentQuads));
+		Preview.RegionEstimate = FEonformMeshTerrainOutput::EstimateLayout(Preview.Resolution, MakeMeshTerrainSettings());
+		if (!Preview.RegionEstimate.bValid) return Preview;
+		Preview.Regions = Preview.RegionEstimate.Sections;
+		Preview.bValid = Preview.Components.X > 0 && Preview.Components.Y > 0 && Preview.Regions.X > 0 && Preview.Regions.Y > 0;
+		return Preview;
+	}
+
+	FIntPoint ComponentToRegion(const FIntPoint& Component, const FMeshTerrainPreviewLayout& Layout)
+	{
+		return FIntPoint(
+			FMath::Clamp((Component.X * Layout.Regions.X) / FMath::Max(Layout.Components.X, 1), 0, Layout.Regions.X - 1),
+			FMath::Clamp((Component.Y * Layout.Regions.Y) / FMath::Max(Layout.Components.Y, 1), 0, Layout.Regions.Y - 1));
 	}
 
 	bool ResolveCurrentBuildInput(
@@ -126,35 +176,7 @@ namespace EonformTerrainRegionGridPrivate
 		}
 
 		const FEonformTerrainGraphOutputSettings& GraphSettings = State.GetSettings();
-		OutSettings = FEonformMeshTerrainOutputSettings();
-		OutSettings.TargetResolution = GraphSettings.OutputResolution > 0
-			? FIntPoint(
-				FMath::Clamp(GraphSettings.OutputResolution, 17, 4097),
-				FMath::Clamp(GraphSettings.OutputResolution, 17, 4097))
-			: FIntPoint::ZeroValue;
-		OutSettings.SectionLayout = GraphSettings.SectionLayout == EEonformTerrainOutputSectionLayout::Explicit
-			? EEonformMeshTerrainSectionLayout::Explicit
-			: EEonformMeshTerrainSectionLayout::Automatic;
-		switch (GraphSettings.SectionComplexity)
-		{
-		case EEonformTerrainOutputComplexity::Responsive:
-			OutSettings.SectionComplexity = EEonformMeshTerrainSectionComplexity::Responsive;
-			break;
-		case EEonformTerrainOutputComplexity::Detailed:
-			OutSettings.SectionComplexity = EEonformMeshTerrainSectionComplexity::Detailed;
-			break;
-		case EEonformTerrainOutputComplexity::Maximum:
-			OutSettings.SectionComplexity = EEonformMeshTerrainSectionComplexity::Maximum;
-			break;
-		case EEonformTerrainOutputComplexity::Balanced:
-		default:
-			OutSettings.SectionComplexity = EEonformMeshTerrainSectionComplexity::Balanced;
-			break;
-		}
-		OutSettings.Sections = FIntPoint(GraphSettings.SectionsX, GraphSettings.SectionsY);
-		OutSettings.MeshPartitionDefinition = GraphSettings.MeshPartitionDefinition.IsValid()
-			? GraphSettings.MeshPartitionDefinition.TryLoad()
-			: nullptr;
+		OutSettings = MakeMeshTerrainSettings();
 
 		const FEonformScalarField* Height = OutSnapshot.Dataset.FindScalarField(EonformTerrainFieldNames::Height);
 		if (!Height || !Height->IsValid())
@@ -218,16 +240,16 @@ namespace EonformTerrainRegionGridPrivate
 
 		const int32 IntervalsX = Resolution.X - 1;
 		const int32 IntervalsY = Resolution.Y - 1;
-		for (int32 SectionY = 0; SectionY < Layout.Sections.Y; ++SectionY)
+		for (int32 RegionY = 0; RegionY < Layout.Sections.Y; ++RegionY)
 		{
-			const int32 StartY = (SectionY * IntervalsY) / Layout.Sections.Y;
-			const int32 EndY = ((SectionY + 1) * IntervalsY) / Layout.Sections.Y;
-			for (int32 SectionX = 0; SectionX < Layout.Sections.X; ++SectionX)
+			const int32 StartY = (RegionY * IntervalsY) / Layout.Sections.Y;
+			const int32 EndY = ((RegionY + 1) * IntervalsY) / Layout.Sections.Y;
+			for (int32 RegionX = 0; RegionX < Layout.Sections.X; ++RegionX)
 			{
-				const int32 StartX = (SectionX * IntervalsX) / Layout.Sections.X;
-				const int32 EndX = ((SectionX + 1) * IntervalsX) / Layout.Sections.X;
+				const int32 StartX = (RegionX * IntervalsX) / Layout.Sections.X;
+				const int32 EndX = ((RegionX + 1) * IntervalsX) / Layout.Sections.X;
 				FEonformTerrainRegionRegistry::RegisterCurrentRegion(
-					FIntPoint(SectionX, SectionY),
+					FIntPoint(RegionX, RegionY),
 					FIntPoint(StartX, StartY),
 					FIntPoint(EndX, EndY));
 			}
@@ -247,21 +269,27 @@ void SEonformTerrainRegionGrid::Construct(const FArguments& InArgs)
 		SNew(SVerticalBox)
 		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 8.0f, 0.0f, 4.0f)
 		[
-			SNew(STextBlock).Text(FText::FromString(TEXT("Regional Terrain Control")))
+			SNew(STextBlock).Text(FText::FromString(TEXT("Mesh Terrain Layout")))
 		]
 		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 4.0f)
 		[
 			SNew(STextBlock)
 			.AutoWrapText(true)
-			.Text(FText::FromString(TEXT("Click a region to select it. Ctrl toggles regions; Shift selects a rectangle; Ctrl+Shift adds a rectangle.")))
+			.Text(this, &SEonformTerrainRegionGrid::GetLayoutSummaryText)
+		]
+		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 4.0f)
+		[
+			SNew(STextBlock)
+			.AutoWrapText(true)
+			.Text(FText::FromString(TEXT("Each square is a Mesh Terrain component. Components are grouped into generation regions; clicking any component selects its owning region. Loaded regions are shown directly from the editor world.")))
 		]
 		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 4.0f)
 		[
 			SNew(STextBlock).Text(this, &SEonformTerrainRegionGrid::GetSelectionText)
 		]
-		+ SVerticalBox::Slot().AutoHeight()
+		+ SVerticalBox::Slot().FillHeight(1.0f)
 		[
-			SAssignNew(Grid, SUniformGridPanel).SlotPadding(FMargin(2.0f))
+			SAssignNew(Grid, SUniformGridPanel).SlotPadding(FMargin(1.0f))
 		]
 		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 6.0f, 0.0f, 0.0f)
 		[
@@ -383,15 +411,20 @@ bool SEonformTerrainRegionGrid::HasSelection() const
 	return SelectedRegions.Num() > 0;
 }
 
+FText SEonformTerrainRegionGrid::GetLayoutSummaryText() const
+{
+	return FText::FromString(LayoutSummary);
+}
+
 FText SEonformTerrainRegionGrid::GetSelectionText() const
 {
-	if (SelectedRegions.Num() == 0) return FText::FromString(TEXT("No regions selected."));
+	if (SelectedRegions.Num() == 0) return FText::FromString(TEXT("No generation regions selected."));
 	if (SelectedRegions.Num() == 1)
 	{
 		const FIntPoint Coordinate = *SelectedRegions.CreateConstIterator();
-		return FText::FromString(FString::Printf(TEXT("Selected region [%d,%d]."), Coordinate.X, Coordinate.Y));
+		return FText::FromString(FString::Printf(TEXT("Selected generation region [%d,%d]."), Coordinate.X, Coordinate.Y));
 	}
-	return FText::FromString(FString::Printf(TEXT("%d regions selected."), SelectedRegions.Num()));
+	return FText::FromString(FString::Printf(TEXT("%d generation regions selected."), SelectedRegions.Num()));
 }
 
 FText SEonformTerrainRegionGrid::GetActionStatusText() const
@@ -528,52 +561,113 @@ void SEonformTerrainRegionGrid::Rebuild()
 {
 	if (!Grid.IsValid()) return;
 
-	FString PlanningReason;
-	EnsurePlannedRegions(&PlanningReason);
-	LastChangeSerial = FEonformTerrainRegionRegistry::GetChangeSerial();
+	const FMeshTerrainPreviewLayout Preview = ResolvePreviewLayout();
 	LastPlanningSignature = GetPlanningSignature();
+	LastChangeSerial = FEonformTerrainRegionRegistry::GetChangeSerial();
 	Grid->ClearChildren();
 
-	FEonformTerrainRegionPlanIdentity Identity;
-	TArray<FEonformTerrainRegionSnapshot> Regions;
-	if (!FEonformTerrainRegionRegistry::GetLatestPlan(Identity, Regions) || Regions.IsEmpty())
+	if (!Preview.bValid)
 	{
 		LatestGridDimensions = FIntPoint::ZeroValue;
+		LatestComponentDimensions = FIntPoint::ZeroValue;
+		LayoutSummary = TEXT("Choose an output resolution to preview the Mesh Terrain layout.");
 		Grid->AddSlot(0, 0)
 		[
 			SNew(STextBlock)
 			.AutoWrapText(true)
-			.Text(FText::FromString(
-				PlanningReason.IsEmpty()
-					? TEXT("Connect a regional-compatible terrain graph to populate region controls.")
-					: PlanningReason))
+			.Text(FText::FromString(TEXT("The layout preview is driven directly by Terrain Output; no saved graph is required.")))
 		];
 		return;
 	}
-	LatestGridDimensions = Identity.GridDimensions;
 
+	LatestGridDimensions = Preview.Regions;
+	LatestComponentDimensions = Preview.Components;
+	LayoutSummary = FString::Printf(
+		TEXT("Output %d x %d | sections %d x %d at up to %d x %d quads | components %d x %d (%d x %d sections each) | generation regions %d x %d | max region ~%lld tris"),
+		Preview.Resolution.X,
+		Preview.Resolution.Y,
+		Preview.Sections.X,
+		Preview.Sections.Y,
+		PreviewSectionQuads,
+		PreviewSectionQuads,
+		Preview.Components.X,
+		Preview.Components.Y,
+		PreviewSectionsPerComponent,
+		PreviewSectionsPerComponent,
+		Preview.Regions.X,
+		Preview.Regions.Y,
+		static_cast<long long>(Preview.RegionEstimate.MaxSectionTriangleCount));
+
+	FString PlanningReason;
+	EnsurePlannedRegions(&PlanningReason);
+
+	FEonformTerrainRegionPlanIdentity Identity;
+	TArray<FEonformTerrainRegionSnapshot> Regions;
+	FEonformTerrainRegionRegistry::GetLatestPlan(Identity, Regions);
+	TMap<FIntPoint, FEonformTerrainRegionSnapshot> SnapshotByRegion;
 	for (const FEonformTerrainRegionSnapshot& Snapshot : Regions)
 	{
-		const FIntPoint Coordinate = Snapshot.RegionIndex;
-		Grid->AddSlot(Coordinate.X, Coordinate.Y)
-		[
-			SNew(SButton)
-			.ContentPadding(FMargin(2.0f))
-			.ButtonColorAndOpacity_Lambda([this, Coordinate]() -> FSlateColor
+		SnapshotByRegion.Add(Snapshot.RegionIndex, Snapshot);
+	}
+
+	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+	for (int32 ComponentY = 0; ComponentY < Preview.Components.Y; ++ComponentY)
+	{
+		for (int32 ComponentX = 0; ComponentX < Preview.Components.X; ++ComponentX)
+		{
+			const FIntPoint Component(ComponentX, ComponentY);
+			const FIntPoint Region = ComponentToRegion(Component, Preview);
+			const FEonformTerrainRegionSnapshot* RegionSnapshot = SnapshotByRegion.Find(Region);
+			const bool bLoaded = World && FEonformMeshTerrainOutput::FindRegionActor(World, Region) != nullptr;
+			const bool bSelected = SelectedRegions.Contains(Region);
+
+			FString Tooltip = FString::Printf(
+				TEXT("Component [%d,%d]\n2 x 2 sections, up to 63 x 63 quads each\nGeneration region [%d,%d]\n%s"),
+				Component.X,
+				Component.Y,
+				Region.X,
+				Region.Y,
+				bLoaded ? TEXT("Loaded in editor world") : TEXT("Not loaded"));
+			if (RegionSnapshot)
 			{
-				return FSlateColor(SelectedRegions.Contains(Coordinate)
-					? FLinearColor(0.20f, 0.45f, 0.80f, 1.0f)
-					: FLinearColor::White);
-			})
-			.ToolTipText(Snapshot.Error.IsEmpty() ? FText::GetEmpty() : FText::FromString(Snapshot.Error))
-			.OnClicked_Lambda([this, Coordinate]() { return HandleRegionClicked(Coordinate); })
+				Tooltip += FString::Printf(
+					TEXT("\n%s / %s"),
+					*MaterializationStateText(RegionSnapshot->MaterializationState),
+					*EvaluationStateText(RegionSnapshot->EvaluationState));
+				if (!RegionSnapshot->Error.IsEmpty()) Tooltip += FString::Printf(TEXT("\n%s"), *RegionSnapshot->Error);
+			}
+			else if (!PlanningReason.IsEmpty())
+			{
+				Tooltip += FString::Printf(TEXT("\n%s"), *PlanningReason);
+			}
+
+			Grid->AddSlot(ComponentX, ComponentY)
 			[
-				SNew(SBorder)
-				.Padding(FMargin(5.0f))
+				SNew(SButton)
+				.ContentPadding(FMargin(1.0f))
+				.ButtonColorAndOpacity(bSelected
+					? FLinearColor(0.20f, 0.45f, 0.80f, 1.0f)
+					: bLoaded
+						? FLinearColor(0.20f, 0.62f, 0.28f, 1.0f)
+						: FLinearColor(0.34f, 0.34f, 0.34f, 1.0f))
+				.ToolTipText(FText::FromString(MoveTemp(Tooltip)))
+				.OnClicked_Lambda([this, Region]() { return HandleRegionClicked(Region); })
 				[
-					SNew(STextBlock).Text(MakeRegionText(Snapshot))
+					SNew(SBorder)
+					.Padding(FMargin(4.0f))
+					[
+						SNew(STextBlock)
+						.Justification(ETextJustify::Center)
+						.Text(FText::FromString(FString::Printf(
+							TEXT("C%d,%d\nR%d,%d%s"),
+							Component.X,
+							Component.Y,
+							Region.X,
+							Region.Y,
+							bLoaded ? TEXT("\nLOADED") : TEXT(""))))
+					]
 				]
-			]
-		];
+			];
+		}
 	}
 }

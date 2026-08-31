@@ -61,6 +61,7 @@ private:
 	void RequestInspectionEvaluationAsync(const FGuid& NodeId);
 	void StartNextAsyncEvaluation();
 	void ClearInspectionPreview();
+	void SyncGraphSelectionState();
 	void SyncOutputSettingsState();
 	uint32 ComputeAutoPreviewHash() const;
 	FText GetAssetText() const;
@@ -87,6 +88,7 @@ private:
 	uint32 LastAutoPreviewHash = 0;
 	float AutoPreviewPollAccumulator = 0.0f;
 	FGuid LastPreviewNodeId;
+	uint64 LastGraphSelectionRevision = 0;
 	uint64 LastOutputSettingsRevision = 0;
 	uint64 GraphEvaluationGeneration = 0;
 	uint64 InspectionEvaluationGeneration = 0;

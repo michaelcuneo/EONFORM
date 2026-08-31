@@ -171,8 +171,6 @@ uint32 SEonformTerrainGraphPanel::ComputeAutoPreviewHash() const
 	Hash = HashCombineFast(Hash, GetTypeHash(Physical.ElevationScaleMeters));
 	Hash = HashCombineFast(Hash, GetTypeHash(Physical.SeaLevelMeters));
 
-	// Resolution changes alter the actual source/simulation working grid, not just
-	// the final Mesh Terrain resample. They therefore must invalidate auto-preview.
 	const FEonformTerrainGraphOutputSettings& OutputSettings = FEonformTerrainOutputEditorState::Get().GetSettings();
 	Hash = HashCombineFast(Hash, GetTypeHash(OutputSettings.OutputResolution));
 	return Hash;
@@ -184,6 +182,7 @@ void SEonformTerrainGraphPanel::Tick(
 	const float InDeltaTime)
 {
 	SCompoundWidget::Tick(AllottedGeometry, InCurrentTime, InDeltaTime);
+	SyncGraphSelectionState();
 	SyncOutputSettingsState();
 
 	if (!bLegacyEvaluateButtonHidden)
@@ -216,8 +215,5 @@ void SEonformTerrainGraphPanel::Tick(
 		return;
 	}
 
-	// Selection and layout are editor-only state. Never launch a second terrain solve
-	// just because the user clicked or dragged a node. Intermediate-node inspection can
-	// be layered back onto the async queue later without touching final Terrain Output.
 	if (CurrentPreviewNodeId.IsValid()) LastPreviewNodeId = CurrentPreviewNodeId;
 }

@@ -1,24 +1,47 @@
 #include "Modules/ModuleManager.h"
 
+#include "AssetRegistry/AssetData.h"
+#include "AssetRegistry/AssetRegistryModule.h"
 #include "EdGraphUtilities.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Framework/Commands/UIAction.h"
 #include "Framework/Docking/TabManager.h"
+#include "Framework/MultiBox/MultiBoxBuilder.h"
 #include "EonformEditorStyle.h"
+#include "EonformTerrainGraphAsset.h"
 #include "EonformTerrainGraphNode.h"
 #include "EonformTerrainGraphPin.h"
+#include "EonformTerrainGraphSelectionState.h"
 #include "SEonformTerrainInspector.h"
 #include "SEonformTerrainOutputPanel.h"
 #include "ToolMenus.h"
 #include "Widgets/Docking/SDockTab.h"
+#include "Widgets/Input/SComboButton.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Layout/SScrollBox.h"
+#include "Widgets/SBoxPanel.h"
+#include "Widgets/Text/STextBlock.h"
 
 #define LOCTEXT_NAMESPACE "FEonformEditorModule"
 
 namespace
 {
 	const FName EonformTabName(TEXT("Eonform"));
+
+	TArray<FAssetData> GetTerrainGraphAssets()
+	{
+		FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
+		TArray<FAssetData> Assets;
+		AssetRegistryModule.Get().GetAssetsByClass(
+			UEonformTerrainGraphAsset::StaticClass()->GetClassPathName(),
+			Assets,
+			true);
+		Assets.Sort([](const FAssetData& A, const FAssetData& B)
+		{
+			return A.AssetName.LexicalLess(B.AssetName);
+		});
+		return Assets;
+	}
 }
 
 class FEonformEditorModule : public IModuleInterface
@@ -90,11 +113,62 @@ private:
 		FGlobalTabmanager::Get()->TryInvokeTab(EonformTabName);
 	}
 
+	TSharedRef<SWidget> BuildTerrainGraphMenu()
+	{
+		FMenuBuilder MenuBuilder(true, nullptr);
+		const TArray<FAssetData> Assets = GetTerrainGraphAssets();
+		if (Assets.IsEmpty())
+		{
+			MenuBuilder.AddWidget(
+				SNew(STextBlock).Text(LOCTEXT("NoTerrainGraphs", "No terrain graph assets found")),
+				FText::GetEmpty());
+			return MenuBuilder.MakeWidget();
+		}
+
+		for (const FAssetData& AssetData : Assets)
+		{
+			MenuBuilder.AddMenuEntry(
+				FText::FromName(AssetData.AssetName),
+				FText::FromName(AssetData.PackageName),
+				FSlateIcon(),
+				FUIAction(FExecuteAction::CreateLambda([AssetData]()
+				{
+					if (UEonformTerrainGraphAsset* Asset = Cast<UEonformTerrainGraphAsset>(AssetData.GetAsset()))
+					{
+						FEonformTerrainGraphSelectionState::Get().SetSelected(Asset);
+					}
+				})));
+		}
+		return MenuBuilder.MakeWidget();
+	}
+
+	FText GetTerrainGraphPickerText() const
+	{
+		if (UEonformTerrainGraphAsset* Asset = FEonformTerrainGraphSelectionState::Get().GetSelected())
+		{
+			return FText::FromString(Asset->GetName());
+		}
+		return LOCTEXT("ChooseTerrainGraph", "Choose Terrain Graph");
+	}
+
+	void InitializeTerrainGraphSelection()
+	{
+		if (FEonformTerrainGraphSelectionState::Get().GetSelected()) return;
+		const TArray<FAssetData> Assets = GetTerrainGraphAssets();
+		for (int32 Index = Assets.Num() - 1; Index >= 0; --Index)
+		{
+			if (UEonformTerrainGraphAsset* Asset = Cast<UEonformTerrainGraphAsset>(Assets[Index].GetAsset()))
+			{
+				FEonformTerrainGraphSelectionState::Get().SetSelected(Asset);
+				return;
+			}
+		}
+	}
+
 	TSharedRef<SDockTab> SpawnEonformTab(const FSpawnTabArgs& Args)
 	{
-		// Terrain Output is intentionally a compact, independently scrollable panel.
-		// Regional Terrain Control lives in the Inspector's main workspace beside
-		// the terrain preview; do not duplicate it here.
+		InitializeTerrainGraphSelection();
+
 		TSharedRef<SWidget> OutputPanel =
 			SNew(SBox)
 			.HeightOverride(300.0f)
@@ -109,8 +183,38 @@ private:
 		return SNew(SDockTab)
 			.TabRole(ETabRole::NomadTab)
 			[
-				SNew(SEonformTerrainInspector)
-				.OutputPanel(OutputPanel)
+				SNew(SVerticalBox)
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(10.0f, 6.0f, 10.0f, 4.0f)
+				[
+					SNew(SHorizontalBox)
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.VAlign(VAlign_Center)
+					[
+						SNew(STextBlock)
+						.Text(LOCTEXT("TerrainGraphPickerLabel", "Terrain Graph"))
+					]
+					+ SHorizontalBox::Slot()
+					.FillWidth(1.0f)
+					.Padding(8.0f, 0.0f, 0.0f, 0.0f)
+					[
+						SNew(SComboButton)
+						.OnGetMenuContent_Lambda([this]() { return BuildTerrainGraphMenu(); })
+						.ButtonContent()
+						[
+							SNew(STextBlock)
+							.Text_Lambda([this]() { return GetTerrainGraphPickerText(); })
+						]
+					]
+				]
+				+ SVerticalBox::Slot()
+				.FillHeight(1.0f)
+				[
+					SNew(SEonformTerrainInspector)
+					.OutputPanel(OutputPanel)
+				]
 			];
 	}
 
