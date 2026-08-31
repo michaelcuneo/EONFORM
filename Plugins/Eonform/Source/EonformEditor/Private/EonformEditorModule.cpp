@@ -17,8 +17,6 @@
 #include "ToolMenus.h"
 #include "Widgets/Docking/SDockTab.h"
 #include "Widgets/Input/SComboButton.h"
-#include "Widgets/Layout/SBox.h"
-#include "Widgets/Layout/SScrollBox.h"
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/Text/STextBlock.h"
 
@@ -169,16 +167,10 @@ private:
 	{
 		InitializeTerrainGraphSelection();
 
-		TSharedRef<SWidget> OutputPanel =
-			SNew(SBox)
-			.HeightOverride(300.0f)
-			[
-				SNew(SScrollBox)
-				+ SScrollBox::Slot()
-				[
-					SNew(SEonformTerrainOutputPanel)
-				]
-			];
+		// The inspector hosts Terrain Output in an AutoHeight slot. Give it the
+		// panel directly so it takes its full natural height; Node Details owns all
+		// remaining right-column space.
+		TSharedRef<SWidget> OutputPanel = SNew(SEonformTerrainOutputPanel);
 
 		return SNew(SDockTab)
 			.TabRole(ETabRole::NomadTab)
