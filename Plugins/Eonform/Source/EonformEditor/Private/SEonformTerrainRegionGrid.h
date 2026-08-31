@@ -9,6 +9,7 @@ class SEonformTerrainRegionGrid : public SCompoundWidget
 {
 public:
 	SLATE_BEGIN_ARGS(SEonformTerrainRegionGrid) {}
+		SLATE_ARGUMENT(FName, SourceId)
 	SLATE_END_ARGS()
 
 	void Construct(const FArguments& InArgs);

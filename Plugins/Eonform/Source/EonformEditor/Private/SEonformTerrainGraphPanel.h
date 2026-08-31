@@ -18,6 +18,7 @@ class SEonformTerrainGraphPanel : public SCompoundWidget
 public:
 	SLATE_BEGIN_ARGS(SEonformTerrainGraphPanel) {}
 		SLATE_EVENT(FSimpleDelegate, OnEvaluated)
+		SLATE_ARGUMENT(TSharedPtr<SVerticalBox>, ParameterPanel)
 	SLATE_END_ARGS()
 
 	void Construct(const FArguments& InArgs);

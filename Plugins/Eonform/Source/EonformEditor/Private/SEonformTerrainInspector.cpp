@@ -6,11 +6,14 @@
 #include "EonformTerrainPhysicalMetrics.h"
 #include "SEonformTerrainGraphPanel.h"
 #include "SEonformTerrainMeshPreview.h"
+#include "SEonformTerrainRegionGrid.h"
 #include "Styling/AppStyle.h"
 #include "Widgets/Images/SImage.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SBox.h"
+#include "Widgets/Layout/SExpandableArea.h"
+#include "Widgets/Layout/SScrollBox.h"
 #include "Widgets/Layout/SSplitter.h"
 #include "Widgets/SNullWidget.h"
 #include "Widgets/Text/STextBlock.h"
@@ -286,6 +289,30 @@ void SEonformTerrainInspector::Construct(const FArguments& InArgs)
 		? InArgs._OutputPanel.ToSharedRef()
 		: SNullWidget::NullWidget;
 
+	TSharedPtr<SVerticalBox> NodeDetailsPanel;
+	const TSharedRef<SWidget> NodeDetails =
+		SNew(SBorder)
+		.Padding(8.0f)
+		.BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
+		[
+			SNew(SVerticalBox)
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 6.0f)
+			[
+				SNew(STextBlock)
+				.Text(FText::FromString(TEXT("Node Details")))
+				.Font(FAppStyle::GetFontStyle(TEXT("PropertyWindow.BoldFont")))
+			]
+			+ SVerticalBox::Slot().FillHeight(1.0f)
+			[
+				SNew(SScrollBox)
+				.Orientation(Orient_Vertical)
+				+ SScrollBox::Slot()
+				[
+					SAssignNew(NodeDetailsPanel, SVerticalBox)
+				]
+			]
+		];
+
 	ChildSlot
 	[
 		SNew(SBorder)
@@ -315,104 +342,142 @@ void SEonformTerrainInspector::Construct(const FArguments& InArgs)
 			]
 
 			+ SVerticalBox::Slot()
-			.FillHeight(0.64f)
-			.Padding(0.0f, 0.0f, 0.0f, 8.0f)
-			[
-				SNew(SEonformTerrainGraphPanel)
-				.OnEvaluated(FSimpleDelegate::CreateSP(this, &SEonformTerrainInspector::RefreshFromRegistry))
-			]
-
-			+ SVerticalBox::Slot()
-			.FillHeight(0.36f)
+			.FillHeight(1.0f)
 			[
 				SNew(SSplitter)
-				+ SSplitter::Slot().Value(0.20f)
+
+				+ SSplitter::Slot().Value(0.76f)
 				[
-					SNew(SBorder)
-					.Padding(6.0f)
-					.BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
+					SNew(SVerticalBox)
+
+					+ SVerticalBox::Slot()
+					.FillHeight(0.62f)
+					.Padding(0.0f, 0.0f, 8.0f, 8.0f)
 					[
-						SNew(SVerticalBox)
-						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 4.0f)
+						SNew(SEonformTerrainGraphPanel)
+						.OnEvaluated(FSimpleDelegate::CreateSP(this, &SEonformTerrainInspector::RefreshFromRegistry))
+						.ParameterPanel(NodeDetailsPanel)
+					]
+
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					.Padding(0.0f, 0.0f, 8.0f, 8.0f)
+					[
+						SNew(SExpandableArea)
+						.InitiallyCollapsed(true)
+						.Padding(4.0f)
+						.HeaderContent()
 						[
 							SNew(STextBlock).Text(FText::FromString(TEXT("Analysis Fields")))
 						]
-						+ SVerticalBox::Slot().FillHeight(1.0f)
+						.BodyContent()
 						[
-							SAssignNew(FieldListView, SListView<TSharedPtr<FName>>)
-							.ListItemsSource(&FieldItems)
-							.OnGenerateRow(this, &SEonformTerrainInspector::GenerateFieldRow)
-							.OnSelectionChanged(this, &SEonformTerrainInspector::OnFieldSelectionChanged)
-						]
-					]
-				]
-
-				+ SSplitter::Slot().Value(0.30f)
-				[
-					SNew(SBorder)
-					.Padding(8.0f)
-					.BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
-					[
-						SNew(SVerticalBox)
-						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 8.0f)
-						[
-							SNew(STextBlock).AutoWrapText(true).Text(this, &SEonformTerrainInspector::GetFieldMetadataText)
-						]
-						+ SVerticalBox::Slot().FillHeight(1.0f).HAlign(HAlign_Center).VAlign(VAlign_Center)
-						[
-							SNew(SBorder)
-							.Padding(4.0f)
-							.BorderImage(FAppStyle::GetBrush("ToolPanel.DarkGroupBorder"))
+							SNew(SBox)
+							.HeightOverride(300.0f)
 							[
-								SNew(SBox).WidthOverride(512.0f).HeightOverride(512.0f)
+								SNew(SSplitter)
+								+ SSplitter::Slot().Value(0.28f)
 								[
-									SAssignNew(PreviewImage, SImage).Image(&PreviewBrush)
+									SNew(SBorder)
+									.Padding(6.0f)
+									.BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
+									[
+										SAssignNew(FieldListView, SListView<TSharedPtr<FName>>)
+										.ListItemsSource(&FieldItems)
+										.OnGenerateRow(this, &SEonformTerrainInspector::GenerateFieldRow)
+										.OnSelectionChanged(this, &SEonformTerrainInspector::OnFieldSelectionChanged)
+									]
+								]
+								+ SSplitter::Slot().Value(0.72f)
+								[
+									SNew(SBorder)
+									.Padding(8.0f)
+									.BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
+									[
+										SNew(SHorizontalBox)
+										+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+										[
+											SNew(SBorder)
+											.Padding(4.0f)
+											.BorderImage(FAppStyle::GetBrush("ToolPanel.DarkGroupBorder"))
+											[
+												SNew(SBox).WidthOverride(256.0f).HeightOverride(256.0f)
+												[
+													SAssignNew(PreviewImage, SImage).Image(&PreviewBrush)
+												]
+											]
+										]
+										+ SHorizontalBox::Slot().FillWidth(1.0f).Padding(10.0f, 0.0f, 0.0f, 0.0f)
+										[
+											SNew(SVerticalBox)
+											+ SVerticalBox::Slot().AutoHeight()
+											[
+												SNew(STextBlock).AutoWrapText(true).Text(this, &SEonformTerrainInspector::GetFieldMetadataText)
+											]
+											+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 8.0f, 0.0f, 0.0f)
+											[
+												SNew(STextBlock).AutoWrapText(true).Text(this, &SEonformTerrainInspector::GetPreviewStatsText)
+											]
+											+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 4.0f, 0.0f, 0.0f)
+											[
+												SNew(STextBlock).AutoWrapText(true).Text(this, &SEonformTerrainInspector::GetEmptyStateText)
+											]
+										]
+									]
 								]
 							]
 						]
-						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 8.0f, 0.0f, 0.0f)
+					]
+
+					+ SVerticalBox::Slot()
+					.FillHeight(0.38f)
+					.Padding(0.0f, 0.0f, 8.0f, 0.0f)
+					[
+						SNew(SSplitter)
+						+ SSplitter::Slot().Value(0.48f)
 						[
-							SNew(STextBlock).Text(this, &SEonformTerrainInspector::GetPreviewStatsText)
+							SNew(SBorder)
+							.Padding(6.0f)
+							.BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
+							[
+								SNew(SVerticalBox)
+								+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 6.0f)
+								[
+									SNew(STextBlock).Text(FText::FromString(TEXT("Terrain Preview")))
+								]
+								+ SVerticalBox::Slot().FillHeight(1.0f)
+								[
+									SAssignNew(MeshPreview, SEonformTerrainMeshPreview)
+								]
+								+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 6.0f, 0.0f, 0.0f)
+								[
+									SNew(STextBlock)
+									.AutoWrapText(true)
+									.Text_Lambda([this]() { return MeshPreview.IsValid() ? MeshPreview->GetStatusText() : FText::GetEmpty(); })
+								]
+							]
 						]
-						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 4.0f, 0.0f, 0.0f)
+						+ SSplitter::Slot().Value(0.52f)
 						[
-							SNew(STextBlock).Text(this, &SEonformTerrainInspector::GetEmptyStateText)
+							SNew(SBorder)
+							.Padding(8.0f)
+							.BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
+							[
+								SNew(SEonformTerrainRegionGrid).SourceId(TEXT("EonformGraph"))
+							]
 						]
 					]
 				]
 
-				+ SSplitter::Slot().Value(0.28f)
+				+ SSplitter::Slot().Value(0.24f)
 				[
-					SNew(SBorder)
-					.Padding(6.0f)
-					.BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
+					SNew(SSplitter)
+					.Orientation(Orient_Vertical)
+					+ SSplitter::Slot().Value(0.58f)
 					[
-						SNew(SVerticalBox)
-						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 6.0f)
-						[
-							SNew(STextBlock).Text(FText::FromString(TEXT("Mesh Preview")))
-						]
-						+ SVerticalBox::Slot().FillHeight(1.0f)
-						[
-							SAssignNew(MeshPreview, SEonformTerrainMeshPreview)
-						]
-						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 6.0f, 0.0f, 0.0f)
-						[
-							SNew(STextBlock)
-							.AutoWrapText(true)
-							.Text_Lambda([this]() { return MeshPreview.IsValid() ? MeshPreview->GetStatusText() : FText::GetEmpty(); })
-						]
+						NodeDetails
 					]
-				]
-
-				+ SSplitter::Slot().Value(0.22f)
-				[
-					SNew(SVerticalBox)
-					+ SVerticalBox::Slot().FillHeight(1.0f)
-					[
-						SNullWidget::NullWidget
-					]
-					+ SVerticalBox::Slot().AutoHeight()
+					+ SSplitter::Slot().Value(0.42f)
 					[
 						OutputPanel
 					]

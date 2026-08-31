@@ -22,8 +22,6 @@
 #include "Widgets/Input/SNumericEntryBox.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SBox.h"
-#include "Widgets/Layout/SScrollBox.h"
-#include "Widgets/Layout/SSplitter.h"
 #include "Widgets/SNullWidget.h"
 #include "Widgets/Text/STextBlock.h"
 
@@ -100,6 +98,7 @@ namespace
 void SEonformTerrainGraphPanel::Construct(const FArguments& InArgs)
 {
 	OnEvaluated = InArgs._OnEvaluated;
+	ParameterPanel = InArgs._ParameterPanel;
 	BuildDefaultRecipeAndGraph();
 
 	ChildSlot
@@ -167,29 +166,9 @@ void SEonformTerrainGraphPanel::Construct(const FArguments& InArgs)
 			+ SVerticalBox::Slot()
 			.FillHeight(1.0f)
 			[
-				SNew(SSplitter)
-				+ SSplitter::Slot()
-				.Value(0.78f)
+				SAssignNew(GraphHost, SBox)
 				[
-					SAssignNew(GraphHost, SBox)
-					[
-						CreateGraphEditorWidget()
-					]
-				]
-				+ SSplitter::Slot()
-				.Value(0.22f)
-				[
-					SNew(SBorder)
-					.Padding(8.0f)
-					.BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
-					[
-						SNew(SScrollBox)
-						.Orientation(Orient_Vertical)
-						+ SScrollBox::Slot()
-						[
-							SAssignNew(ParameterPanel, SVerticalBox)
-						]
-					]
+					CreateGraphEditorWidget()
 				]
 			]
 
